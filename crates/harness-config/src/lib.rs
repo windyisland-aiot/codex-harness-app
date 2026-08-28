@@ -1,0 +1,194 @@
+//! # harness-config
+//!
+//! T09：读写 codex 的 `config.toml`（位于 `CODEX_HOME`）。
+//!
+//! 面向配置面板暴露一个归一化的 [`AppConfig`]，覆盖用户可管理的字段：
+//! - `model` / `model_provider`（默认模型）
+//! - `approval_policy`（审批策略）
+//! - `model_providers`（模型提供商：base_url / env_key / wire_api）
+//! - `mcp_servers`（MCP server：command / args / env）
+//!
+//! 读写采用“合并”语义：写回时保留 config.toml 中其它未被面板管理的关键字，
+//! 只更新上述分区，避免破坏 codex 的额外配置。
+
+pub mod model;
+
+pub use model::{AppConfig, McpServerConfig, ProviderConfig};
+
+use std::path::{Path, PathBuf};
+
+/// 配置相关错误。
+#[derive(Debug, thiserror::Error)]
+pub enum ConfigError {
+    #[error("io: {0}")]
+    Io(#[from] std::io::Error),
+    #[error("toml: {0}")]
+    Toml(#[from] toml::de::Error),
+    #[error("toml serialize: {0}")]
+    TomlSer(#[from] toml::ser::Error),
+    #[error("invalid expected type in section `{section}`: {why}")]
+    Type { section: String, why: String },
+}
+
+pub type Result<T> = std::result::Result<T, ConfigError>;
+
+/// 配置文件名（codex 默认）。
+pub const CONFIG_FILE: &str = "config.toml";
+
+/// 返回 `<codex_home>/config.toml`。
+pub fn config_path(codex_home: &str) -> PathBuf {
+    Path::new(codex_home).join(CONFIG_FILE)
+}
+
+mod conv {
+    use super::Result;
+    use crate::ConfigError;
+
+    /// 从 `toml::Value` 读取字符串字段。
+    pub fn get_str<'a>(table: &'a toml::map::Map<String, toml::Value>, key: &str, section: &str) -> Result<Option<&'a str>> {
+        match table.get(key) {
+            None => Ok(None),
+            Some(toml::Value::String(s)) => Ok(Some(s)),
+            Some(_) => Err(ConfigError::Type {
+                section: section.to_string(),
+                why: format!("`{key}` not a string"),
+            }),
+        }
+    }
+
+    /// 把一个可选字符串作为顶层标量写入 table（值为空则不写）。
+    pub fn put_str(table: &mut toml::map::Map<String, toml::Value>, key: &str, val: Option<&str>) {
+        match val {
+            Some(v) if !v.is_empty() => table.insert(key.to_string(), toml::Value::String(v.to_string())),
+            _ => table.remove(key),
+        };
+    }
+}
+
+/// 读取 `config.toml` 为 [`AppConfig`]。
+/// 文件不存在时返回默认值（全部为空），不会报错。
+pub fn read(codex_home: &str) -> Result<AppConfig> {
+    let path = config_path(codex_home);
+    let mut cfg = AppConfig::default();
+    if !path.exists() {
+        return Ok(cfg);
+    }
+    let text = std::fs::read_to_string(&path)?;
+    if text.trim().is_empty() {
+        return Ok(cfg);
+    }
+    let table: toml::map::Map<String, toml::Value> = match toml::from_str(&text) {
+        Ok(m) => m,
+        // 解析失败时不丢弃既有手动配置，仅向面板返回空结构。
+        Err(_) => return Ok(cfg),
+    };
+
+    cfg.model = conv::get_str(&table, "model", "top")?.unwrap_or("").to_string();
+    cfg.model_provider = conv::get_str(&table, "model_provider", "top")?.unwrap_or("").to_string();
+    cfg.approval_policy = conv::get_str(&table, "approval_policy", "top")?.unwrap_or("").to_string();
+
+    if let Some(toml::Value::Table(providers)) = table.get("model_providers") {
+        for (id, v) in providers {
+            if let toml::Value::Table(p) = v {
+                cfg.model_providers.push(ProviderConfig {
+                    id: id.clone(),
+                    name: conv::get_str(p, "name", "model_providers")?.unwrap_or(id).to_string(),
+                    base_url: conv::get_str(p, "base_url", "model_providers")?
+                        .unwrap_or("")
+                        .to_string(),
+                    env_key: conv::get_str(p, "env_key", "model_providers")?
+                        .unwrap_or("")
+                        .to_string(),
+                    wire_api: conv::get_str(p, "wire_api", "model_providers")?
+                        .unwrap_or("")
+                        .to_string(),
+                });
+            }
+        }
+    }
+
+    if let Some(toml::Value::Table(servers)) = table.get("mcp_servers") {
+        for (id, v) in servers {
+            if let toml::Value::Table(s) = v {
+                let mut args = Vec::new();
+                if let Some(toml::Value::Array(arr)) = s.get("args") {
+                    for a in arr {
+                        if let toml::Value::String(x) = a {
+                            args.push(x.clone());
+                        }
+                    }
+                }
+                cfg.mcp_servers.push(McpServerConfig {
+                    id: id.clone(),
+                    command: conv::get_str(s, "command", "mcp_servers")?
+                        .unwrap_or("")
+                        .to_string(),
+                    args,
+                    env: conv::get_str(s, "env", "mcp_servers")?
+                        .unwrap_or("")
+                        .to_string(),
+                });
+            }
+        }
+    }
+    Ok(cfg)
+}
+
+/// 把 [`AppConfig`] 合并写回 `<codex_home>/config.toml`，保留未管理的其它配置。
+pub fn write(codex_home: &str, cfg: &AppConfig) -> Result<()> {
+    let path = config_path(codex_home);
+    let mut table: toml::map::Map<String, toml::Value> = if path.exists() {
+        match std::fs::read_to_string(&path) {
+            Ok(t) => toml::from_str(&t).unwrap_or_default(),
+            Err(_) => Default::default(),
+        }
+    } else {
+        Default::default()
+    };
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+
+    conv::put_str(&mut table, "model", Some(cfg.model.as_str()));
+    conv::put_str(&mut table, "model_provider", Some(cfg.model_provider.as_str()));
+    conv::put_str(&mut table, "approval_policy", Some(cfg.approval_policy.as_str()));
+
+    // model_providers
+    let mut providers = toml::map::Map::new();
+    for p in &cfg.model_providers {
+        if p.id.is_empty() {
+            continue;
+        }
+        let mut t = toml::map::Map::new();
+        conv::put_str(&mut t, "name", Some(if p.name.is_empty() { &p.id } else { &p.name }));
+        conv::put_str(&mut t, "base_url", Some(p.base_url.as_str()));
+        conv::put_str(&mut t, "env_key", Some(p.env_key.as_str()));
+        conv::put_str(&mut t, "wire_api", Some(p.wire_api.as_str()));
+        providers.insert(p.id.clone(), toml::Value::Table(t));
+    }
+    table.insert(
+        "model_providers".to_string(),
+        toml::Value::Table(providers),
+    );
+
+    // mcp_servers
+    let mut servers = toml::map::Map::new();
+    for m in &cfg.mcp_servers {
+        if m.id.is_empty() || m.command.is_empty() {
+            continue;
+        }
+        let mut t = toml::map::Map::new();
+        t.insert("command".to_string(), toml::Value::String(m.command.clone()));
+        t.insert(
+            "args".to_string(),
+            toml::Value::Array(m.args.iter().map(|a| toml::Value::String(a.clone())).collect()),
+        );
+        conv::put_str(&mut t, "env", Some(m.env.as_str()));
+        servers.insert(m.id.clone(), toml::Value::Table(t));
+    }
+    table.insert("mcp_servers".to_string(), toml::Value::Table(servers));
+
+    let text = toml::to_string(&toml::Value::Table(table))?;
+    std::fs::write(&path, text)?;
+    Ok(())
+}

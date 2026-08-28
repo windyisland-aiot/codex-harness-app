@@ -1254,6 +1254,7 @@ version = "0.1.0"
 dependencies = [
  "harness-appserver",
  "harness-auth",
+ "harness-config",
  "serde",
  "serde_json",
  "tauri",
@@ -1282,6 +1283,16 @@ dependencies = [
  "tempfile",
  "thiserror 1.0.69",
  "zeroize",
+]
+
+[[package]]
+name = "harness-config"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "toml 0.8.2",
 ]
 
 [[package]]

@@ -78,6 +78,41 @@ export function stop(): Promise<void> {
   return invoke("appserver_stop");
 }
 
+// --- T09 配置面板 ---
+
+export interface ProviderConfig {
+  id: string;
+  name: string;
+  base_url: string;
+  env_key: string;
+  wire_api: string;
+}
+
+export interface McpServerConfig {
+  id: string;
+  command: string;
+  args: string[];
+  env: string;
+}
+
+export interface AppConfig {
+  model: string;
+  model_provider: string;
+  approval_policy: string;
+  model_providers: ProviderConfig[];
+  mcp_servers: McpServerConfig[];
+}
+
+/** 读取当前 `CODEX_HOME` 下的配置。 */
+export function configRead(codexHome: string): Promise<AppConfig> {
+  return invoke<AppConfig>("config_read", { codex_home: codexHome });
+}
+
+/** 合并写回配置。 */
+export function configWrite(codexHome: string, config: AppConfig): Promise<void> {
+  return invoke("config_write", { codex_home: codexHome, config });
+}
+
 /** 从通知中抽取某个 method 携带的文本增量（用于流式渲染）。 */
 export function textDelta(e: AppEvent): string | null {
   if (e.method === "item/agentMessage/delta") {

@@ -3,6 +3,7 @@
 //! T04 骨架已接通；T05 起接入 `codex app-server` stdio 客户端（`appserver` 模块）。
 
 mod appserver;
+mod config;
 
 /// 前端调用的最小命令，用于验证前后端 IPC 连通（T04）。
 #[tauri::command]
@@ -25,6 +26,8 @@ pub fn run() {
             appserver::appserver_poll_approvals,
             appserver::appserver_respond_approval,
             appserver::appserver_stop,
+            config::config_read,
+            config::config_write,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

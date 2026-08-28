@@ -3,8 +3,9 @@
 import { useEffect, useRef, useState } from "react";
 import Markdown from "./components/Markdown";
 import ApprovalPanel from "./components/ApprovalPanel";
+import ConfigPanel from "./components/ConfigPanel";
 import * as codex from "./codexClient";
-import type { ApprovalRequest } from "./codexClient";
+import type { ApprovalRequest, AppConfig } from "./codexClient";
 
 interface Msg {
   role: "user" | "assistant";
@@ -18,14 +19,15 @@ interface Session {
 
 const DEFAULT_CODEX_BIN = "/workspace/codex/codex-rs/target/debug/codex";
 const DEFAULT_CODEX_HOME = "/workspace/codex-harness-app/.codex-test";
+const codexBin = DEFAULT_CODEX_BIN;
 const POLL_MS = 200;
 
 export default function App() {
-  // 会话/模型参数：T09 配置面板将改为可编辑状态。
-  const codexBin = DEFAULT_CODEX_BIN;
+  // 会话/模型参数：T09 配置面板加载并覆盖 model/provider。
   const codexHome = DEFAULT_CODEX_HOME;
-  const model = "mock-model";
-  const provider = "mock";
+  const [model, setModel] = useState("mock-model");
+  const [provider, setProvider] = useState("mock");
+  const [cfgOpen, setCfgOpen] = useState(false);
   const cwd = "/workspace/codex-harness-app";
 
   const [connected, setConnected] = useState(false);
@@ -171,6 +173,11 @@ export default function App() {
     setMessages([]);
   }
 
+  function onConfigSaved(c: AppConfig) {
+    if (c.model) setModel(c.model);
+    if (c.model_provider) setProvider(c.model_provider);
+  }
+
   return (
     <div className="chat">
       <aside className="sidebar">
@@ -193,6 +200,9 @@ export default function App() {
             </li>
           ))}
         </ul>
+        <button className="new-btn" onClick={() => setCfgOpen(true)}>
+          ⚙ 配置
+        </button>
         <div className="conn">
           <div className={`dot ${connected ? "on" : "off"}`} /> {status}
         </div>
@@ -235,6 +245,14 @@ export default function App() {
           </span>
         </footer>
       </main>
+
+      <ConfigPanel
+        open={cfgOpen}
+        onClose={() => setCfgOpen(false)}
+        codexHome={codexHome}
+        onSaved={onConfigSaved}
+        onStatus={setStatus}
+      />
     </div>
   );
 }

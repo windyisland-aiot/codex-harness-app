@@ -18,3 +18,4 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 harness-auth = { path = "../crates/auth" }
 harness-appserver = { path = "../crates/appserver" }
+harness-config = { path = "../crates/harness-config" }
