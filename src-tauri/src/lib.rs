@@ -8,6 +8,7 @@ mod feishu;
 mod oauth;
 mod plugins;
 mod router;
+mod search;
 
 /// 前端调用的最小命令，用于验证前后端 IPC 连通（T04）。
 #[tauri::command]
@@ -43,6 +44,9 @@ pub fn run() {
             plugins::plugins_list,
             plugins::plugins_apply,
             plugins::plugins_add_skill_dir,
+            search::search_execute,
+            search::search_register_mcp,
+            search::search_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

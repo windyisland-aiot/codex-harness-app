@@ -8,6 +8,7 @@ import ModelSwitcher from "./components/ModelSwitcher";
 import RouterPanel from "./components/RouterPanel";
 import FeishuOAuthPanel from "./components/FeishuOAuthPanel";
 import PluginsPanel from "./components/PluginsPanel";
+import SearchPanel from "./components/SearchPanel";
 import * as codex from "./codexClient";
 import type { ApprovalRequest, AppConfig, ProviderConfig, RouteDecision } from "./codexClient";
 import type { ModelPreset } from "./models";
@@ -35,6 +36,7 @@ export default function App() {
   const [cfgOpen, setCfgOpen] = useState(false);
   const [feishuOpen, setFeishuOpen] = useState(false);
   const [pluginsOpen, setPluginsOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
   const cwd = "/workspace/codex-harness-app";
 
   const [connected, setConnected] = useState(false);
@@ -314,6 +316,9 @@ export default function App() {
         <button className="new-btn" onClick={() => setPluginsOpen(true)}>
           ⚇ 技能
         </button>
+        <button className="new-btn" onClick={() => setSearchOpen(true)}>
+          ⌕ 搜索
+        </button>
         <div className="conn">
           <div className={`dot ${connected ? "on" : "off"}`} /> {status}
         </div>
@@ -387,6 +392,12 @@ export default function App() {
       <PluginsPanel
         open={pluginsOpen}
         onClose={() => setPluginsOpen(false)}
+        codexHome={codexHome}
+        onStatus={setStatus}
+      />
+      <SearchPanel
+        open={searchOpen}
+        onClose={() => setSearchOpen(false)}
         codexHome={codexHome}
         onStatus={setStatus}
       />

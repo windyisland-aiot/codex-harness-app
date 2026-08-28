@@ -288,6 +288,67 @@ export function pluginsAddSkillDir(
   });
 }
 
+// --- T15 联网搜索 ---
+
+export interface SearchResult {
+  title: string;
+  url: string;
+  score: number | null;
+  content: string;
+}
+export interface SearchResponse {
+  query: string;
+  results: SearchResult[];
+}
+
+/** 直接执行一次网页搜索（provider=tavily|serper，baseUrl 可指向内部网关/mock）。 */
+export function searchExecute(input: {
+  query: string;
+  provider?: string;
+  apiKey?: string;
+  baseUrl?: string;
+  maxResults?: number;
+}): Promise<SearchResponse> {
+  return invoke<SearchResponse>("search_execute", {
+    query: input.query,
+    provider: input.provider ?? null,
+    api_key: input.apiKey ?? null,
+    base_url: input.baseUrl ?? null,
+    max_results: input.maxResults ?? 5,
+  });
+}
+
+export interface SearchMcpStatus {
+  registered: boolean;
+  command?: string;
+  args?: string[];
+  env_keys?: string[];
+  env_vars?: string[];
+  enabled?: boolean;
+}
+export interface SearchStatus {
+  tavily: SearchMcpStatus;
+  serper: SearchMcpStatus;
+}
+
+/** 注册 `[mcp_servers.tavily|serper]`（合并写入 config.toml）。 */
+export function searchRegisterMcp(
+  codexHome: string,
+  provider: string,
+  apiKey?: string
+): Promise<McpServerConfig> {
+  return invoke<McpServerConfig>("search_register_mcp", {
+    codex_home: codexHome,
+    provider,
+    api_key: apiKey ?? null,
+  });
+}
+
+/** 回读搜索 MCP 注册状态。 */
+export function searchStatus(codexHome: string): Promise<SearchStatus> {
+  return invoke<SearchStatus>("search_status", { codex_home: codexHome });
+}
+
 /** 从通知中抽取某个 method 携带的文本增量（用于流式渲染）。 */
 export function textDelta(e: AppEvent): string | null {
   if (e.method === "item/agentMessage/delta") {
