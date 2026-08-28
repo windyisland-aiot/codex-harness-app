@@ -23,6 +23,7 @@ use serde::{Deserialize, Serialize};
 
 /// 一条会话消息。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct SessionMsg {
     pub seq: i64,
     pub role: String,
@@ -31,6 +32,7 @@ pub struct SessionMsg {
 
 /// 会话元数据。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct SessionMeta {
     pub id: String,
     pub title: String,
@@ -43,6 +45,7 @@ pub struct SessionMeta {
 
 /// 会话详情（元数据 + 完整消息）。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct SessionDetail {
     pub meta: SessionMeta,
     pub messages: Vec<SessionMsg>,

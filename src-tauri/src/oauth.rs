@@ -56,7 +56,7 @@ pub async fn feishu_oauth_app_token(
         let client = build_client(params);
         let t = client.app_access_token().map_err(|e| e.to_string())?;
         Ok::<serde_json::Value, String>(serde_json::json!({
-            "app_access_token": t.token,
+            "appAccessToken": t.token,
             "expire": t.expire,
             "msg": t.msg,
         }))

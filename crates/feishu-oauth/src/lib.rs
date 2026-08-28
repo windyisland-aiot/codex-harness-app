@@ -99,6 +99,7 @@ pub struct UserAccessToken {
 
 /// 换取到的 token 视图（带本地过期时间戳，便于自动刷新判断）。
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct TokenBundle {
     pub access_token: String,
     pub refresh_token: String,

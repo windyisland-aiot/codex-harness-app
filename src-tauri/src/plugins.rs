@@ -65,8 +65,8 @@ pub async fn plugins_list(
         Ok::<serde_json::Value, String>(serde_json::json!({
             "skills": skills_json,
             "plugins": plugins_json,
-            "bundled_skills_enabled": cfg.bundled_skills_enabled.unwrap_or(true),
-            "skills_include_instructions": cfg.skills_include_instructions,
+            "bundledSkillsEnabled": cfg.bundled_skills_enabled.unwrap_or(true),
+            "skillsIncludeInstructions": cfg.skills_include_instructions,
         }))
     })
     .await

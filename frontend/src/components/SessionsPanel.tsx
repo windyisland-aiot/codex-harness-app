@@ -174,7 +174,7 @@ export default function SessionsPanel({
                         {s.title || s.id}
                       </span>
                       <span className="cfg-mono">
-                        {new Date(s.updated_at * 1000).toLocaleString()} · {s.provider}/{s.model}
+                        {new Date(s.updatedAt * 1000).toLocaleString()} · {s.provider}/{s.model}
                       </span>
                     </div>
                     <div className="cfg-item-actions">

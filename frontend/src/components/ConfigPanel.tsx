@@ -7,10 +7,10 @@ import type { AppConfig, ProviderConfig, McpServerConfig } from "../codexClient"
 
 const EMPTY_CFG: AppConfig = {
   model: "",
-  model_provider: "",
-  approval_policy: "on-request",
-  model_providers: [],
-  mcp_servers: [],
+  modelProvider: "",
+  approvalPolicy: "on-request",
+  modelProviders: [],
+  mcpServers: [],
 };
 
 const APPROVAL_POLICIES = ["never", "on-request", "on-failure"];
@@ -48,46 +48,28 @@ export default function ConfigPanel({
   }
 
   function close() {
-    if (dirty && !window.confirm("配置有未保存的改动，确定关闭？")) return;
     setLoaded(false);
-    setDirty(false);
     onClose();
   }
 
-  async function save() {
-    setSaving(true);
-    try {
-      await codex.configWrite(codexHome, cfg);
-      setDirty(false);
-      setLoaded(false);
-      onSaved(cfg);
-      onStatus("配置已保存 · 重启 app-server 后生效");
-      onClose();
-    } catch (e) {
-      onStatus(`保存配置失败: ${e}`);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  function patch(p: Partial<AppConfig>) {
-    setCfg((c) => ({ ...c, ...p }));
+  function patch(delta: Partial<AppConfig>) {
+    setCfg((c) => ({ ...c, ...delta }));
     setDirty(true);
   }
 
   function setProvider(i: number, p: Partial<ProviderConfig>) {
     setCfg((c) => {
-      const next = c.model_providers.slice();
+      const next = c.modelProviders.slice();
       next[i] = { ...next[i], ...p };
-      return { ...c, model_providers: next };
+      return { ...c, modelProviders: next };
     });
     setDirty(true);
   }
 
   function delProvider(i: number) {
     setCfg((c) => {
-      const next = c.model_providers.filter((_, k) => k !== i);
-      return { ...c, model_providers: next };
+      const next = c.modelProviders.filter((_, k) => k !== i);
+      return { ...c, modelProviders: next };
     });
     setDirty(true);
   }
@@ -95,9 +77,9 @@ export default function ConfigPanel({
   function addProvider() {
     setCfg((c) => ({
       ...c,
-      model_providers: [
-        ...c.model_providers,
-        { id: `provider-${Date.now()}`, name: "", base_url: "", env_key: "", wire_api: "responses" },
+      modelProviders: [
+        ...c.modelProviders,
+        { id: `provider-${Date.now()}`, name: "", baseUrl: "", envKey: "", wireApi: "responses" },
       ],
     }));
     setDirty(true);
@@ -105,24 +87,24 @@ export default function ConfigPanel({
 
   function setMcp(i: number, p: Partial<McpServerConfig>) {
     setCfg((c) => {
-      const next = c.mcp_servers.slice();
+      const next = c.mcpServers.slice();
       next[i] = { ...next[i], ...p };
-      return { ...c, mcp_servers: next };
+      return { ...c, mcpServers: next };
     });
     setDirty(true);
   }
 
   function delMcp(i: number) {
-    setCfg((c) => ({ ...c, mcp_servers: c.mcp_servers.filter((_, k) => k !== i) }));
+    setCfg((c) => ({ ...c, mcpServers: c.mcpServers.filter((_, k) => k !== i) }));
     setDirty(true);
   }
 
   function addMcp() {
     setCfg((c) => ({
       ...c,
-      mcp_servers: [
-        ...c.mcp_servers,
-        { id: `mcp-${Date.now()}`, command: "", args: [], env: [], env_vars: [], enabled: true },
+      mcpServers: [
+        ...c.mcpServers,
+        { id: `mcp-${Date.now()}`, command: "", args: [], env: [], envVars: [], enabled: true },
       ],
     }));
     setDirty(true);
@@ -131,18 +113,18 @@ export default function ConfigPanel({
   /** T12：一键注册飞书 MCP server（默认 lark-openapi-mcp，stdio）。 */
   function addFeishu() {
     setCfg((c) => {
-      const exists = c.mcp_servers.some((m) => m.id === "feishu");
+      const exists = c.mcpServers.some((m) => m.id === "feishu");
       if (exists) return c;
       return {
         ...c,
-        mcp_servers: [
-          ...c.mcp_servers,
+        mcpServers: [
+          ...c.mcpServers,
           {
             id: "feishu",
             command: "lark-openapi-mcp",
             args: ["--mode=stdio"],
             env: ["FEISHU_APP_ID=", "FEISHU_APP_SECRET="],
-            env_vars: ["FEISHU_USER_ACCESS_TOKEN"],
+            envVars: ["FEISHU_USER_ACCESS_TOKEN"],
             enabled: true,
           },
         ],
@@ -152,184 +134,209 @@ export default function ConfigPanel({
   }
 
   return (
-    <div className="cfg-backdrop" onClick={close}>
-      <div className="cfg-panel" onClick={(e) => e.stopPropagation()}>
-        <div className="cfg-head">
-          <h2>配置面板</h2>
-          <button className="cfg-close" onClick={close} aria-label="关闭">
-            ×
-          </button>
-        </div>
-        <div className="cfg-body">
-          <section className="cfg-field">
+    <div className="modal-backdrop" onClick={close}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <header>
+          <h3>配置面板</h3>
+          <button onClick={close}>×</button>
+        </header>
+
+        <div className="cfg-grid">
+          <section>
             <label>默认模型（model）</label>
             <input
               value={cfg.model}
               onChange={(e) => patch({ model: e.target.value })}
-              placeholder="如 gpt-4.1 / deepseek-chat"
+              placeholder="gpt-4.1 / deepseek-chat / …"
             />
           </section>
-
-          <div className="cfg-grid">
-            <section className="cfg-field">
-              <label>模型提供商（model_provider）</label>
-              <select
-                value={cfg.model_provider}
-                onChange={(e) => patch({ model_provider: e.target.value })}
-              >
-                <option value="">— 未选择 —</option>
-                {cfg.model_providers.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.id}（{p.name || "未命名"}）
-                  </option>
-                ))}
-              </select>
-            </section>
-            <section className="cfg-field">
-              <label>审批策略（approval_policy）</label>
-              <select
-                value={cfg.approval_policy}
-                onChange={(e) => patch({ approval_policy: e.target.value })}
-              >
-                {APPROVAL_POLICIES.map((a) => (
-                  <option key={a} value={a}>
-                    {a}
-                  </option>
-                ))}
-              </select>
-            </section>
-          </div>
-
-          <section className="cfg-section">
-            <div className="cfg-sec-head">
-              <h3>模型提供商</h3>
-              <button className="cfg-add" onClick={addProvider}>
-                ＋ 添加
-              </button>
-            </div>
-            {cfg.model_providers.length === 0 && <p className="cfg-empty">暂无</p>}
-            {cfg.model_providers.map((p, i) => (
-              <div key={i} className="cfg-card">
-                <div className="cfg-card-head">
-                  <input
-                    className="cfg-id"
-                    value={p.id}
-                    onChange={(e) => setProvider(i, { id: e.target.value })}
-                    placeholder="id（如 deepseek）"
-                  />
-                  <button className="cfg-del" onClick={() => delProvider(i)}>
-                    删除
-                  </button>
-                </div>
-                <div className="cfg-grid">
-                  <input
-                    value={p.name}
-                    onChange={(e) => setProvider(i, { name: e.target.value })}
-                    placeholder="展示名"
-                  />
-                  <select
-                    value={p.wire_api}
-                    onChange={(e) => setProvider(i, { wire_api: e.target.value })}
-                  >
-                    <option value="responses">responses</option>
-                    <option value="chat">chat</option>
-                  </select>
-                </div>
-                <input
-                  className="cfg-full"
-                  value={p.base_url}
-                  onChange={(e) => setProvider(i, { base_url: e.target.value })}
-                  placeholder="base_url（含 /v1）"
-                />
-                <input
-                  className="cfg-full"
-                  value={p.env_key}
-                  onChange={(e) => setProvider(i, { env_key: e.target.value })}
-                  placeholder="env_key（API key 所在环境变量，如 DEEPSEEK_API_KEY）"
-                />
-              </div>
-            ))}
+          <section>
+            <label>模型提供商（modelProvider）</label>
+            <input
+              list="providers"
+              value={cfg.modelProvider}
+              onChange={(e) => patch({ modelProvider: e.target.value })}
+              placeholder="openai / 自定义 id"
+            />
+            <datalist id="providers">
+              {cfg.modelProviders.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </datalist>
           </section>
+          <section>
+            <label>审批策略（approvalPolicy）</label>
+            <select
+              value={cfg.approvalPolicy}
+              onChange={(e) => patch({ approvalPolicy: e.target.value })}
+            >
+              {APPROVAL_POLICIES.map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
+            </select>
+          </section>
+        </div>
 
-          <section className="cfg-section">
-            <div className="cfg-sec-head">
-              <h3>MCP Server</h3>
-              <div>
-                <button className="cfg-add" onClick={addFeishu} title="注册飞书 lark-openapi-mcp">
-                  ＋ 飞书
-                </button>{" "}
-                <button className="cfg-add" onClick={addMcp}>
-                  ＋ 添加
+        <div className="cfg-section">
+          <div className="cfg-section-header">
+            <h4>模型提供商列表</h4>
+            <button className="cfg-btn" onClick={addProvider}>
+              ＋ 新增
+            </button>
+          </div>
+          {cfg.modelProviders.length === 0 && <p className="cfg-empty">暂无</p>}
+          {cfg.modelProviders.map((p, i) => (
+            <div key={p.id} className="cfg-card">
+              <div className="cfg-row">
+                <input
+                  value={p.id}
+                  className="cfg-col-id"
+                  onChange={(e) => setProvider(i, { id: e.target.value })}
+                  placeholder="provider id（唯一，对应 config.toml [model_providers.<id>]）"
+                />
+                <input
+                  value={p.name}
+                  className="cfg-col-name"
+                  onChange={(e) => setProvider(i, { name: e.target.value })}
+                  placeholder="显示名（如 DeepSeek）"
+                />
+                <select
+                  value={p.wireApi}
+                  className="cfg-col-wire"
+                  onChange={(e) => setProvider(i, { wireApi: e.target.value })}
+                >
+                  <option value="responses">responses</option>
+                  <option value="chat">chat_completions</option>
+                </select>
+                <button className="cfg-btn danger" onClick={() => delProvider(i)}>
+                  删
                 </button>
               </div>
-            </div>
-            {cfg.mcp_servers.length === 0 && <p className="cfg-empty">暂无</p>}
-            {cfg.mcp_servers.map((m, i) => (
-              <div key={i} className="cfg-card">
-                <div className="cfg-card-head">
-                  <input
-                    className="cfg-id"
-                    value={m.id}
-                    onChange={(e) => setMcp(i, { id: e.target.value })}
-                    placeholder="id（如 feishu）"
-                  />
-                  <label className="cfg-check">
-                    <input
-                      type="checkbox"
-                      checked={m.enabled}
-                      onChange={(e) => setMcp(i, { enabled: e.target.checked })}
-                    />
-                    启用
-                  </label>
-                  <button className="cfg-del" onClick={() => delMcp(i)}>
-                    删除
-                  </button>
-                </div>
+              <div className="cfg-row">
                 <input
-                  className="cfg-full"
-                  value={m.command}
-                  onChange={(e) => setMcp(i, { command: e.target.value })}
-                  placeholder="command（如 lark-openapi-mcp）"
+                  className="cfg-col-3"
+                  value={p.baseUrl}
+                  onChange={(e) => setProvider(i, { baseUrl: e.target.value })}
+                  placeholder="baseUrl（含 /v1）"
                 />
                 <input
-                  className="cfg-full"
-                  value={m.args.join(" ")}
+                  className="cfg-col-3"
+                  value={p.envKey}
+                  onChange={(e) => setProvider(i, { envKey: e.target.value })}
+                  placeholder="envKey（API key 所在环境变量，如 DEEPSEEK_API_KEY）"
+                />
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="cfg-section">
+          <div className="cfg-section-header">
+            <h4>MCP Server 列表</h4>
+            <button className="cfg-btn" onClick={addMcp}>
+              ＋ 新增
+            </button>
+            <button className="cfg-btn" onClick={addFeishu}>
+              ✈ 加飞书 MCP
+            </button>
+          </div>
+          {cfg.mcpServers.length === 0 && <p className="cfg-empty">暂无</p>}
+          {cfg.mcpServers.map((m, i) => (
+            <div key={m.id} className="cfg-card">
+              <div className="cfg-row">
+                <input
+                  value={m.id}
+                  className="cfg-col-id"
+                  onChange={(e) => setMcp(i, { id: e.target.value })}
+                  placeholder="mcp id（唯一）"
+                />
+                <input
+                  value={m.command}
+                  className="cfg-col-name"
+                  onChange={(e) => setMcp(i, { command: e.target.value })}
+                  placeholder="可执行文件（如 lark-openapi-mcp）"
+                />
+                <label className="cfg-col-wire">
+                  <input
+                    type="checkbox"
+                    checked={m.enabled}
+                    onChange={(e) => setMcp(i, { enabled: e.target.checked })}
+                  />
+                  &nbsp;enabled
+                </label>
+                <button className="cfg-btn danger" onClick={() => delMcp(i)}>
+                  删
+                </button>
+              </div>
+              <div className="cfg-row">
+                <textarea
+                  className="cfg-col-3"
+                  value={m.args.join("\n")}
                   onChange={(e) =>
-                    setMcp(i, { args: e.target.value.split(/\s+/).filter(Boolean) })
+                    setMcp(i, {
+                      args: e.target.value.split("\n").map((s) => s.trim()).filter(Boolean),
+                    })
                   }
-                  placeholder="args（空格分隔，如 --mode=stdio）"
+                  rows={2}
+                  placeholder="args（每行一个）"
                 />
                 <textarea
-                  className="cfg-full cfg-env"
+                  className="cfg-col-3"
                   value={m.env.join("\n")}
                   onChange={(e) =>
                     setMcp(i, {
                       env: e.target.value.split("\n").map((s) => s.trim()).filter(Boolean),
                     })
                   }
-                  placeholder={"env（每行 KEY=value，注入到 MCP 进程）：\nFEISHU_APP_ID=\nFEISHU_APP_SECRET="}
-                  rows={3}
-                />
-                <input
-                  className="cfg-full"
-                  value={m.env_vars.join("\n")}
-                  onChange={(e) =>
-                    setMcp(i, {
-                      env_vars: e.target.value.split("\n").map((s) => s.trim()).filter(Boolean),
-                    })
-                  }
-                  placeholder="env_vars（每行一个透传的环境变量名，如 FEISHU_USER_ACCESS_TOKEN）"
+                  rows={2}
+                  placeholder="env（每行一个 KEY=value，直接注入）"
                 />
               </div>
-            ))}
-          </section>
+              <div className="cfg-row">
+                <textarea
+                  className="cfg-col-full"
+                  value={m.envVars.join("\n")}
+                  onChange={(e) =>
+                    setMcp(i, {
+                      envVars: e.target.value.split("\n").map((s) => s.trim()).filter(Boolean),
+                    })
+                  }
+                  rows={2}
+                  placeholder="envVars（每行一个透传的环境变量名，如 FEISHU_USER_ACCESS_TOKEN）"
+                />
+              </div>
+            </div>
+          ))}
         </div>
-        <div className="cfg-foot">
-          <span className="cfg-hint">保存后需重启 app-server 生效。</span>
-          <button className="cfg-save" onClick={save} disabled={saving}>
-            {saving ? "保存中…" : "保存配置"}
+
+        <footer className="cfg-footer">
+          <span>
+            {dirty ? "⚠️ 有未保存的修改" : "✅ 配置已同步"}（保存后需重启 app-server 生效）
+          </span>
+          <button
+            className="cfg-btn primary"
+            disabled={saving}
+            onClick={async () => {
+              setSaving(true);
+              try {
+                await codex.configWrite(codexHome, cfg);
+                onSaved(cfg);
+                setDirty(false);
+                onStatus("✅ 配置已写入 config.toml，重启 app-server 生效");
+              } catch (e) {
+                onStatus(`保存配置失败: ${e}`);
+              } finally {
+                setSaving(false);
+              }
+            }}
+          >
+            {saving ? "保存中…" : "保存"}
           </button>
-        </div>
+        </footer>
       </div>
     </div>
   );

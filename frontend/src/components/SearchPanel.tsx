@@ -95,8 +95,8 @@ export default function SearchPanel({
             {label} · {s.registered ? "已注册" : "未注册"}
           </span>
         </div>
-        {s.registered && s.env_keys && s.env_keys.length > 0 && (
-          <div className="cfg-mono">env: {s.env_keys.join(", ")}</div>
+        {s.registered && s.envKeys && s.envKeys.length > 0 && (
+          <div className="cfg-mono">env: {s.envKeys.join(", ")}</div>
         )}
       </div>
     );

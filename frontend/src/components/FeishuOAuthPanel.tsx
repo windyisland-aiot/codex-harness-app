@@ -70,15 +70,15 @@ export default function FeishuOAuthPanel({
   }
 
   async function doRefresh() {
-    if (!bundle?.refresh_token) {
+    if (!bundle?.refreshToken) {
       onStatus("当前无 refresh_token，请先完成授权");
       return;
     }
     setBusy(true);
     try {
-      const b = await codex.feishuRefresh(params(), bundle.refresh_token);
+      const b = await codex.feishuRefresh(params(), bundle.refreshToken);
       setBundle(b);
-      const exp = new Date(b.exp_ts * 1000).toLocaleString();
+      const exp = new Date(b.expTs * 1000).toLocaleString();
       onStatus(`✅ 已刷新 token · 新过期时间 ${exp}（token 滚动更新）`);
     } catch (e) {
       onStatus(`❌ 刷新失败: ${e}`);
@@ -89,7 +89,7 @@ export default function FeishuOAuthPanel({
 
   function copy() {
     if (!bundle) return;
-    navigator.clipboard?.writeText(bundle.access_token).then(() => {
+    navigator.clipboard?.writeText(bundle.accessToken).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1200);
     });
@@ -172,15 +172,15 @@ export default function FeishuOAuthPanel({
             {bundle ? (
               <div className="cfg-card oauth-token">
                 <p>
-                  状态：已授权 · token_type={bundle.token_type} · scope=
+                  状态：已授权 · token_type={bundle.tokenType} · scope=
                   {bundle.scope || "—"}
                 </p>
-                <p>过期时间：{new Date(bundle.exp_ts * 1000).toLocaleString()}</p>
+                <p>过期时间：{new Date(bundle.expTs * 1000).toLocaleString()}</p>
                 <textarea
                   className="cfg-full"
                   readOnly
                   rows={2}
-                  value={bundle.access_token}
+                  value={bundle.accessToken}
                 />
                 <div className="cfg-row">
                   <button className="cfg-add" onClick={doRefresh} disabled={busy}>

@@ -41,6 +41,7 @@ impl SearchProvider {
 
 /// 一条搜索结果（供“来源展示”）。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct SearchResult {
     pub title: String,
     pub url: String,
@@ -52,6 +53,7 @@ pub struct SearchResult {
 
 /// 一次搜索的聚合返回。
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct SearchResponse {
     pub query: String,
     pub results: Vec<SearchResult>,

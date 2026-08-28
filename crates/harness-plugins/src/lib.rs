@@ -16,6 +16,7 @@ use std::path::{Path, PathBuf};
 
 /// 一个被发现的 skill。
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct SkillInfo {
     /// skill 名称（来自 SKILL.md frontmatter，缺省取目录名）。
     pub name: String,
@@ -27,6 +28,7 @@ pub struct SkillInfo {
 
 /// 一个被发现的插件。
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 pub struct PluginInfo {
     /// 插件 id（目录名）。
     pub id: String,

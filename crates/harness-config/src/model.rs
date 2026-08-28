@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 /// 面向配置面板的归一化应用配置（对应 codex config.toml 的可管理字段）。
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AppConfig {
     /// 默认模型名。
     pub model: String,
@@ -27,6 +28,7 @@ pub struct AppConfig {
 
 /// 一个模型提供商。
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProviderConfig {
     /// 唯一 id（即 `[model_providers.<id>]` 的键）。
     pub id: String,
@@ -42,6 +44,7 @@ pub struct ProviderConfig {
 
 /// 一个 MCP server。
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct McpServerConfig {
     /// 唯一 id（即 `[mcp_servers.<id>]` 的键）。
     pub id: String,
@@ -60,6 +63,7 @@ pub struct McpServerConfig {
 /// T14：一条 skill 启用/停用规则（`[skills.config]`）。
 /// 选择器为 name 或 path 二选一（codex `SkillConfig` 不允许同时出现）。
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SkillRule {
     /// 按名称选择（`name = ...`）。
     pub name: String,
@@ -71,6 +75,7 @@ pub struct SkillRule {
 
 /// T14：一条插件开关规则（`[plugins.<id>] enabled`）。
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PluginRule {
     /// 插件 id。
     pub id: String,

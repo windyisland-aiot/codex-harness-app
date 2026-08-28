@@ -87,8 +87,8 @@ export default function PluginsPanel({
         codexHome,
         skills: l.skills.map((s) => ({ name: s.name, path: s.dir, enabled: s.enabled })),
         plugins,
-        bundledSkillsEnabled: l.bundled_skills_enabled,
-        skillsIncludeInstructions: l.skills_include_instructions,
+        bundledSkillsEnabled: l.bundledSkillsEnabled,
+        skillsIncludeInstructions: l.skillsIncludeInstructions,
       });
       onStatus("技能/插件配置已保存（重启 app-server 生效）");
     } catch (e) {
@@ -163,7 +163,7 @@ export default function PluginsPanel({
             <label className="cfg-check">
               <input
                 type="checkbox"
-                checked={list.bundled_skills_enabled}
+                checked={list.bundledSkillsEnabled}
                 onChange={(e) => {
                   const next = { ...list, bundled_skills_enabled: e.target.checked };
                   setList(next);

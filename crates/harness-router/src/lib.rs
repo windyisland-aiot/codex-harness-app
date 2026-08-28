@@ -61,6 +61,7 @@ pub struct RouteRequest {
 
 /// 路由结果。
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RouteDecision {
     pub provider: String,
     pub model: String,

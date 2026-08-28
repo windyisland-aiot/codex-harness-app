@@ -1,5 +1,8 @@
 //! T06 基础对话 UI：指令输入、流式输出（Markdown 渲染）、会话列表。
 //! T08 审批面板：命令/文件变更需审批时弹出确认/拒绝。
+//!
+//! ⚠️  运行时路径：由 `codex.resolvePaths()` 向 Tauri 后端请求跨平台的
+//! codexHome / codexBin / defaultCwd。禁止写死 Linux `/workspace/...`。
 import { useEffect, useRef, useState } from "react";
 import Markdown from "./components/Markdown";
 import ApprovalPanel from "./components/ApprovalPanel";
@@ -11,7 +14,13 @@ import PluginsPanel from "./components/PluginsPanel";
 import SearchPanel from "./components/SearchPanel";
 import SessionsPanel from "./components/SessionsPanel";
 import * as codex from "./codexClient";
-import type { ApprovalRequest, AppConfig, ProviderConfig, RouteDecision } from "./codexClient";
+import type {
+  ApprovalRequest,
+  AppConfig,
+  ProviderConfig,
+  RouteDecision,
+  ResolvedPaths,
+} from "./codexClient";
 import type { ModelPreset } from "./models";
 
 interface Msg {
@@ -24,14 +33,14 @@ interface Session {
   title: string;
 }
 
-const DEFAULT_CODEX_BIN = "/workspace/codex/codex-rs/target/debug/codex";
-const DEFAULT_CODEX_HOME = "/workspace/codex-harness-app/.codex-test";
-const codexBin = DEFAULT_CODEX_BIN;
 const POLL_MS = 200;
 
 export default function App() {
-  // 会话/模型参数：T09 配置面板加载并覆盖 model/provider。
-  const codexHome = DEFAULT_CODEX_HOME;
+  // 运行时路径：渲染一次后由 harness_resolve_paths 异步填入（跨平台安全）。
+  const [paths, setPaths] = useState<ResolvedPaths | null>(null);
+  const codexHome = paths?.codexHome ?? "";
+  const cwd = paths?.defaultCwd ?? "";
+
   const [model, setModel] = useState("mock-model");
   const [provider, setProvider] = useState("mock");
   const [cfgOpen, setCfgOpen] = useState(false);
@@ -39,11 +48,10 @@ export default function App() {
   const [pluginsOpen, setPluginsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [sessionsOpen, setSessionsOpen] = useState(false);
-  const cwd = "/workspace/codex-harness-app";
 
   const [connected, setConnected] = useState(false);
   const [pending, setPending] = useState(false);
-  const [status, setStatus] = useState("未连接");
+  const [status, setStatus] = useState("解析运行路径中…");
 
   const [sessions, setSessions] = useState<Session[]>([]);
   const [activeThread, setActiveThread] = useState<string | null>(null);
@@ -73,34 +81,45 @@ export default function App() {
     msgsRef.current = messages;
   }, [messages]);
 
-  // 自动连接 app-server
+  // 启动首步：先解析运行时路径，再连接 app-server、加载历史会话。
+  // 任何一步失败都会把错误写到状态栏，不会静默。
   useEffect(() => {
-    codex
-      .start({ codexBin, codexHome })
-      .then((ua) => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const p = await codex.resolvePaths();
+        if (cancelled) return;
+        setPaths(p);
+        setStatus(`路径就绪 · codexHome=${p.codexHome}`);
+
+        // 连接 codex app-server
+        const ua = await codex.start({ codexBin: p.codexBin, codexHome: p.codexHome });
+        if (cancelled) return;
         setConnected(true);
         setStatus(`已连接 · ${ua}`);
-      })
-      .catch((e) => setStatus(`连接失败: ${e}`));
+
+        // T16：载入历史会话列表
+        try {
+          const l = await codex.sessionList(p.codexHome);
+          if (!cancelled) setSessions(l.map((m) => ({ id: m.id, title: m.title || m.id })));
+        } catch {
+          /* 空目录首次运行很常见，不提示错误 */
+        }
+      } catch (e) {
+        if (!cancelled) setStatus(`初始化失败: ${e}`);
+      }
+    })();
     return () => {
+      cancelled = true;
       codex.stop().catch(() => {});
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // T16 启动时加载已持久化的历史会话列表。
-  useEffect(() => {
-    codex
-      .sessionList(codexHome)
-      .then((l) => setSessions(l.map((m) => ({ id: m.id, title: m.title || m.id }))))
-      .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // T16 自动持久化当前会话：消息变化即落库（含流式增量汇聚后的最终文本）。
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    if (!activeThread) return;
+    if (!activeThread || !codexHome) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
       const msgs = msgsRef.current.map((m, i) => ({
@@ -114,7 +133,15 @@ export default function App() {
         "未命名会话";
       const providerUsed = threadProviderRef.current ?? provider;
       codex
-        .sessionSave({ codexHome, id: activeThread, title, provider: providerUsed, model, cwd, messages: msgs })
+        .sessionSave({
+          codexHome,
+          id: activeThread,
+          title,
+          provider: providerUsed,
+          model,
+          cwd,
+          messages: msgs,
+        })
         .then(() => {
           setSessions((prev) => {
             if (prev.some((s) => s.id === activeThread)) return prev;
@@ -127,7 +154,7 @@ export default function App() {
       if (saveTimer.current) clearTimeout(saveTimer.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages, activeThread]);
+  }, [messages, activeThread, codexHome, cwd, model, provider]);
 
   // 轮询流式事件
   useEffect(() => {
@@ -175,7 +202,7 @@ export default function App() {
         if (list.length > 0) {
           setApprovals((prev) => [...prev, ...list]);
         }
-      } catch (e) {
+      } catch {
         // 轮询失败静默，避免打断对话状态。
       }
     }, POLL_MS);
@@ -194,8 +221,8 @@ export default function App() {
   async function send() {
     const text = input.trim();
     if (!text || pending) return;
-    if (!connected) {
-      setStatus("请先连接 app-server");
+    if (!connected || !codexHome) {
+      setStatus("运行路径尚未就绪，请稍后");
       return;
     }
     setPending(true);
@@ -220,7 +247,11 @@ export default function App() {
       }
       let threadId = activeThreadRef.current;
       if (!threadId) {
-        const nid = await codex.threadStart({ model: routeModel, modelProvider: routeProvider, cwd });
+        const nid = await codex.threadStart({
+          model: routeModel,
+          modelProvider: routeProvider,
+          cwd,
+        });
         threadId = nid;
         threadProviderRef.current = routeProvider;
         setActiveThread(nid);
@@ -273,29 +304,33 @@ export default function App() {
 
   function onConfigSaved(c: AppConfig) {
     if (c.model) setModel(c.model);
-    if (c.model_provider) setProvider(c.model_provider);
+    if (c.modelProvider) setProvider(c.modelProvider);
   }
 
   /** T10：把某个内置提供商预设设为当前（持久化到 config.toml），并联动线程。 */
   async function applyProvider(preset: ModelPreset) {
+    if (!codexHome) {
+      setStatus("codexHome 尚未就绪");
+      return;
+    }
     const nextModel = preset.models.includes(model) ? model : preset.default_model;
     setProvider(preset.id);
     setModel(nextModel);
     // 持久化 provider 预设到 config.toml
     try {
       const cfg = await codex.configRead(codexHome);
-      const idx = cfg.model_providers.findIndex((p) => p.id === preset.id);
+      const idx = cfg.modelProviders.findIndex((p) => p.id === preset.id);
       const prov: ProviderConfig = {
         id: preset.id,
         name: preset.name,
-        base_url: preset.base_url,
-        env_key: preset.env_key,
-        wire_api: preset.wire_api,
+        baseUrl: preset.base_url,
+        envKey: preset.env_key,
+        wireApi: preset.wire_api,
       };
-      if (idx >= 0) cfg.model_providers[idx] = prov;
-      else cfg.model_providers.push(prov);
+      if (idx >= 0) cfg.modelProviders[idx] = prov;
+      else cfg.modelProviders.push(prov);
       cfg.model = nextModel;
-      cfg.model_provider = preset.id;
+      cfg.modelProvider = preset.id;
       await codex.configWrite(codexHome, cfg);
       setStatus(`已切换到 ${preset.name} · ${nextModel}`);
     } catch (e) {
@@ -390,7 +425,16 @@ export default function App() {
         <ApprovalPanel approvals={approvals} onRespond={respondApproval} />
         <section className="msglist">
           {messages.length === 0 && (
-            <div className="placeholder">输入指令开始与 Agent 对话</div>
+            <div className="placeholder">
+              输入指令开始与 Agent 对话
+              {paths && (
+                <div className="muted">
+                  codexHome: {paths.codexHome}
+                  <br />
+                  cwd: {paths.defaultCwd}
+                </div>
+              )}
+            </div>
           )}
           {messages.map((m, i) => (
             <div key={i} className={`msg ${m.role}`}>
@@ -428,13 +472,13 @@ export default function App() {
               }
             }}
             placeholder="输入指令（Enter 发送）"
-            disabled={pending || running}
+            disabled={pending || running || !paths}
           />
-          <button onClick={send} disabled={pending || running}>
+          <button onClick={send} disabled={pending || running || !paths}>
             发送
           </button>
           <span className="cfg">
-            model={model} provider={provider} · {cwd}
+            model={model} provider={provider} · cwd={cwd || "…"}
           </span>
         </footer>
       </main>
