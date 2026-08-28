@@ -50,6 +50,11 @@ export function turnStart(input: {
   });
 }
 
+/** T10：切换当前线程的模型（覆盖随后的 turn；provider 不变）。 */
+export function threadSetModel(threadId: string, model: string): Promise<void> {
+  return invoke("appserver_thread_set_model", { thread_id: threadId, model });
+}
+
 /** 取走自上次以来缓冲的通知。 */
 export function pollEvents(): Promise<AppEvent[]> {
   return invoke<AppEvent[]>("appserver_poll_events");

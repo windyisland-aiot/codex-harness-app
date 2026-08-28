@@ -403,3 +403,22 @@ body {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* T10 多模型切换 */
+.model-switch {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.model-switch select {
+  background: #1d232e;
+  color: #e6edf3;
+  border: 1px solid #2c3644;
+  border-radius: 8px;
+  padding: 8px 8px;
+  font-size: 12px;
+  max-width: 130px;
+}
+.model-switch select:disabled {
+  opacity: 0.5;
+}

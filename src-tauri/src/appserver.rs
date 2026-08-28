@@ -148,6 +148,25 @@ pub async fn appserver_poll_events(state: State<'_, CodexHandle>) -> Result<Vec<
     .map_err(|e| e.to_string())?
 }
 
+/// 更新现有线程的模型，覆盖随后的 turn（T10 多模型切换）。
+#[tauri::command]
+pub async fn appserver_thread_set_model(
+    state: State<'_, CodexHandle>,
+    thread_id: String,
+    model: String,
+) -> Result<(), String> {
+    let st = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut guard = st.client.lock().map_err(|e| e.to_string())?;
+        let client = guard.as_mut().ok_or("app-server 未启动")?;
+        let m = if model.is_empty() { None } else { Some(model.as_str()) };
+        client.thread_settings_update(&thread_id, m, None).map_err(|e| e.to_string())?;
+        Ok::<(), String>(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// 取走待处理的审批请求（`[{id, method, params}, ...]`）。T08 审批面板消费。
 #[tauri::command]
 pub async fn appserver_poll_approvals(state: State<'_, CodexHandle>) -> Result<Vec<Value>, String> {

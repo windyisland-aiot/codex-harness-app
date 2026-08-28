@@ -198,10 +198,14 @@ impl AppServerClient {
     }
 
     /// `initialize` 握手。
+    ///
+    /// 声明 `experimentalApi` 能力，以启用 `thread/settings/update` 等
+    /// experimental 方法（T10 多模型切换依赖）。
     pub fn initialize(&mut self, name: &str, version: &str) -> Result<Value> {
         let params = serde_json::json!({
             "protocolVersion": 1,
             "clientInfo": { "name": name, "version": version },
+            "capabilities": { "experimentalApi": true, "requestAttestation": false },
         });
         self.call("initialize", params, None)
     }
@@ -275,6 +279,31 @@ impl AppServerClient {
             "input": [{ "type": "text", "text": text, "text_elements": [] }],
         });
         self.call("turn/start", params, None)
+    }
+
+    /// 更新现有线程的设置，覆盖随后的 turn（T10 多模型切换）。
+    ///
+    /// 通过 `thread/settings/update` 的 `model` 覆盖该线程后续 turn 的模型
+    /// （provider 固定为建线程时所用；跨 provider 切换需新开线程）。
+    /// 空的 `model` / `approval_policy` 不写入对应字段，保持线程原样。
+    pub fn thread_settings_update(
+        &mut self,
+        thread_id: &str,
+        model: Option<&str>,
+        approval_policy: Option<&str>,
+    ) -> Result<Value> {
+        let mut params = serde_json::json!({ "threadId": thread_id });
+        if let Some(m) = model {
+            if !m.is_empty() {
+                params["model"] = m.into();
+            }
+        }
+        if let Some(a) = approval_policy {
+            if !a.is_empty() {
+                params["approvalPolicy"] = a.into();
+            }
+        }
+        self.call("thread/settings/update", params, None)
     }
 
     /// 回复服务器主动请求（如审批 `item/commandExecution/requestApproval`）。

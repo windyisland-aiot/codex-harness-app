@@ -4,8 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import Markdown from "./components/Markdown";
 import ApprovalPanel from "./components/ApprovalPanel";
 import ConfigPanel from "./components/ConfigPanel";
+import ModelSwitcher from "./components/ModelSwitcher";
 import * as codex from "./codexClient";
-import type { ApprovalRequest, AppConfig } from "./codexClient";
+import type { ApprovalRequest, AppConfig, ProviderConfig } from "./codexClient";
+import type { ModelPreset } from "./models";
 
 interface Msg {
   role: "user" | "assistant";
@@ -41,6 +43,8 @@ export default function App() {
   const [running, setRunning] = useState(false);
   const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
 
+  // 发送时记录当前线程所用 provider，用于 T10 判断切换是否需新开线程。
+  const threadProviderRef = useRef<string | null>(null);
   const runningRef = useRef(false);
   const activeThreadRef = useRef<string | null>(null);
   const msgsRef = useRef<Msg[]>([]);
@@ -152,6 +156,7 @@ export default function App() {
       if (!threadId) {
         const nid = await codex.threadStart({ model, modelProvider: provider, cwd });
         threadId = nid;
+        threadProviderRef.current = provider;
         setActiveThread(nid);
         setSessions((s) => [
           ...s,
@@ -176,6 +181,56 @@ export default function App() {
   function onConfigSaved(c: AppConfig) {
     if (c.model) setModel(c.model);
     if (c.model_provider) setProvider(c.model_provider);
+  }
+
+  /** T10：把某个内置提供商预设设为当前（持久化到 config.toml），并联动线程。 */
+  async function applyProvider(preset: ModelPreset) {
+    const nextModel = preset.models.includes(model) ? model : preset.default_model;
+    setProvider(preset.id);
+    setModel(nextModel);
+    // 持久化 provider 预设到 config.toml
+    try {
+      const cfg = await codex.configRead(codexHome);
+      const idx = cfg.model_providers.findIndex((p) => p.id === preset.id);
+      const prov: ProviderConfig = {
+        id: preset.id,
+        name: preset.name,
+        base_url: preset.base_url,
+        env_key: preset.env_key,
+        wire_api: preset.wire_api,
+      };
+      if (idx >= 0) cfg.model_providers[idx] = prov;
+      else cfg.model_providers.push(prov);
+      cfg.model = nextModel;
+      cfg.model_provider = preset.id;
+      await codex.configWrite(codexHome, cfg);
+      setStatus(`已切换到 ${preset.name} · ${nextModel}`);
+    } catch (e) {
+      setStatus(`保存提供商失败: ${e}`);
+    }
+    // 若当前线程正是该 provider，则在线切换模型（下个 turn 生效）
+    const tid = activeThreadRef.current;
+    if (tid && threadProviderRef.current === preset.id) {
+      try {
+        await codex.threadSetModel(tid, nextModel);
+      } catch (e) {
+        setStatus(`切换线程模型失败: ${e}`);
+      }
+    }
+  }
+
+  /** T10：同 provider 内切换模型。 */
+  async function applyModel(nextModel: string) {
+    setModel(nextModel);
+    const tid = activeThreadRef.current;
+    if (tid && threadProviderRef.current === provider) {
+      try {
+        await codex.threadSetModel(tid, nextModel);
+        setStatus(`本会话模型已切换为 ${nextModel}`);
+      } catch (e) {
+        setStatus(`切换线程模型失败: ${e}`);
+      }
+    }
   }
 
   return (
@@ -225,6 +280,12 @@ export default function App() {
         </section>
 
         <footer className="inputbar">
+          <ModelSwitcher
+            provider={provider}
+            model={model}
+            onProvider={applyProvider}
+            onModel={applyModel}
+          />
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
