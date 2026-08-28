@@ -21,3 +21,4 @@ harness-appserver = { path = "../crates/appserver" }
 harness-config = { path = "../crates/harness-config" }
 harness-router = { path = "../crates/harness-router" }
 harness-feishu-oauth = { path = "../crates/feishu-oauth" }
+harness-plugins = { path = "../crates/harness-plugins" }

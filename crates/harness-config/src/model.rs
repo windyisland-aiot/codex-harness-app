@@ -15,6 +15,14 @@ pub struct AppConfig {
     pub model_providers: Vec<ProviderConfig>,
     /// 已注册的 MCP server 列表。
     pub mcp_servers: Vec<McpServerConfig>,
+    /// T14：`[skills.bundled] enabled`（缺省不写=开启）。`None` 表示未显式配置。
+    pub bundled_skills_enabled: Option<bool>,
+    /// T14：`[skills] include_instructions`（自动技能指令块）。`None` 表示不显式写。
+    pub skills_include_instructions: Option<bool>,
+    /// T14：`[[skills.config]]` 启用/停用规则（按 name 或 path）。
+    pub skills: Vec<SkillRule>,
+    /// T14：`[plugins.<id>]` 插件开关。
+    pub plugins: Vec<PluginRule>,
 }
 
 /// 一个模型提供商。
@@ -46,5 +54,26 @@ pub struct McpServerConfig {
     /// 透传的环境变量名（序列化为 `env_vars = ["NAME", ...]`，值取当前进程）。
     pub env_vars: Vec<String>,
     /// 是否启用（codex `enabled`，缺省 true）。
+    pub enabled: bool,
+}
+
+/// T14：一条 skill 启用/停用规则（`[skills.config]`）。
+/// 选择器为 name 或 path 二选一（codex `SkillConfig` 不允许同时出现）。
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct SkillRule {
+    /// 按名称选择（`name = ...`）。
+    pub name: String,
+    /// 按目录路径选择（`path = ...`）。
+    pub path: String,
+    /// 是否启用。
+    pub enabled: bool,
+}
+
+/// T14：一条插件开关规则（`[plugins.<id>] enabled`）。
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
+pub struct PluginRule {
+    /// 插件 id。
+    pub id: String,
+    /// 是否启用。
     pub enabled: bool,
 }

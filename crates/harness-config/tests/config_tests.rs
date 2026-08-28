@@ -184,3 +184,57 @@ fn write_creates_file_when_absent() {
     assert!(raw.contains("model = \"grok\""));
     let _ = fs::remove_dir_all(&dir);
 }
+
+/// T14：`[skills]`（bundled/include_instructions/config）与 `[plugins.<id>]` 读写往返。
+#[test]
+fn skills_and_plugins_roundtrip() {
+    use harness_config::{PluginRule, SkillRule};
+
+    let dir = std::env::temp_dir().join(format!("harness-cfg-plugins-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    let home = dir.to_str().unwrap();
+    let cfg = AppConfig {
+        bundled_skills_enabled: Some(false),
+        skills_include_instructions: Some(false),
+        skills: vec![
+            SkillRule {
+                name: "code-review".into(),
+                path: String::new(),
+                enabled: false,
+            },
+            SkillRule {
+                name: String::new(),
+                path: "/opt/skills/git-help".into(),
+                enabled: true,
+            },
+        ],
+        plugins: vec![
+            PluginRule { id: "audit".into(), enabled: false },
+            PluginRule { id: "notify".into(), enabled: true },
+        ],
+        ..Default::default()
+    };
+    harness_config::write(home, &cfg).unwrap();
+    let raw = fs::read_to_string(format!("{home}/config.toml")).unwrap();
+    assert!(raw.contains("include_instructions = false"), "{raw}");
+    assert!(raw.contains("[skills.bundled]"), "{raw}");
+    assert!(raw.contains("enabled = false"), "{raw}");
+    assert!(raw.contains("[plugins.audit]"), "{raw}");
+    assert!(raw.contains("[plugins.notify]"), "{raw}");
+    // enabled=true 的插件默认不写 enabled 字段，但仍应有节存在。
+
+    let back = harness_config::read(home).unwrap();
+    assert_eq!(back.bundled_skills_enabled, Some(false));
+    assert_eq!(back.skills_include_instructions, Some(false));
+    assert_eq!(back.skills.len(), 2);
+    assert_eq!(back.skills[0].name, "code-review");
+    assert!(!back.skills[0].enabled);
+    assert_eq!(back.skills[1].path, "/opt/skills/git-help");
+    assert!(back.skills[1].enabled);
+    assert_eq!(back.plugins.len(), 2);
+    assert_eq!(back.plugins[0].id, "audit");
+    assert!(!back.plugins[0].enabled);
+    assert_eq!(back.plugins[1].id, "notify");
+    assert!(back.plugins[1].enabled);
+    let _ = fs::remove_dir_all(&dir);
+}

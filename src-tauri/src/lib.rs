@@ -6,6 +6,7 @@ mod appserver;
 mod config;
 mod feishu;
 mod oauth;
+mod plugins;
 mod router;
 
 /// 前端调用的最小命令，用于验证前后端 IPC 连通（T04）。
@@ -39,6 +40,9 @@ pub fn run() {
             oauth::feishu_oauth_authorize_url,
             oauth::feishu_oauth_exchange,
             oauth::feishu_oauth_refresh,
+            plugins::plugins_list,
+            plugins::plugins_apply,
+            plugins::plugins_add_skill_dir,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

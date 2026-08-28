@@ -223,6 +223,71 @@ export function feishuRefresh(p: OAuthParams, refreshToken: string): Promise<Tok
   return invoke<TokenBundle>("feishu_oauth_refresh", { params: p, refresh_token: refreshToken });
 }
 
+// --- T14 插件与 Skill 系统 ---
+
+export interface SkillInfo {
+  name: string;
+  description: string;
+  dir: string;
+  enabled: boolean;
+}
+export interface PluginInfo {
+  id: string;
+  name: string;
+  description: string;
+  dir: string;
+  enabled: boolean;
+}
+export interface PluginsList {
+  skills: SkillInfo[];
+  plugins: PluginInfo[];
+  bundled_skills_enabled: boolean;
+  skills_include_instructions: boolean | null;
+}
+
+/** 扫描磁盘 skills/插件，并结合当前配置返回清单。 */
+export function pluginsList(input: {
+  codexHome: string;
+  skillRoots: string[];
+  pluginRoots: string[];
+}): Promise<PluginsList> {
+  return invoke<PluginsList>("plugins_list", {
+    codex_home: input.codexHome,
+    skill_roots: input.skillRoots,
+    plugin_roots: input.pluginRoots,
+  });
+}
+
+/** 写回 skills 规则与插件开关。 */
+export function pluginsApply(input: {
+  codexHome: string;
+  skills: { name: string; path: string; enabled: boolean }[];
+  plugins: Record<string, boolean>;
+  bundledSkillsEnabled?: boolean | null;
+  skillsIncludeInstructions?: boolean | null;
+}): Promise<AppConfig> {
+  return invoke<AppConfig>("plugins_apply", {
+    codex_home: input.codexHome,
+    skills: input.skills,
+    plugins: input.plugins,
+    bundled_skills_enabled: input.bundledSkillsEnabled ?? null,
+    skills_include_instructions: input.skillsIncludeInstructions ?? null,
+  });
+}
+
+/** 追加一个自定义 skill 目录为 path 规则。 */
+export function pluginsAddSkillDir(
+  codexHome: string,
+  dir: string,
+  enabled: boolean
+): Promise<AppConfig> {
+  return invoke<AppConfig>("plugins_add_skill_dir", {
+    codex_home: codexHome,
+    dir,
+    enabled,
+  });
+}
+
 /** 从通知中抽取某个 method 携带的文本增量（用于流式渲染）。 */
 export function textDelta(e: AppEvent): string | null {
   if (e.method === "item/agentMessage/delta") {

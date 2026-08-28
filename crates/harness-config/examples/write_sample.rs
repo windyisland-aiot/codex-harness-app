@@ -20,6 +20,7 @@ fn main() {
             wire_api: "responses".into(),
         }],
         mcp_servers: Vec::new(),
+        ..Default::default()
     };
     harness_config::write(&home, &cfg).expect("write config");
     println!("wrote config.toml to {home}");

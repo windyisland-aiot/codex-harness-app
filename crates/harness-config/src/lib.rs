@@ -13,7 +13,7 @@
 
 pub mod model;
 
-pub use model::{AppConfig, McpServerConfig, ProviderConfig};
+pub use model::{AppConfig, McpServerConfig, PluginRule, ProviderConfig, SkillRule};
 
 use std::path::{Path, PathBuf};
 
@@ -156,6 +156,50 @@ pub fn read(codex_home: &str) -> Result<AppConfig> {
             }
         }
     }
+
+    // T14：`[skills]`（bundled / include_instructions / config）。
+    if let Some(toml::Value::Table(skills)) = table.get("skills") {
+        cfg.skills_include_instructions = match skills.get("include_instructions") {
+            Some(toml::Value::Boolean(b)) => Some(*b),
+            _ => None,
+        };
+        if let Some(toml::Value::Table(bundled)) = skills.get("bundled") {
+            if let Some(toml::Value::Boolean(b)) = bundled.get("enabled") {
+                cfg.bundled_skills_enabled = Some(*b);
+            }
+        }
+        if let Some(toml::Value::Array(config)) = skills.get("config") {
+            for entry in config {
+                if let toml::Value::Table(t) = entry {
+                    let mut rule = SkillRule {
+                        name: conv::get_str(t, "name", "skills.config")?.unwrap_or("").to_string(),
+                        path: conv::get_str(t, "path", "skills.config")?.unwrap_or("").to_string(),
+                        enabled: true,
+                    };
+                    if let Some(toml::Value::Boolean(b)) = t.get("enabled") {
+                        rule.enabled = *b;
+                    }
+                    if !rule.name.is_empty() || !rule.path.is_empty() {
+                        cfg.skills.push(rule);
+                    }
+                }
+            }
+        }
+    }
+
+    // T14：`[plugins.<id>] enabled`。
+    if let Some(toml::Value::Table(plugins)) = table.get("plugins") {
+        for (id, v) in plugins {
+            if let toml::Value::Table(p) = v {
+                let mut enabled = true;
+                if let Some(toml::Value::Boolean(b)) = p.get("enabled") {
+                    enabled = *b;
+                }
+                cfg.plugins.push(PluginRule { id: id.clone(), enabled });
+            }
+        }
+    }
+
     Ok(cfg)
 }
 
@@ -234,6 +278,55 @@ pub fn write(codex_home: &str, cfg: &AppConfig) -> Result<()> {
         servers.insert(m.id.clone(), toml::Value::Table(t));
     }
     table.insert("mcp_servers".to_string(), toml::Value::Table(servers));
+
+    // T14：`[skills]`。
+    let write_skills =
+        cfg.bundled_skills_enabled.is_some() || cfg.skills_include_instructions.is_some() || !cfg.skills.is_empty();
+    if write_skills {
+        let mut skills = toml::map::Map::new();
+        if let Some(v) = cfg.skills_include_instructions {
+            skills.insert("include_instructions".to_string(), toml::Value::Boolean(v));
+        }
+        if let Some(v) = cfg.bundled_skills_enabled {
+            let mut bundled = toml::map::Map::new();
+            bundled.insert("enabled".to_string(), toml::Value::Boolean(v));
+            skills.insert("bundled".to_string(), toml::Value::Table(bundled));
+        }
+        if !cfg.skills.is_empty() {
+            let mut config = Vec::new();
+            for rule in &cfg.skills {
+                if rule.name.is_empty() && rule.path.is_empty() {
+                    continue;
+                }
+                let mut t = toml::map::Map::new();
+                if !rule.name.is_empty() {
+                    t.insert("name".to_string(), toml::Value::String(rule.name.clone()));
+                } else {
+                    t.insert("path".to_string(), toml::Value::String(rule.path.clone()));
+                }
+                t.insert("enabled".to_string(), toml::Value::Boolean(rule.enabled));
+                config.push(toml::Value::Table(t));
+            }
+            skills.insert("config".to_string(), toml::Value::Array(config));
+        }
+        table.insert("skills".to_string(), toml::Value::Table(skills));
+    }
+
+    // T14：`[plugins.<id>] enabled`。
+    if !cfg.plugins.is_empty() {
+        let mut plugins = toml::map::Map::new();
+        for rule in &cfg.plugins {
+            if rule.id.is_empty() {
+                continue;
+            }
+            let mut t = toml::map::Map::new();
+            if !rule.enabled {
+                t.insert("enabled".to_string(), toml::Value::Boolean(false));
+            }
+            plugins.insert(rule.id.clone(), toml::Value::Table(t));
+        }
+        table.insert("plugins".to_string(), toml::Value::Table(plugins));
+    }
 
     let text = toml::to_string(&toml::Value::Table(table))?;
     std::fs::write(&path, text)?;
