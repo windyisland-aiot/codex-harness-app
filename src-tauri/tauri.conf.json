@@ -27,10 +27,25 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["msi"],
+    "targets": ["msi", "nsis"],
     "category": "Productivity",
     "shortDescription": "企业内部 Agent 桌面应用",
     "longDescription": "面向 Windows 的企业内部 Agent 桌面应用：账号密码登录、codex app-server 对话、审批面板、多模型切换与路由、飞书 MCP 与 OAuth、插件/Skill、联网搜索、会话持久化。",
-    "icon": []
+    "icon": [],
+    "windows": {
+      "nsis": {
+        "languages": ["SimpChinese"],
+        "installerIcon": "../icons/icon.png",
+        "artifactName": "Harness-Setup-${version}-${arch}.${ext}"
+      },
+      "wix": {
+        "language": "zh-CN",
+        "artifactName": "Harness-${version}-${arch}.${ext}"
+      },
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper",
+        "silent": true
+      }
+    }
   }
 }

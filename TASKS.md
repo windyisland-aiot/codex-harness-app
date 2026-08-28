@@ -32,7 +32,7 @@
 | T14 | 插件与 Skill 系统 | 加载 openai/skills、openai/plugins 与自定义插件，插件管理界面 | ✅ |
 | T15 | 联网搜索 | 注册 Tavily/Serper MCP，搜索过程与来源展示 | ✅ |
 | T16 | 会话持久化 | SQLite 存历史会话，支持搜索/重命名/恢复 | ✅ |
-| T17 | Windows 安装包 | 生成 Windows .msi/.exe（NSIS/WebView2），校准体积（承接体积结论） |
+| T17 | Windows 安装包 | 生成 Windows .msi/.exe（NSIS/WebView2），校准体积（承接体积结论），CI 上构建并上传 GitHub Release | ✅ |
 
 ## P2 —— 增强与规模化
 

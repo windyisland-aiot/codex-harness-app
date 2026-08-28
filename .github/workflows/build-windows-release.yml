@@ -1,0 +1,164 @@
+name: T17 Windows 安装包构建 & GitHub Release
+
+on:
+  push:
+    tags:
+      - "v*"
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "产物版本号（未填则取标签或 git describe）"
+        required: false
+        default: ""
+      create_release:
+        description: "是否创建 GitHub Release 并上传产物（tags push 时默认是，手动/分支默认否）"
+        type: choice
+        default: "auto"
+        options: ["auto", "yes", "no"]
+        required: false
+
+concurrency:
+  group: t17-windows-installer-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTUP_TOOLCHAIN: stable
+  NODE_VERSION: "20"
+
+jobs:
+  build-windows:
+    name: 构建 Windows 安装包 (.msi / .exe-NSIS)
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: 解析版本号
+        id: version
+        shell: pwsh
+        run: |
+          $v = "${{ github.event.inputs.version }}".Trim()
+          if ([string]::IsNullOrWhiteSpace($v)) {
+            if ($env:GITHUB_REF -like "refs/tags/*") {
+              $v = ($env:GITHUB_REF -replace "^refs/tags/", "")
+            } else {
+              # 无前缀时用短 sha 做快照
+              $v = (git describe --tags --always --dirty=-snapshot)
+            }
+          }
+          # 去前导 v（若有）便于统一；产物名里仍然保留原始输入
+          $canon = $v -replace "^v", ""
+          "version_raw=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "version=$canon" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "version_raw=$v  version=$canon"
+
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: 安装 Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+
+      - name: 缓存 Rust / cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            codex-harness-app -> target
+          cache-on-failure: true
+
+      - name: 前端依赖 & 构建
+        shell: pwsh
+        run: |
+          cd frontend
+          npm ci --no-audit --no-fund
+          npm run build 2>&1 | Select-Object -Last 60
+
+      # --- Tauri bundler 对依赖下载走代理更稳（参考 T17 经验） ---
+      - name: 构建 Tauri 安装包（MSI + NSIS）
+        shell: pwsh
+        env:
+          # 若需要企业代理，请在仓库 Secrets 中配置 HTTP_PROXY/HTTPS_PROXY 并在此注入。
+          HTTP_PROXY: ${{ vars.HTTP_PROXY }}
+          HTTPS_PROXY: ${{ vars.HTTPS_PROXY }}
+        run: |
+          # npm 直接调用 tauri-cli（项目未作为 devDependency 安装时回退到 cargo install）
+          npm install -D @tauri-apps/cli@^2 2>&1 | Select-Object -Last 10
+          npx tauri build --verbose 2>&1 | Select-Object -Last 200
+
+      - name: 枚举产物
+        id: artifacts
+        shell: pwsh
+        run: |
+          $bundle = Join-Path (Resolve-Path .) "src-tauri" "target" "release" "bundle"
+          Write-Host "bundle dir: $bundle"
+          if (-not (Test-Path $bundle)) { Write-Error "bundle dir missing"; exit 1 }
+          $all = Get-ChildItem -Recurse -File $bundle | ForEach-Object { $_.FullName }
+          $msi = @($all | Where-Object { $_ -match "\.msi$" })
+          $exe = @($all | Where-Object { $_ -match "\.exe$" })
+          Write-Host "MSI: $($msi -join ', ')"
+          Write-Host "EXE: $($exe -join ', ')"
+          if ($msi.Count -eq 0 -and $exe.Count -eq 0) { Write-Error "no installer built"; exit 1 }
+          $list = @()
+          foreach ($p in ($msi + $exe)) { $list += $p }
+          $($list -join "`n") | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append -NoNewline
+          "artifacts_path=$($bundle)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: 上传安装包作为 workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Harness-Installers-${{ steps.version.outputs.version }}
+          path: ${{ steps.artifacts.outputs.artifacts_path }}
+          compression-level: 6
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: 决定是否创建 Release
+        id: release_decision
+        shell: pwsh
+        run: |
+          $mode = "${{ github.event.inputs.create_release }}"
+          $tagPush = ($env:GITHUB_REF -like "refs/tags/*")
+          if ($mode -eq "yes") { "do_release=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8 }
+          elseif ($mode -eq "no") { "do_release=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8 }
+          else {
+            if ($tagPush) { "do_release=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8 }
+            else { "do_release=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8 }
+          }
+
+      - name: 创建 GitHub Release 并上传安装包
+        if: steps.release_decision.outputs.do_release == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.version_raw }}
+          name: Harness v${{ steps.version.outputs.version }} · Windows 安装包
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            src-tauri/target/release/bundle/msi/**/*.msi
+            src-tauri/target/release/bundle/nsis/**/*.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 体积报告
+        shell: pwsh
+        run: |
+          $bundle = "${{ steps.artifacts.outputs.artifacts_path }}"
+          $all = Get-ChildItem -Recurse -File $bundle |
+            Select-Object Name, @{N='SizeMB';E={[math]::Round($_.Length/1MB,2)}}, FullName |
+            Sort-Object SizeMB -Descending
+          $all | Format-Table -AutoSize
+          $csv = ($all | ConvertTo-Csv -NoTypeInformation) -join "`n"
+          "size_report<<EOF" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "`n$csv`n" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          "EOF" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
