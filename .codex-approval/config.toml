@@ -1,0 +1,10 @@
+# 审批链路验证配置：approval_policy 非 never，升级权限请求会转发给客户端审批
+model = "mock-model"
+model_provider = "mock"
+approval_policy = "on-request"
+
+[model_providers.mock]
+name = "mock"
+base_url = "http://127.0.0.1:8791/v1"
+env_key = "MOCK_KEY"
+wire_api = "responses"

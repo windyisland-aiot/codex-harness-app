@@ -1,0 +1,16 @@
+# Codex runtime homes created by tests (session/sqlite/tmp artifacts)
+.codex-approval/**
+.codex-test/**
+!**/*.toml
+approval-home/
+.codex-home/
+target/
+node_modules/
+dist/
+*.log
+ok.txt
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+__pycache__/
+*.pyc
