@@ -31,6 +31,13 @@
     "category": "Productivity",
     "shortDescription": "企业内部 Agent 桌面应用",
     "longDescription": "面向 Windows 的企业内部 Agent 桌面应用：账号密码登录、codex app-server 对话、审批面板、多模型切换与路由、飞书 MCP 与 OAuth、插件/Skill、联网搜索、会话持久化。",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.png",
+      "icons/icon.ico"
+    ],
     "windows": {
       "webviewInstallMode": {
         "type": "downloadBootstrapper",
