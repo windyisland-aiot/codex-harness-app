@@ -49,9 +49,9 @@ impl std::error::Error for AppServerError {}
 
 pub type Result<T> = std::result::Result<T, AppServerError>;
 
-/// 服务器主动请求回调：入参 `(method, params)`，返回要写回的结果（`None` 则不回包）。
+/// 服务器主动请求回调：入参 `(request_id, method, params)`，返回要写回的结果（`None` 则不回包）。
 pub type ServerRequestHandler =
-    Box<dyn Fn(&str, &Map<String, Value>) -> Option<Value> + Send + Sync + 'static>;
+    Box<dyn Fn(u64, &str, &Map<String, Value>) -> Option<Value> + Send + Sync + 'static>;
 /// 通知回调：入参 `(method, params)`。
 pub type NotificationHandler = Box<dyn Fn(&str, &Map<String, Value>) + Send + Sync + 'static>;
 
@@ -167,8 +167,9 @@ impl AppServerClient {
                     .unwrap_or_default();
                 if obj.contains_key("id") {
                     // 服务器主动请求
+                    let req_id = obj.get("id").and_then(|x| x.as_u64()).unwrap_or(0);
                     if let Some(h) = &req_handler {
-                        if let Some(reply) = h(method, &params) {
+                        if let Some(reply) = h(req_id, method, &params) {
                             let out = serde_json::json!({
                                 "jsonrpc": "2.0",
                                 "id": obj["id"],

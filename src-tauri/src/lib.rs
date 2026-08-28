@@ -21,6 +21,7 @@ pub fn run() {
             appserver::appserver_start,
             appserver::appserver_thread_start,
             appserver::appserver_turn_start,
+            appserver::appserver_poll_events,
             appserver::appserver_stop,
         ])
         .run(tauri::generate_context!())
