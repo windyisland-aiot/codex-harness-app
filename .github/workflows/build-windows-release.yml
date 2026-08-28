@@ -27,6 +27,9 @@ env:
   RUSTUP_TOOLCHAIN: stable
   NODE_VERSION: "20"
 
+permissions:
+  contents: write
+
 jobs:
   build-windows:
     name: 构建 Windows 安装包 (.msi / .exe-NSIS)
