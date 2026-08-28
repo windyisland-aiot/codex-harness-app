@@ -252,11 +252,28 @@ button {
   font-size: 13px;
   line-height: 1.35;
   overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+.sessions .s-title .s-text {
+  overflow: hidden;
   text-overflow: ellipsis;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
 }
+/* 会话状态指示点（Trae Work 任务列表形态） */
+.s-dot {
+  width: 7px; height: 7px; border-radius: 50%;
+  flex-shrink: 0;
+  background: #64748b;
+}
+.s-dot.running { background: #10b981; box-shadow: 0 0 5px #10b981; animation: pulse 1.2s infinite; }
+.s-dot.approval { background: var(--warn); box-shadow: 0 0 5px #f59e0baa; }
+.s-dot.waiting { background: #60a5fa; }
+.s-dot.done { background: #64748b; }
+.s-dot.error { background: var(--danger); }
 .sessions .s-meta {
   display: flex;
   align-items: center;
@@ -1068,3 +1085,143 @@ button {
 
 /* T16 会话面板历史列表（在独立 modal 中） 内联覆盖 config 旧类 */
 .modal-backdrop .cfg-grid { grid-template-columns: 1fr 1fr 1fr; }
+
+/* =========================================================
+   Trae Work 风格改版（形态借鉴，功能不借鉴）
+   - 顶部模式分段切换（Ask / Code）→ 对应 Trae Work 左上角模式切换
+   - 右栏工具面板页签（审批 / 会话 / 快捷键）
+   ========================================================= */
+
+/* —— 顶部模式切换 —— */
+.mode-switch {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.mode-btn {
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 12px;
+  border-radius: 7px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  transition: all .15s;
+}
+.mode-btn:hover { color: var(--text); }
+.mode-btn.active {
+  background: linear-gradient(180deg, #1c2740, var(--bg-elevated));
+  color: #9ecbff;
+  box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset;
+  border: 1px solid #1a3a6e;
+  padding: 4px 11px;
+  font-weight: 600;
+}
+.mode-btn.active:first-of-type { border-right: none; }
+.mode-btn.active:last-of-type { border-left: none; }
+
+/* —— 右栏工具面板 —— */
+.tool-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 8px 10px 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+.tool-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  padding: 7px 12px;
+  font-size: 12px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all .15s;
+}
+.tool-tab:hover { color: var(--text); background: var(--bg-elevated); }
+.tool-tab.active {
+  color: #9ecbff;
+  background: var(--bg-elevated);
+  border-color: var(--border);
+}
+.tool-tab-count {
+  background: var(--warn-soft);
+  color: #fcd34d;
+  border-radius: 999px;
+  font-size: 10px;
+  font-family: var(--mono);
+  padding: 0 6px;
+  line-height: 1.6;
+}
+
+/* —— 会话摘要卡片 —— */
+.session-info-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.si-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.si-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 12px;
+}
+.si-k {
+  min-width: 72px;
+  color: var(--text-muted);
+  font-size: 11px;
+  letter-spacing: 0.3px;
+}
+.si-v {
+  color: var(--text-secondary);
+  word-break: break-all;
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+.si-row kbd {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border-strong);
+  border-radius: 5px;
+  padding: 2px 7px;
+  color: #9ecbff;
+}
+.shortcuts-panel {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}

@@ -4,7 +4,6 @@
 //! codexHome / codexBin / defaultCwd。禁止写死 Linux `/workspace/...`。
 import { useEffect, useRef, useState } from "react";
 import Markdown from "./components/Markdown";
-import ApprovalPanel from "./components/ApprovalPanel";
 import ConfigPanel from "./components/ConfigPanel";
 import ModelSwitcher from "./components/ModelSwitcher";
 import RouterPanel from "./components/RouterPanel";
@@ -12,6 +11,7 @@ import FeishuOAuthPanel from "./components/FeishuOAuthPanel";
 import PluginsPanel from "./components/PluginsPanel";
 import SearchPanel from "./components/SearchPanel";
 import SessionsPanel from "./components/SessionsPanel";
+import ToolPanel from "./components/ToolPanel";
 import * as codex from "./codexClient";
 import type {
   ApprovalRequest,
@@ -578,8 +578,26 @@ export default function App() {
       {/* ============ 顶部工具条 ============ */}
       <header className="topbar">
         <div className="brand">
-          <div className="brand-logo">C</div>
-          <span>Codex Harness</span>
+          <div className="brand-logo">H</div>
+          <span>Harness</span>
+        </div>
+
+        {/* 模式分段切换（形态参考 Trae Work 左上角 Work / Code 切换；功能沿用 Ask / Code） */}
+        <div className="mode-switch" role="tablist" aria-label="工作模式">
+          <button
+            className={`mode-btn ${mode === "ask" ? "active" : ""}`}
+            onClick={() => setMode("ask")}
+            title="Ask 模式：只问答，不执行命令 / 修改文件"
+          >
+            ⌨ Ask
+          </button>
+          <button
+            className={`mode-btn ${mode === "code" ? "active" : ""}`}
+            onClick={() => setMode("code")}
+            title="Code 模式：Agent 可执行命令 / 修改文件 / 调用工具"
+          >
+            ⚡ Code
+          </button>
         </div>
 
         <button
@@ -690,7 +708,10 @@ export default function App() {
                   className={isActive ? "active" : ""}
                   onClick={() => handleSideSessionClick(s.id)}
                 >
-                  <div className="s-title">{s.title}</div>
+                  <div className="s-title">
+                    <span className={`s-dot ${st}`} />
+                    <span className="s-text">{s.title}</span>
+                  </div>
                   <div className="s-meta">
                     <span className={`badge ${st}`}>{BADGE_LABEL[st]}</span>
                     <span>{s.provider || provider || "—"}</span>
@@ -918,9 +939,25 @@ export default function App() {
           </footer>
         </main>
 
-        {/* 右栏：审批面板 */}
+        {/* 右栏：工具面板（审批 / 会话摘要 / 快捷键） */}
         <aside className="right">
-          <ApprovalPanel approvals={approvals} onRespond={respondApproval} />
+          <ToolPanel
+            approvals={approvals}
+            onRespond={respondApproval}
+            session={{
+              title: activeThread
+                ? sessions.find((s) => s.id === activeThread)?.title
+                : undefined,
+              model,
+              provider: presetName,
+              cwd,
+              threadId: activeThread ?? undefined,
+              msgCount: messages.length,
+              running,
+              approvals: approvals.length,
+              username: oboUsername || undefined,
+            }}
+          />
         </aside>
       </div>
 

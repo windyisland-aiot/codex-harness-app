@@ -53,16 +53,20 @@ function summarize(a: ApprovalRequest) {
 export default function ApprovalPanel({
   approvals,
   onRespond,
+  hideHeader = false,
 }: {
   approvals: ApprovalRequest[];
   onRespond: (id: number, decision: string) => void;
+  hideHeader?: boolean;
 }) {
   return (
     <>
-      <header className="right-head">
-        <span>审批 · Approvals</span>
-        {approvals.length > 0 && <span className="count">{approvals.length}</span>}
-      </header>
+      {!hideHeader && (
+        <header className="right-head">
+          <span>审批 · Approvals</span>
+          {approvals.length > 0 && <span className="count">{approvals.length}</span>}
+        </header>
+      )}
       <div className="right-body">
         {approvals.length === 0 ? (
           <div className="right-empty">
