@@ -59,7 +59,9 @@ args = ["-y", "@modelcontextprotocol/server-filesystem"]
         id: "feishu".into(),
         command: "lark-openapi-mcp".into(),
         args: vec!["--listen".into()],
-        env: String::new(),
+        env: vec!["FEISHU_APP_ID=cli_abc".into(), "FEISHU_APP_SECRET=s3cret".into()],
+        env_vars: vec!["LARK_TOKEN".into()],
+        enabled: true,
     });
     harness_config::write(home, &edited).unwrap();
 
@@ -71,6 +73,8 @@ args = ["-y", "@modelcontextprotocol/server-filesystem"]
     assert!(raw.contains("model_provider = \"deepseek\""));
     assert!(raw.contains("DEEPSEEK_API_KEY"));
     assert!(raw.contains("[mcp_servers.feishu]"));
+    assert!(raw.contains("FEISHU_APP_ID"), "feishu env entry lost: {raw}");
+    assert!(raw.contains("LARK_TOKEN"), "feishu env_vars lost: {raw}");
 
     // 重新读回，验证一致性。
     let back = harness_config::read(home).unwrap();
@@ -80,6 +84,79 @@ args = ["-y", "@modelcontextprotocol/server-filesystem"]
     assert_eq!(back.mcp_servers.len(), 2);
     assert_eq!(back.approval_policy, "on-request");
 
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// T12：`[mcp_servers.feishu]` 序列化为 codex 期望的表格式 env / env_vars 数组。
+#[test]
+fn feishu_mcp_env_serializes_as_table() {
+    let dir = std::env::temp_dir().join(format!("harness-cfg-feishu-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    let home = dir.to_str().unwrap();
+
+    harness_config::write(
+        home,
+        &AppConfig {
+            mcp_servers: vec![McpServerConfig {
+                id: "feishu".into(),
+                command: "lark-openapi-mcp".into(),
+                args: vec!["--mode=stdio".into()],
+                env: vec!["FEISHU_APP_ID=cli_x1y2".into(), "FEISHU_APP_SECRET=zzqq".into()],
+                env_vars: vec!["LARK_USER_TOKEN".into(), "LARK_API_TOKEN".into()],
+                enabled: true,
+            }],
+            ..AppConfig::default()
+        },
+    )
+    .unwrap();
+
+    let raw = fs::read_to_string(format!("{home}/config.toml")).unwrap();
+    // env 必须写成表（键值对），而非字符串。
+    assert!(
+        raw.contains("FEISHU_APP_ID = \"cli_x1y2\"") || raw.contains("FEISHU_APP_ID=\"cli_x1y2\""),
+        "env 未写成表: {raw}"
+    );
+    assert!(raw.contains("\"LARK_USER_TOKEN\""), "env_vars 不在: {raw}");
+
+    let back = harness_config::read(home).unwrap();
+    assert_eq!(back.mcp_servers.len(), 1);
+    let f = &back.mcp_servers[0];
+    assert_eq!(f.command, "lark-openapi-mcp");
+    assert!(f.env.contains(&"FEISHU_APP_ID=cli_x1y2".to_string()));
+    assert_eq!(f.env_vars, vec!["LARK_USER_TOKEN".to_string(), "LARK_API_TOKEN".to_string()]);
+    assert!(f.enabled);
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// T12：`enabled = false` 的 MCP server 会被保留为禁用状态。
+#[test]
+fn feishu_mcp_disabled_flag_roundtrips() {
+    let dir = std::env::temp_dir().join(format!("harness-cfg-feishu-off-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    let home = dir.to_str().unwrap();
+
+    harness_config::write(
+        home,
+        &AppConfig {
+            mcp_servers: vec![McpServerConfig {
+                id: "feishu".into(),
+                command: "lark-openapi-mcp".into(),
+                args: vec![],
+                env: vec![],
+                env_vars: vec![],
+                enabled: false,
+            }],
+            ..AppConfig::default()
+        },
+    )
+    .unwrap();
+
+    let raw = fs::read_to_string(format!("{home}/config.toml")).unwrap();
+    assert!(raw.contains("enabled = false"), "enabled=false 未写入: {raw}");
+    let back = harness_config::read(home).unwrap();
+    assert!(!back.mcp_servers[0].enabled);
     let _ = fs::remove_dir_all(&dir);
 }
 

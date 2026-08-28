@@ -122,9 +122,32 @@ export default function ConfigPanel({
       ...c,
       mcp_servers: [
         ...c.mcp_servers,
-        { id: `mcp-${Date.now()}`, command: "", args: [], env: "" },
+        { id: `mcp-${Date.now()}`, command: "", args: [], env: [], env_vars: [], enabled: true },
       ],
     }));
+    setDirty(true);
+  }
+
+  /** T12：一键注册飞书 MCP server（默认 lark-openapi-mcp，stdio）。 */
+  function addFeishu() {
+    setCfg((c) => {
+      const exists = c.mcp_servers.some((m) => m.id === "feishu");
+      if (exists) return c;
+      return {
+        ...c,
+        mcp_servers: [
+          ...c.mcp_servers,
+          {
+            id: "feishu",
+            command: "lark-openapi-mcp",
+            args: ["--mode=stdio"],
+            env: ["FEISHU_APP_ID=", "FEISHU_APP_SECRET="],
+            env_vars: ["FEISHU_USER_ACCESS_TOKEN"],
+            enabled: true,
+          },
+        ],
+      };
+    });
     setDirty(true);
   }
 
@@ -231,9 +254,14 @@ export default function ConfigPanel({
           <section className="cfg-section">
             <div className="cfg-sec-head">
               <h3>MCP Server</h3>
-              <button className="cfg-add" onClick={addMcp}>
-                ＋ 添加
-              </button>
+              <div>
+                <button className="cfg-add" onClick={addFeishu} title="注册飞书 lark-openapi-mcp">
+                  ＋ 飞书
+                </button>{" "}
+                <button className="cfg-add" onClick={addMcp}>
+                  ＋ 添加
+                </button>
+              </div>
             </div>
             {cfg.mcp_servers.length === 0 && <p className="cfg-empty">暂无</p>}
             {cfg.mcp_servers.map((m, i) => (
@@ -245,6 +273,14 @@ export default function ConfigPanel({
                     onChange={(e) => setMcp(i, { id: e.target.value })}
                     placeholder="id（如 feishu）"
                   />
+                  <label className="cfg-check">
+                    <input
+                      type="checkbox"
+                      checked={m.enabled}
+                      onChange={(e) => setMcp(i, { enabled: e.target.checked })}
+                    />
+                    启用
+                  </label>
                   <button className="cfg-del" onClick={() => delMcp(i)}>
                     删除
                   </button>
@@ -261,7 +297,28 @@ export default function ConfigPanel({
                   onChange={(e) =>
                     setMcp(i, { args: e.target.value.split(/\s+/).filter(Boolean) })
                   }
-                  placeholder="args（空格分隔，如 --listen）"
+                  placeholder="args（空格分隔，如 --mode=stdio）"
+                />
+                <textarea
+                  className="cfg-full cfg-env"
+                  value={m.env.join("\n")}
+                  onChange={(e) =>
+                    setMcp(i, {
+                      env: e.target.value.split("\n").map((s) => s.trim()).filter(Boolean),
+                    })
+                  }
+                  placeholder={"env（每行 KEY=value，注入到 MCP 进程）：\nFEISHU_APP_ID=\nFEISHU_APP_SECRET="}
+                  rows={3}
+                />
+                <input
+                  className="cfg-full"
+                  value={m.env_vars.join("\n")}
+                  onChange={(e) =>
+                    setMcp(i, {
+                      env_vars: e.target.value.split("\n").map((s) => s.trim()).filter(Boolean),
+                    })
+                  }
+                  placeholder="env_vars（每行一个透传的环境变量名，如 FEISHU_USER_ACCESS_TOKEN）"
                 />
               </div>
             ))}

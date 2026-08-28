@@ -118,15 +118,40 @@ pub fn read(codex_home: &str) -> Result<AppConfig> {
                         }
                     }
                 }
+                // env：T12 起为表 `KEY = "value"`（旧版若为字符串则作为单条 KEY=value）。
+                let mut env = Vec::new();
+                match s.get("env") {
+                    Some(toml::Value::Table(t)) => {
+                        for (k, val) in t {
+                            if let toml::Value::String(v) = val {
+                                env.push(format!("{k}={v}"));
+                            }
+                        }
+                    }
+                    Some(toml::Value::String(v)) => env.push(v.clone()),
+                    _ => {}
+                }
+                let mut env_vars = Vec::new();
+                if let Some(toml::Value::Array(arr)) = s.get("env_vars") {
+                    for a in arr {
+                        if let toml::Value::String(x) = a {
+                            env_vars.push(x.clone());
+                        }
+                    }
+                }
+                let enabled = match s.get("enabled") {
+                    Some(toml::Value::Boolean(b)) => *b,
+                    _ => true,
+                };
                 cfg.mcp_servers.push(McpServerConfig {
                     id: id.clone(),
                     command: conv::get_str(s, "command", "mcp_servers")?
                         .unwrap_or("")
                         .to_string(),
                     args,
-                    env: conv::get_str(s, "env", "mcp_servers")?
-                        .unwrap_or("")
-                        .to_string(),
+                    env,
+                    env_vars,
+                    enabled,
                 });
             }
         }
@@ -179,11 +204,33 @@ pub fn write(codex_home: &str, cfg: &AppConfig) -> Result<()> {
         }
         let mut t = toml::map::Map::new();
         t.insert("command".to_string(), toml::Value::String(m.command.clone()));
-        t.insert(
-            "args".to_string(),
-            toml::Value::Array(m.args.iter().map(|a| toml::Value::String(a.clone())).collect()),
-        );
-        conv::put_str(&mut t, "env", Some(m.env.as_str()));
+        if !m.args.is_empty() {
+            t.insert(
+                "args".to_string(),
+                toml::Value::Array(m.args.iter().map(|a| toml::Value::String(a.clone())).collect()),
+            );
+        }
+        // env 序列化为表 `KEY = "value"`（codex stdio MCP 要求）。
+        if !m.env.is_empty() {
+            let mut env_table = toml::map::Map::new();
+            for kv in &m.env {
+                if let Some((k, v)) = kv.split_once('=') {
+                    env_table.insert(k.to_string(), toml::Value::String(v.to_string()));
+                }
+            }
+            if !env_table.is_empty() {
+                t.insert("env".to_string(), toml::Value::Table(env_table));
+            }
+        }
+        if !m.env_vars.is_empty() {
+            t.insert(
+                "env_vars".to_string(),
+                toml::Value::Array(m.env_vars.iter().map(|n| toml::Value::String(n.clone())).collect()),
+            );
+        }
+        if !m.enabled {
+            t.insert("enabled".to_string(), toml::Value::Boolean(false));
+        }
         servers.insert(m.id.clone(), toml::Value::Table(t));
     }
     table.insert("mcp_servers".to_string(), toml::Value::Table(servers));

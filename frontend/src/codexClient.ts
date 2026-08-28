@@ -127,7 +127,11 @@ export interface McpServerConfig {
   id: string;
   command: string;
   args: string[];
-  env: string;
+  /** 每条 `KEY=value`，序列化为 `env = { KEY = "value" }`。 */
+  env: string[];
+  /** 透传进程环境变量名。 */
+  env_vars: string[];
+  enabled: boolean;
 }
 
 export interface AppConfig {
@@ -146,6 +150,39 @@ export function configRead(codexHome: string): Promise<AppConfig> {
 /** 合并写回配置。 */
 export function configWrite(codexHome: string, config: AppConfig): Promise<void> {
   return invoke("config_write", { codex_home: codexHome, config });
+}
+
+// --- T12 飞书 MCP ---
+
+export interface FeishuStatus {
+  registered: boolean;
+  command?: string;
+  args?: string[];
+  env_keys?: string[];
+  env_vars?: string[];
+  enabled?: boolean;
+}
+
+/** 注册（或覆写）`[mcp_servers.feishu]`，env 为直接注入、env_vars 为透传。 */
+export function feishuRegisterMcp(input: {
+  codexHome: string;
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+  envVars: string[];
+}): Promise<McpServerConfig> {
+  return invoke<McpServerConfig>("feishu_register_mcp", {
+    codex_home: input.codexHome,
+    command: input.command,
+    args: input.args,
+    env: input.env,
+    env_vars: input.envVars,
+  });
+}
+
+/** 回读飞书 MCP 注册状态。 */
+export function feishuStatus(codexHome: string): Promise<FeishuStatus> {
+  return invoke<FeishuStatus>("feishu_status", { codex_home: codexHome });
 }
 
 /** 从通知中抽取某个 method 携带的文本增量（用于流式渲染）。 */

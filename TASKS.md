@@ -27,7 +27,7 @@
 | T09 | 配置面板 | 模型选择、MCP server 管理、权限设置，写/读 config.toml |
 | T10 | 多模型切换 | 预设 OpenAI/DeepSeek/GLM，改 base_url + env_key，下一个 Turn 生效 |
 | T11 | 模型路由 | 按任务类型/上下文长度/成本/敏感度路由到不同模型 | ✅ |
-| T12 | 飞书 MCP 集成 | 注册 `[mcp_servers.feishu]`（lark-openapi-mcp），验证消息/文档操作 |
+| T12 | 飞书 MCP 集成 | 注册 `[mcp_servers.feishu]`（lark-openapi-mcp），验证消息/文档操作 | ✅ |
 | T13 | 飞书 OAuth | 用户授权流程 + token 自动刷新（app_access_token/user_access_token） |
 | T14 | 插件与 Skill 系统 | 加载 openai/skills、openai/plugins 与自定义插件，插件管理界面 |
 | T15 | 联网搜索 | 注册 Tavily/Serper MCP，搜索过程与来源展示 |

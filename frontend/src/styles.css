@@ -463,3 +463,21 @@ body {
   color: #5c6672;
   font-size: 11px;
 }
+
+/* T12 飞书 MCP：配置面板 MCP 卡片 */
+.cfg-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #8b96a5;
+  font-size: 12px;
+}
+.cfg-check input {
+  accent-color: #2f81f7;
+}
+.cfg-env {
+  resize: vertical;
+  min-height: 56px;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 12px;
+}

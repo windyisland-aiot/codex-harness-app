@@ -41,6 +41,10 @@ pub struct McpServerConfig {
     pub command: String,
     /// 参数。
     pub args: Vec<String>,
-    /// env 环境变量（简单映射字符串）。
-    pub env: String,
+    /// 直接注入的环境变量，每项 `KEY=value`（序列化为 `env = { KEY = "value" }`）。
+    pub env: Vec<String>,
+    /// 透传的环境变量名（序列化为 `env_vars = ["NAME", ...]`，值取当前进程）。
+    pub env_vars: Vec<String>,
+    /// 是否启用（codex `enabled`，缺省 true）。
+    pub enabled: bool,
 }
