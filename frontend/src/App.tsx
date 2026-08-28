@@ -9,6 +9,7 @@ import RouterPanel from "./components/RouterPanel";
 import FeishuOAuthPanel from "./components/FeishuOAuthPanel";
 import PluginsPanel from "./components/PluginsPanel";
 import SearchPanel from "./components/SearchPanel";
+import SessionsPanel from "./components/SessionsPanel";
 import * as codex from "./codexClient";
 import type { ApprovalRequest, AppConfig, ProviderConfig, RouteDecision } from "./codexClient";
 import type { ModelPreset } from "./models";
@@ -37,6 +38,7 @@ export default function App() {
   const [feishuOpen, setFeishuOpen] = useState(false);
   const [pluginsOpen, setPluginsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [sessionsOpen, setSessionsOpen] = useState(false);
   const cwd = "/workspace/codex-harness-app";
 
   const [connected, setConnected] = useState(false);
@@ -85,6 +87,47 @@ export default function App() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // T16 启动时加载已持久化的历史会话列表。
+  useEffect(() => {
+    codex
+      .sessionList(codexHome)
+      .then((l) => setSessions(l.map((m) => ({ id: m.id, title: m.title || m.id }))))
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // T16 自动持久化当前会话：消息变化即落库（含流式增量汇聚后的最终文本）。
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    if (!activeThread) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => {
+      const msgs = msgsRef.current.map((m, i) => ({
+        seq: i,
+        role: m.role,
+        text: m.text,
+      }));
+      const title =
+        sessions.find((s) => s.id === activeThread)?.title ||
+        msgs[0]?.text.slice(0, 24) ||
+        "未命名会话";
+      const providerUsed = threadProviderRef.current ?? provider;
+      codex
+        .sessionSave({ codexHome, id: activeThread, title, provider: providerUsed, model, cwd, messages: msgs })
+        .then(() => {
+          setSessions((prev) => {
+            if (prev.some((s) => s.id === activeThread)) return prev;
+            return [...prev, { id: activeThread, title }];
+          });
+        })
+        .catch(() => {});
+    }, 500);
+    return () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages, activeThread]);
 
   // 轮询流式事件
   useEffect(() => {
@@ -212,6 +255,22 @@ export default function App() {
     setMessages([]);
   }
 
+  /** T16：恢复一个持久化会话（载入消息 + 线程模型/provider）。 */
+  function handleLoadSession(d: codex.SessionDetail) {
+    setActiveThread(d.meta.id);
+    threadProviderRef.current = d.meta.provider;
+    setMessages(
+      d.messages.map((m) => ({ role: m.role === "user" ? "user" : "assistant", text: m.text }))
+    );
+    if (d.meta.provider) setProvider(d.meta.provider);
+    if (d.meta.model) setModel(d.meta.model);
+    setSessions((prev) =>
+      prev.some((s) => s.id === d.meta.id)
+        ? prev
+        : [...prev, { id: d.meta.id, title: d.meta.title || d.meta.id }]
+    );
+  }
+
   function onConfigSaved(c: AppConfig) {
     if (c.model) setModel(c.model);
     if (c.model_provider) setProvider(c.model_provider);
@@ -319,6 +378,9 @@ export default function App() {
         <button className="new-btn" onClick={() => setSearchOpen(true)}>
           ⌕ 搜索
         </button>
+        <button className="new-btn" onClick={() => setSessionsOpen(true)}>
+          ☰ 历史
+        </button>
         <div className="conn">
           <div className={`dot ${connected ? "on" : "off"}`} /> {status}
         </div>
@@ -399,6 +461,13 @@ export default function App() {
         open={searchOpen}
         onClose={() => setSearchOpen(false)}
         codexHome={codexHome}
+        onStatus={setStatus}
+      />
+      <SessionsPanel
+        open={sessionsOpen}
+        onClose={() => setSessionsOpen(false)}
+        codexHome={codexHome}
+        onLoad={handleLoadSession}
         onStatus={setStatus}
       />
     </div>

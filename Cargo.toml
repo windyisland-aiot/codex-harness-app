@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/auth", "crates/appserver", "crates/harness-config", "crates/harness-router", "crates/harness-plugins", "crates/harness-search", "crates/feishu-oauth", "src-tauri"]
+members = ["crates/auth", "crates/appserver", "crates/harness-config", "crates/harness-router", "crates/harness-plugins", "crates/harness-search", "crates/harness-sessions", "crates/feishu-oauth", "src-tauri"]
 
 [workspace.package]
 version = "0.1.0"

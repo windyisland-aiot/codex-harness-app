@@ -9,6 +9,7 @@ mod oauth;
 mod plugins;
 mod router;
 mod search;
+mod sessions;
 
 /// 前端调用的最小命令，用于验证前后端 IPC 连通（T04）。
 #[tauri::command]
@@ -47,6 +48,12 @@ pub fn run() {
             search::search_execute,
             search::search_register_mcp,
             search::search_status,
+            sessions::session_save,
+            sessions::session_list,
+            sessions::session_search,
+            sessions::session_get,
+            sessions::session_rename,
+            sessions::session_delete,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

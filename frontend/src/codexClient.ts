@@ -349,6 +349,73 @@ export function searchStatus(codexHome: string): Promise<SearchStatus> {
   return invoke<SearchStatus>("search_status", { codex_home: codexHome });
 }
 
+// --- T16 会话持久化 (SQLite) ---
+
+export interface SessionMsg {
+  seq: number;
+  role: string;
+  text: string;
+}
+export interface SessionMeta {
+  id: string;
+  title: string;
+  provider: string;
+  model: string;
+  cwd: string;
+  created_at: number;
+  updated_at: number;
+}
+export interface SessionDetail {
+  meta: SessionMeta;
+  messages: SessionMsg[];
+}
+
+/** 整会话保存（create + upsert 消息 + 元数据）。 */
+export function sessionSave(input: {
+  codexHome: string;
+  id: string;
+  title: string;
+  provider: string;
+  model: string;
+  cwd: string;
+  messages: SessionMsg[];
+}): Promise<SessionDetail> {
+  return invoke<SessionDetail>("session_save", {
+    codex_home: input.codexHome,
+    id: input.id,
+    title: input.title,
+    provider: input.provider,
+    model: input.model,
+    cwd: input.cwd,
+    messages: input.messages,
+  });
+}
+
+/** 列出全部会话。 */
+export function sessionList(codexHome: string): Promise<SessionMeta[]> {
+  return invoke<SessionMeta[]>("session_list", { codex_home: codexHome });
+}
+
+/** 按关键词搜索会话（标题或内容）。 */
+export function sessionSearch(codexHome: string, keyword: string): Promise<SessionMeta[]> {
+  return invoke<SessionMeta[]>("session_search", { codex_home: codexHome, keyword });
+}
+
+/** 读取会话详情用于恢复。 */
+export function sessionGet(codexHome: string, id: string): Promise<SessionDetail> {
+  return invoke<SessionDetail>("session_get", { codex_home: codexHome, id });
+}
+
+/** 重命名会话。 */
+export function sessionRename(codexHome: string, id: string, title: string): Promise<SessionMeta> {
+  return invoke<SessionMeta>("session_rename", { codex_home: codexHome, id, title });
+}
+
+/** 删除会话。 */
+export function sessionDelete(codexHome: string, id: string): Promise<void> {
+  return invoke("session_delete", { codex_home: codexHome, id });
+}
+
 /** 从通知中抽取某个 method 携带的文本增量（用于流式渲染）。 */
 export function textDelta(e: AppEvent): string | null {
   if (e.method === "item/agentMessage/delta") {

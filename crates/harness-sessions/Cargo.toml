@@ -1,0 +1,11 @@
+[package]
+name = "harness-sessions"
+version = "0.1.0"
+edition = "2021"
+description = "T16 会话持久化：SQLite 存历史会话，支持搜索/重命名/恢复"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.31", features = ["bundled"] }
+thiserror = "1"
