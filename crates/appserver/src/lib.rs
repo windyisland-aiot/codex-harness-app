@@ -243,17 +243,23 @@ impl AppServerClient {
     }
 
     /// 创建新会话（thread），返回 thread id。
+    ///
+    /// `model` 与 `model_provider` 为 `None` 时不写入对应参数，由 codex
+    /// 从 `config.toml` 的默认 `[model] model` / `model_provider` 解析
+    /// （T07 单模型配置驱动）。
     pub fn thread_start(
         &mut self,
-        model: &str,
-        model_provider: &str,
+        model: Option<&str>,
+        model_provider: Option<&str>,
         cwd: &str,
     ) -> Result<String> {
-        let params = serde_json::json!({
-            "model": model,
-            "modelProvider": model_provider,
-            "cwd": cwd,
-        });
+        let mut params = serde_json::json!({ "cwd": cwd });
+        if let Some(m) = model {
+            params["model"] = m.into();
+        }
+        if let Some(p) = model_provider {
+            params["modelProvider"] = p.into();
+        }
         let res = self.call("thread/start", params, None)?;
         res["thread"]["id"]
             .as_str()

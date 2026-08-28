@@ -37,24 +37,32 @@ pub fn managed_state() -> CodexHandle {
 }
 
 /// 启动 `codex app-server` 子进程并完成 `initialize` 握手。
+///
+/// `env` 为注入到 codex 子进程的额外环境变量（如 provider 的 API key，
+/// `OPENAI_API_KEY`/自定义 `env_key`），值不写入 config.toml（T07 安全传递）。
 #[tauri::command]
 pub async fn appserver_start(
     state: State<'_, CodexHandle>,
     codex_bin: String,
     codex_home: String,
+    env: Option<HashMap<String, String>>,
 ) -> Result<String, String> {
     let st = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let mut env = HashMap::new();
-        env.insert("CODEX_HOME".to_string(), codex_home);
+        let mut child_env = HashMap::new();
+        child_env.insert("CODEX_HOME".to_string(), codex_home);
+        if let Some(extra) = env {
+            child_env.extend(extra);
+        }
+        // 兼容老测试：透传 MOCK_KEY（若有）。
         if let Ok(m) = std::env::var("MOCK_KEY") {
-            env.insert("MOCK_KEY".to_string(), m);
+            child_env.entry("MOCK_KEY".to_string()).or_insert(m);
         }
         let st_notif = st.clone();
         let st_req = st.clone();
         let cfg = AppServerConfig {
             codex_bin,
-            env: Some(env),
+            env: Some(child_env),
             cwd: None,
             default_timeout_ms: 90_000,
             on_notification: Some(Box::new(move |method, params| {
@@ -84,6 +92,9 @@ pub async fn appserver_start(
 }
 
 /// 创建新会话线程，返回 thread id。
+///
+/// `model`/`model_provider` 为空串时交给 codex 从 `config.toml` 解析
+/// （T07 单模型配置驱动）。
 #[tauri::command]
 pub async fn appserver_thread_start(
     state: State<'_, CodexHandle>,
@@ -95,7 +106,9 @@ pub async fn appserver_thread_start(
     tauri::async_runtime::spawn_blocking(move || {
         let mut guard = st.client.lock().map_err(|e| e.to_string())?;
         let client = guard.as_mut().ok_or("app-server 未启动")?;
-        client.thread_start(&model, &model_provider, &cwd).map_err(|e| e.to_string())
+        let m = if model.is_empty() { None } else { Some(model.as_str()) };
+        let p = if model_provider.is_empty() { None } else { Some(model_provider.as_str()) };
+        client.thread_start(m, p, &cwd).map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())?

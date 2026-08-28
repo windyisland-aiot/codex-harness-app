@@ -8,14 +8,23 @@ export interface AppEvent {
 }
 
 /** 启动 codex app-server（子进程）。返回 userAgent。 */
-export function start(server: { codexBin: string; codexHome: string }): Promise<string> {
+export function start(server: {
+  codexBin: string;
+  codexHome: string;
+  /** T07：注入 codex 子进程的 provider API key 等环境变量（安全传递，不写 config）。 */
+  env?: Record<string, string>;
+}): Promise<string> {
   return invoke<string>("appserver_start", {
     codex_bin: server.codexBin,
     codex_home: server.codexHome,
+    env: server.env ?? {},
   });
 }
 
-/** 创建新会话，返回 thread id。 */
+/**
+ * 创建新会话，返回 thread id。
+ * `model`/`modelProvider` 为空串时交给 codex 从 config.toml 解析（T07 单模型配置驱动）。
+ */
 export function threadStart(input: {
   model: string;
   modelProvider: string;

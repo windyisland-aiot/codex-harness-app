@@ -101,10 +101,16 @@ fn full_turn_roundtrip_via_stdlib() {
         .initialize("harness-e2e", "0.1.0")
         .expect("initialize failed");
     let cwd = home.to_string_lossy().to_string();
+    // T07 单模型配置驱动：不传 model/modelProvider，由 codex 从 config.toml 解析。
     let tid = client
-        .thread_start("mock-model", "mock", &cwd)
-        .expect("thread/start failed");
+        .thread_start(None, None, &cwd)
+        .expect("thread/start failed (config-driven model/provider)");
     assert!(!tid.is_empty(), "thread id should not be empty");
+
+    // 同时验证显式指定模型仍可用（等价 openai provider 显式选择路径）。
+    let thread = client.thread_start(Some("mock-model"), Some("mock"), &cwd)
+        .expect("explicit thread/start failed");
+    assert!(!thread.is_empty());
 
     client
         .turn_start(&tid, &cwd, "你好，请回复一句话。")

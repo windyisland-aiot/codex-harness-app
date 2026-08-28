@@ -17,7 +17,7 @@
 | T04 | Tauri 2.x 工程骨架 | 建桌面应用骨架，面向 Windows（.msi/.exe，WebView2），预留跨平台结构 | ✅ |
 | T05 | app-server stdio 集成 | Tauri 后端将 `codex` 作为子进程启动，实现 JSON-RPC over stdio 客户端 | ✅ |
 | T06 | 基础对话 UI | 指令输入、流式输出（Markdown 渲染）、会话列表 | ✅ |
-| T07 | 单模型打通（OpenAI） | `[model_providers.openai]` 配置 + `[model] model_provider = "openai"`，验证端到端 | ⏳ |
+| T07 | 单模型打通（OpenAI） | `[model_providers.openai]` 配置 + `[model] model_provider = "openai"`，验证端到端 | ✅ |
 | T08 | 审批面板 | 处理 `execCommandApproval`/`applyPatchApproval`，弹出确认/拒绝 | ⏳ |
 
 ## P1 —— 核心功能（MVP 主循环）
