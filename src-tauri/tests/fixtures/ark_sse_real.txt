@@ -1,0 +1,101 @@
+event: response.created
+data: {"type":"response.created","response":{"created_at":1787942238,"id":"resp_02178794223768039b762a1076dab7efa142e82428347fd9be118","max_output_tokens":512,"model":"deepseek-v4-flash","object":"response","service_tier":"default","caching":{"type":"disabled"},"store":false},"sequence_number":0}
+
+event: response.in_progress
+data: {"type":"response.in_progress","response":{"created_at":1787942238,"id":"resp_02178794223768039b762a1076dab7efa142e82428347fd9be118","max_output_tokens":512,"model":"deepseek-v4-flash","object":"response","service_tier":"default","caching":{"type":"disabled"},"store":false},"sequence_number":1}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","output_index":0,"item":{"id":"rs_02178794223862500000000000000000000ffffac15782a90f96c","type":"reasoning","status":"in_progress"},"sequence_number":2}
+
+event: response.reasoning_summary_part.added
+data: {"type":"response.reasoning_summary_part.added","item_id":"rs_02178794223862500000000000000000000ffffac15782a90f96c","output_index":0,"summary_index":0,"part":{"type":"summary_text"},"sequence_number":3}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"嗯","item_id":"rs_02178794223862500000000000000000000ffffac15782a90f96c","output_index":0,"sequence_number":4}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"，用户用","item_id":"rs_02178794223862500000000000000000000ffffac15782a90f96c","output_index":0,"sequence_number":5}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"“","item_id":"rs_02178794223862500000000000000000000ffffac15782a90f96c","output_index":0,"sequence_number":6}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"你好”","item_id":"rs_02178794223862500000000000000000000ffffac15782a90f96c","output_index":0,"sequence_number":7}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"打招呼，要求用","item_id":"rs_02178794223862500000000000000000000ffffac15782a90f96c","output_index":0,"sequence_number":8}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"不超过10个字回答","item_id":"rs_02178794223862500000000000000000000ffffac15782a90f96c","output_index":0,"sequence_number":9}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"。这是一个非常简单的","item_id":"rs_02178794223862500000000000000000000ffffac15782a90f96c","output_index":0,"sequence_number":10}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"社交互动，需要简洁友好的","item_id":"rs_02178794223862500000000000000000000ffffac15782a90f96c","output_index":0,"sequence_number":11}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"回应。\n\n“你好”是常见","item_id":"rs_02178794223862500000000000000000000ffffac15782a90f96c","output_index":0,"sequence_number":12}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"问候，回复可以同样","item_id":"rs_02178794223862500000000000000000000ffffac15782a90f96c","output_index":0,"sequence_number":13}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"用问候语。","item_id":"rs_02178794223862500000000000000000000ffffac15782a90f96c","output_index":0,"sequence_number":14}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"想到了“你好，","item_id":"rs_02178794223862500000000000000000000ffffac15782a90f96c","output_index":0,"sequence_number":15}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"有什么可以帮你的？”这样","item_id":"rs_02178794223862500000000000000000000ffffac15782a90f96c","output_index":0,"sequence_number":16}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"既回应了问候，又","item_id":"rs_02178794223862500000000000000000000ffffac15782a90f96c","output_index":0,"sequence_number":17}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"表达了愿意提供帮助的态度","item_id":"rs_02178794223862500000000000000000000ffffac15782a90f96c","output_index":0,"sequence_number":18}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"，且字数符合","item_id":"rs_02178794223862500000000000000000000ffffac15782a90f96c","output_index":0,"sequence_number":19}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"要求。\n\n直接这样","item_id":"rs_02178794223862500000000000000000000ffffac15782a90f96c","output_index":0,"sequence_number":20}
+
+event: response.reasoning_summary_text.delta
+data: {"type":"response.reasoning_summary_text.delta","summary_index":0,"delta":"回复就好。","item_id":"rs_02178794223862500000000000000000000ffffac15782a90f96c","output_index":0,"sequence_number":21}
+
+event: response.reasoning_summary_text.done
+data: {"type":"response.reasoning_summary_text.done","summary_index":0,"item_id":"rs_02178794223862500000000000000000000ffffac15782a90f96c","output_index":0,"text":"嗯，用户用“你好”打招呼，要求用不超过10个字回答。这是一个非常简单的社交互动，需要简洁友好的回应。\n\n“你好”是常见问候，回复可以同样用问候语。想到了“你好，有什么可以帮你的？”这样既回应了问候，又表达了愿意提供帮助的态度，且字数符合要求。\n\n直接这样回复就好。","sequence_number":22}
+
+event: response.reasoning_summary_part.done
+data: {"type":"response.reasoning_summary_part.done","item_id":"rs_02178794223862500000000000000000000ffffac15782a90f96c","output_index":0,"summary_index":0,"part":{"type":"summary_text","text":"嗯，用户用“你好”打招呼，要求用不超过10个字回答。这是一个非常简单的社交互动，需要简洁友好的回应。\n\n“你好”是常见问候，回复可以同样用问候语。想到了“你好，有什么可以帮你的？”这样既回应了问候，又表达了愿意提供帮助的态度，且字数符合要求。\n\n直接这样回复就好。"},"sequence_number":23}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","output_index":0,"item":{"id":"rs_02178794223862500000000000000000000ffffac15782a90f96c","type":"reasoning","summary":[{"type":"summary_text","text":"嗯，用户用“你好”打招呼，要求用不超过10个字回答。这是一个非常简单的社交互动，需要简洁友好的回应。\n\n“你好”是常见问候，回复可以同样用问候语。想到了“你好，有什么可以帮你的？”这样既回应了问候，又表达了愿意提供帮助的态度，且字数符合要求。\n\n直接这样回复就好。"}],"status":"completed"},"sequence_number":24}
+
+event: response.output_item.added
+data: {"type":"response.output_item.added","output_index":1,"item":{"type":"message","role":"assistant","status":"in_progress","id":"msg_02178794223926700000000000000000000ffffac15782af5f7d3"},"sequence_number":25}
+
+event: response.content_part.added
+data: {"type":"response.content_part.added","content_index":0,"item_id":"msg_02178794223926700000000000000000000ffffac15782af5f7d3","output_index":1,"part":{"type":"output_text","text":""},"sequence_number":26}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","content_index":0,"delta":"你好，有什么","item_id":"msg_02178794223926700000000000000000000ffffac15782af5f7d3","output_index":1,"sequence_number":27}
+
+event: response.output_text.delta
+data: {"type":"response.output_text.delta","content_index":0,"delta":"可以帮你？","item_id":"msg_02178794223926700000000000000000000ffffac15782af5f7d3","output_index":1,"sequence_number":28}
+
+event: response.output_text.done
+data: {"type":"response.output_text.done","content_index":0,"item_id":"msg_02178794223926700000000000000000000ffffac15782af5f7d3","output_index":1,"text":"你好，有什么可以帮你？","sequence_number":29}
+
+event: response.content_part.done
+data: {"type":"response.content_part.done","content_index":0,"item_id":"msg_02178794223926700000000000000000000ffffac15782af5f7d3","output_index":1,"part":{"type":"output_text","text":"你好，有什么可以帮你？"},"sequence_number":30}
+
+event: response.output_item.done
+data: {"type":"response.output_item.done","output_index":1,"item":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"你好，有什么可以帮你？"}],"status":"completed","id":"msg_02178794223926700000000000000000000ffffac15782af5f7d3"},"sequence_number":31}
+
+event: response.completed
+data: {"type":"response.completed","response":{"created_at":1787942238,"id":"resp_02178794223768039b762a1076dab7efa142e82428347fd9be118","max_output_tokens":512,"model":"deepseek-v4-flash","object":"response","output":[{"id":"rs_02178794223862500000000000000000000ffffac15782a90f96c","type":"reasoning","summary":[{"type":"summary_text","text":"嗯，用户用“你好”打招呼，要求用不超过10个字回答。这是一个非常简单的社交互动，需要简洁友好的回应。\n\n“你好”是常见问候，回复可以同样用问候语。想到了“你好，有什么可以帮你的？”这样既回应了问候，又表达了愿意提供帮助的态度，且字数符合要求。\n\n直接这样回复就好。"}],"status":"completed"},{"type":"message","role":"assistant","content":[{"type":"output_text","text":"你好，有什么可以帮你？"}],"status":"completed","id":"msg_02178794223926700000000000000000000ffffac15782af5f7d3"}],"service_tier":"default","status":"completed","usage":{"input_tokens":11,"output_tokens":81,"total_tokens":92,"input_tokens_details":{"cached_tokens":0},"output_tokens_details":{"reasoning_tokens":73}},"caching":{"type":"disabled"},"store":false},"sequence_number":32}
+
+data: [DONE]
+

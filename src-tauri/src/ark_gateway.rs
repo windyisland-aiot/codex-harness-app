@@ -299,4 +299,128 @@ mod tests {
         let r = normalize_sse_line("data:{\"type\":\"response.output_item.added\",\"item\":{\"type\":\"reasoning\",\"id\":\"r1\"}}\n");
         assert!(r.is_none());
     }
+
+    /// 真实 Ark SSE 样本驱动的回归验证（fixture 来自真实 ark responses 流式响应）：
+    /// - reasoning 相关事件（output_item.added reasoning / summary 等）必须被过滤；
+    /// - output_item.added 的 message item 缺 content 时必须被补上 content:[]。
+    #[test]
+    fn normalizes_real_ark_sse() {
+        let fixture = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/fixtures/ark_sse_real.txt"
+        );
+        let raw = std::fs::read_to_string(fixture).expect("read ark sse fixture");
+        let mut norm = String::new();
+        for line in raw.lines() {
+            // 真实运行时 read_line 保留 \n；lines() 迭代会去掉，这里补回以模拟网络字节流
+            if let Some(out) = normalize_sse_line(&format!("{line}\n")) {
+                norm.push_str(&out);
+            }
+        }
+        // 1) reasoning 已全部过滤
+        for line in norm.lines() {
+            if let Some(data) = line.trim().strip_prefix("data:") {
+                let j = data.trim();
+                if j.is_empty() || j == "[DONE]" {
+                    continue;
+                }
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(j) {
+                    let t = v.get("type").and_then(|x| x.as_str()).unwrap_or("");
+                    assert!(
+                        !t.contains("reasoning"),
+                        "reasoning event leaked after normalization: {t}"
+                    );
+                    let it = v
+                        .get("item")
+                        .and_then(|x| x.get("type"))
+                        .and_then(|x| x.as_str())
+                        .unwrap_or("");
+                    assert!(
+                        it != "reasoning",
+                        "reasoning item leaked after normalization"
+                    );
+                }
+            }
+        }
+        // 2) message item 的 content 被补全为数组
+        let mut added_msg_with_content = false;
+        for line in norm.lines() {
+            if let Some(data) = line.trim().strip_prefix("data:") {
+                let j = data.trim();
+                if j.is_empty() || j == "[DONE]" {
+                    continue;
+                }
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(j) {
+                    if v.get("type").and_then(|x| x.as_str()) == Some("response.output_item.added") {
+                        let it = v.get("item").and_then(|x| x.get("type")).and_then(|x| x.as_str());
+                        if it == Some("message") || it == Some("agentMessage") {
+                            let c = v.get("item").and_then(|x| x.get("content"));
+                            assert!(
+                                c.map(|x| x.is_array()).unwrap_or(false),
+                                "message item missing content array: {v}"
+                            );
+                            added_msg_with_content = true;
+                        }
+                    }
+                }
+            }
+        }
+        assert!(added_msg_with_content, "no message item found in fixture");
+    }
+
+    /// 真实 Ark 流经网关的端到端验证（需要外网 + 环境代理，默认忽略）。
+    /// 运行：cargo test -p harness-app --lib live_via_real_ark -- --ignored
+    #[test]
+    #[ignore]
+    fn live_via_real_ark() {
+        let port = start_gateway().expect("start gateway");
+        let url = format!("http://127.0.0.1:{port}/v1/responses");
+        let payload = serde_json::json!({
+            "model": "ark-code-latest",
+            "input": [{"type": "message", "role": "user",
+                       "content": [{"type": "input_text", "text": "用不超过10个字回答：你好"}]}],
+            "stream": true,
+            "max_output_tokens": 512,
+        });
+        let resp = ureq::post(&url)
+            .set("Content-Type", "application/json")
+            .timeout(std::time::Duration::from_secs(120))
+            .send_string(&payload.to_string())
+            .expect("gateway POST");
+        assert_eq!(resp.status(), 200, "gateway returned non-200");
+        let ct = resp.header("Content-Type").unwrap_or("").to_string();
+        assert!(ct.contains("event-stream"), "expected SSE, got {ct}");
+
+        let mut body = Vec::new();
+        resp.into_reader()
+            .read_to_end(&mut body)
+            .expect("read body");
+        let text = String::from_utf8_lossy(&body);
+
+        let mut reasoning_seen = false;
+        let mut message_ok = false;
+        for line in text.lines() {
+            if let Some(data) = line.trim().strip_prefix("data:") {
+                let json = data.trim();
+                if json.is_empty() || json == "[DONE]" {
+                    continue;
+                }
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(json) {
+                    let t = v.get("type").and_then(|x| x.as_str()).unwrap_or("");
+                    if t.contains("reasoning") { reasoning_seen = true; }
+                    if t == "response.output_item.added" {
+                        let it = v.get("item").and_then(|x| x.get("type")).and_then(|x| x.as_str()).unwrap_or("");
+                        if it == "message" || it == "agentMessage" {
+                            let c = v.get("item").and_then(|x| x.get("content"));
+                            if c.map(|x| x.is_array()).unwrap_or(false) {
+                                message_ok = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert!(!reasoning_seen, "gateway failed to filter reasoning events");
+        assert!(message_ok, "message item missing content array after gateway");
+    }
 }
