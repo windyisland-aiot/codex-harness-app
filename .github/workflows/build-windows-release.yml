@@ -83,18 +83,25 @@ jobs:
       - name: 安装 tauri-cli
         shell: pwsh
         run: |
-          # 作为 root 级 devDependency 安装；不依赖前端 package.json
           if (-not (Test-Path package.json)) {
             '{"name":"harness-root","private":true}' | Out-File -FilePath package.json -Encoding utf8
           }
           npm install -D @tauri-apps/cli@^2.0 2>&1 | Select-Object -Last 15
 
+      - name: 预装 WiX Toolset（避免 Tauri bundler 下载失败）
+        shell: pwsh
+        run: |
+          # WiX 3.14 通过 choco 安装到系统 PATH，Tauri 会自动检测。
+          choco install wixtoolset --version=3.14.0 -y --no-progress 2>&1 | Select-Object -Last 10
+          # 刷新 PATH
+          $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH", "User")
+          Write-Host "candle.exe path:"
+          (Get-Command candle.exe -ErrorAction SilentlyContinue).Source
+
       - name: 构建 Tauri 安装包（MSI + NSIS）
         shell: pwsh
-        env:
-          HTTP_PROXY: ${{ vars.HTTP_PROXY }}
-          HTTPS_PROXY: ${{ vars.HTTPS_PROXY }}
         run: |
+          # 不注入空 HTTP_PROXY/HTTPS_PROXY：空值会让 ureq 误走不存在的代理
           npx tauri build --verbose 2>&1 | Select-Object -Last 400
 
       - name: 枚举产物
