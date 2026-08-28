@@ -3,6 +3,7 @@
 > 基于《基于 Codex 源码搭建公司内部 Harness 应用》需求文档 + 源码可行性调研。
 > 等级定义：**P0 阻塞性基础（必须先完成并打通端到端）/ P1 核心功能（MVP 迭代主线）/ P2 增强与规模化**。
 > 相关结论：协议用 app-server stdio JSON-RPC；模型改用 `[model_providers.<id>]` + `[model] model_provider`；安装包体积 ≤30MB 存在风险需调整。
+> **目标平台：仅 Windows**。T17 起只产出 Windows 安装包，后续所有需求面向 Windows（.msi/.exe，WebView2）。
 
 ---
 
@@ -13,7 +14,7 @@
 | T01 | 编译 Codex 核心二进制 | fork 仓库编译 `codex`（app-server/cli），产出平台可执行文件 |
 | T02 | 账号密码登录功能 | 应用级账号/口令登录：登录界面、后端校验、token 会话保持、登出；与多模型/飞书等工具凭据分离 |
 | T03 | 验证 `codex mcp-server` 最小对话 | 用 MCP inspect/client 打通 thread/start → turn/start → turn/completed → approval |
-| T04 | Tauri 2.x 工程骨架 | 建桌面应用骨架，三平台编译项（Win/macOS/Linux） |
+| T04 | Tauri 2.x 工程骨架 | 建桌面应用骨架，面向 Windows（.msi/.exe，WebView2），预留跨平台结构 |
 | T05 | app-server stdio 集成 | Tauri 后端将 `codex` 作为子进程启动，实现 JSON-RPC over stdio 客户端 |
 | T06 | 基础对话 UI | 指令输入、流式输出（Markdown 渲染）、会话列表 |
 | T07 | 单模型打通（OpenAI） | `[model_providers.openai]` 配置 + `[model] model_provider = "openai"`，验证端到端 |
@@ -31,7 +32,7 @@
 | T14 | 插件与 Skill 系统 | 加载 openai/skills、openai/plugins 与自定义插件，插件管理界面 |
 | T15 | 联网搜索 | 注册 Tavily/Serper MCP，搜索过程与来源展示 |
 | T16 | 会话持久化 | SQLite 存历史会话，支持搜索/重命名/恢复 |
-| T17 | 三平台安装包 | 生成 .msi/.dmg/.deb，校准体积（承接体积结论） |
+| T17 | Windows 安装包 | 生成 Windows .msi/.exe（NSIS/WebView2），校准体积（承接体积结论） |
 
 ## P2 —— 增强与规模化
 
