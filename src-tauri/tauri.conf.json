@@ -1,0 +1,36 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Harness",
+  "version": "0.1.0",
+  "identifier": "com.enterprise.harness",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../frontend/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Harness — 企业内部 Agent",
+        "width": 1180,
+        "height": 760,
+        "minWidth": 900,
+        "minHeight": 600,
+        "resizable": true,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["msi"],
+    "category": "Productivity",
+    "shortDescription": "企业内部 Agent 桌面应用",
+    "longDescription": "面向 Windows 的企业内部 Agent 桌面应用：账号密码登录、codex app-server 对话、审批面板、多模型切换与路由、飞书 MCP 与 OAuth、插件/Skill、联网搜索、会话持久化。",
+    "icon": []
+  }
+}

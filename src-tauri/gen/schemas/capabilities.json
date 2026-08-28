@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"主窗口默认能力：核心 IPC 命令访问","local":true,"windows":["main"],"permissions":["core:default"]}}
