@@ -1,27 +1,53 @@
-//! T08 审批面板：展示 codex 的 `item/commandExecution/requestApproval` /
+//! T08 审批面板（右侧浮栏卡片版）：
+//! 展示 codex 的 `item/commandExecution/requestApproval` /
 //! `item/fileChange/requestApproval` 请求，用户确认/拒绝后回包给 app-server。
+//! 采用 Codex 桌面 App 的右栏审批卡片风格：暖色预警背景 + 命令代码块 + 4 种决策按钮。
 
 import type { ApprovalRequest } from "../codexClient";
 
 const DECISIONS = [
-  { value: "accept", label: "允许" },
-  { value: "acceptForSession", label: "本次会话允许" },
-  { value: "decline", label: "拒绝" },
-  { value: "cancel", label: "取消并停止" },
+  { value: "accept", label: "允许", cls: "primary" },
+  { value: "acceptForSession", label: "会话内允许", cls: "" },
+  { value: "decline", label: "拒绝", cls: "" },
+  { value: "cancel", label: "停止", cls: "danger" },
 ] as const;
 
-function describe(a: ApprovalRequest): string {
+function summarize(a: ApprovalRequest) {
   const p = a.params as Record<string, unknown>;
   if (a.method === "item/commandExecution/requestApproval") {
-    const cmd = typeof p.command === "string" ? p.command : "(命令)";
-    const reason = typeof p.reason === "string" && p.reason ? ` · ${p.reason}` : "";
-    return `${cmd}${reason}`;
+    const kind = typeof p.kind === "string" ? p.kind : "exec";
+    const command =
+      typeof p.command === "string" ? p.command :
+      Array.isArray(p.command) ? (p.command as string[]).join(" ") : "(命令)";
+    const reason = typeof p.reason === "string" && p.reason ? p.reason : "";
+    const cwd = typeof p.cwd === "string" ? p.cwd : "";
+    return {
+      kind: "命令执行",
+      badge: kind,
+      command,
+      reason,
+      cwd,
+    };
   }
   if (a.method === "item/fileChange/requestApproval") {
     const reason = typeof p.reason === "string" && p.reason ? p.reason : "文件变更";
-    return `${reason}`;
+    const patch = typeof p.patch === "string" ? p.patch : "";
+    const path = typeof p.path === "string" ? p.path : "";
+    return {
+      kind: "文件变更",
+      badge: path ? "file" : "patch",
+      command: patch || path || reason,
+      reason,
+      cwd: path,
+    };
   }
-  return a.method;
+  return {
+    kind: "需要审批",
+    badge: "?",
+    command: a.method,
+    reason: "",
+    cwd: "",
+  };
 }
 
 export default function ApprovalPanel({
@@ -31,22 +57,59 @@ export default function ApprovalPanel({
   approvals: ApprovalRequest[];
   onRespond: (id: number, decision: string) => void;
 }) {
-  if (approvals.length === 0) return null;
   return (
-    <div className="approval-panel">
-      <h3>需要审批</h3>
-      {approvals.map((a) => (
-        <div key={a.id} className="approval-item">
-          <code className="approval-cmd">{describe(a)}</code>
-          <div className="approval-actions">
-            {DECISIONS.map((d) => (
-              <button key={d.value} onClick={() => onRespond(a.id, d.value)}>
-                {d.label}
-              </button>
-            ))}
+    <>
+      <header className="right-head">
+        <span>审批 · Approvals</span>
+        {approvals.length > 0 && <span className="count">{approvals.length}</span>}
+      </header>
+      <div className="right-body">
+        {approvals.length === 0 ? (
+          <div className="right-empty">
+            暂无需审批的操作 <br />
+            <span style={{ opacity: 0.7 }}>Agent 执行命令 / 修改文件时会在这里请求确认</span>
           </div>
-        </div>
-      ))}
-    </div>
+        ) : (
+          approvals.map((a) => {
+            const s = summarize(a);
+            return (
+              <div key={a.id} className="approval-card">
+                <h4>
+                  ⚠ {s.kind}
+                  <span className="kbd">{s.badge}</span>
+                  <span className="kbd">#{a.id}</span>
+                </h4>
+                <div className="approval-command">{s.command}</div>
+                <div className="approval-info">
+                  {s.reason && (
+                    <div className="row">
+                      <span className="k">原因</span>
+                      <span>{s.reason}</span>
+                    </div>
+                  )}
+                  {s.cwd && (
+                    <div className="row">
+                      <span className="k">路径</span>
+                      <span style={{ fontFamily: "var(--mono)", wordBreak: "break-all" }}>{s.cwd}</span>
+                    </div>
+                  )}
+                </div>
+                <div className="approval-actions">
+                  {DECISIONS.map((d) => (
+                    <button
+                      key={d.value}
+                      className={d.cls}
+                      onClick={() => onRespond(a.id, d.value)}
+                    >
+                      {d.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
+    </>
   );
 }

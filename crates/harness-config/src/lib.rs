@@ -66,16 +66,20 @@ mod conv {
 }
 
 /// 读取 `config.toml` 为 [`AppConfig`]。
-/// 文件不存在时返回默认值（全部为空），不会报错。
+/// 文件不存在时返回 **火山方舟（Volcengine Ark）默认配置**：
+/// - `model = "ark-code-latest"`，`model_provider = "volcengine-ark"`
+/// - `[model_providers.volcengine-ark]` baseUrl / envKey / wireApi 预填
+/// - 审批策略默认 `on-request`
+/// （首次启动即可出模型能力，用户后续可在配置面板切换 / 覆盖）。
 pub fn read(codex_home: &str) -> Result<AppConfig> {
     let path = config_path(codex_home);
     let mut cfg = AppConfig::default();
     if !path.exists() {
-        return Ok(cfg);
+        return Ok(default_ark_config());
     }
     let text = std::fs::read_to_string(&path)?;
     if text.trim().is_empty() {
-        return Ok(cfg);
+        return Ok(default_ark_config());
     }
     let table: toml::map::Map<String, toml::Value> = match toml::from_str(&text) {
         Ok(m) => m,
@@ -200,7 +204,45 @@ pub fn read(codex_home: &str) -> Result<AppConfig> {
         }
     }
 
+    // 首次读取且无任何配置时，兜底合并 Ark 默认提供商（已存在任何配置时不做强塞）。
+    // ⚠️ T14 skills/plugins/bundled/included_instructions 也属于"已存在配置"，需一起判断，
+    //    否则空 model 但有插件/技能规则时会被误判为"空"并被 Ark 默认覆盖（丢失技能开关）。
+    let empty = cfg.model.is_empty()
+        && cfg.model_provider.is_empty()
+        && cfg.model_providers.is_empty()
+        && cfg.approval_policy.is_empty()
+        && cfg.mcp_servers.is_empty()
+        && cfg.bundled_skills_enabled.is_none()
+        && cfg.skills_include_instructions.is_none()
+        && cfg.skills.is_empty()
+        && cfg.plugins.is_empty();
+    if empty {
+        return Ok(default_ark_config());
+    }
+
     Ok(cfg)
+}
+
+/// 火山方舟 Ark 编码模型默认配置（首次启动 / 配置文件缺失时使用）。
+pub fn default_ark_config() -> AppConfig {
+    use crate::model::{AppConfig, ProviderConfig};
+    AppConfig {
+        model: "ark-code-latest".to_string(),
+        model_provider: "volcengine-ark".to_string(),
+        approval_policy: "on-request".to_string(),
+        model_providers: vec![ProviderConfig {
+            id: "volcengine-ark".to_string(),
+            name: "火山方舟 Ark Code".to_string(),
+            base_url: "https://ark.cn-beijing.volces.com/api/coding/v3".to_string(),
+            env_key: "VOLCENGINE_ARK_API_KEY".to_string(),
+            wire_api: "chat".to_string(),
+        }],
+        mcp_servers: Vec::new(),
+        bundled_skills_enabled: None,
+        skills_include_instructions: None,
+        skills: Vec::new(),
+        plugins: Vec::new(),
+    }
 }
 
 /// 把 [`AppConfig`] 合并写回 `<codex_home>/config.toml`，保留未管理的其它配置。

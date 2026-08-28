@@ -11,8 +11,18 @@ export interface ModelPreset {
   default_model: string;
 }
 
-/** 内置预设（企业常用 OpenAI 兼容模型供应商）。 */
+/** 内置预设（企业常用 OpenAI 兼容模型供应商）。
+ *  首个预设为「火山方舟 Ark Code」——用户指定先把该 API 写死接入，后期可通过配置面板更换。 */
 export const MODEL_PRESETS: ModelPreset[] = [
+  {
+    id: "volcengine-ark",
+    name: "火山方舟 Ark Code",
+    base_url: "https://ark.cn-beijing.volces.com/api/coding/v3",
+    env_key: "VOLCENGINE_ARK_API_KEY",
+    wire_api: "chat",
+    models: ["ark-code-latest", "ark-code-250815"],
+    default_model: "ark-code-latest",
+  },
   {
     id: "mock",
     name: "Mock（本地测试）",

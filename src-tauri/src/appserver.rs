@@ -54,6 +54,18 @@ pub async fn appserver_start(
         if let Some(extra) = env {
             child_env.extend(extra);
         }
+
+        // --- 写死接入：火山方舟 Ark Code API（ARK 编码模型） ---
+        // 用户明确要求「先把现在的 api 写死进去，后期再更换」。
+        // baseUrl = https://ark.cn-beijing.volces.com/api/coding/v3
+        // model  = ark-code-latest
+        // envKey 在 config.toml = VOLCENGINE_ARK_API_KEY → 下面硬塞入进程 env。
+        const VOLCENGINE_ARK_API_KEY_VALUE: &str =
+            "ark-9219d6e8-6264-437e-aeab-95fdb650a043-2c85b";
+        child_env
+            .entry("VOLCENGINE_ARK_API_KEY".to_string())
+            .or_insert_with(|| VOLCENGINE_ARK_API_KEY_VALUE.to_string());
+
         // 兼容老测试：透传 MOCK_KEY（若有）。
         if let Ok(m) = std::env::var("MOCK_KEY") {
             child_env.entry("MOCK_KEY".to_string()).or_insert(m);

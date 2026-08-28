@@ -162,12 +162,22 @@ fn feishu_mcp_disabled_flag_roundtrips() {
 
 #[test]
 fn read_missing_file_returns_defaults() {
+    // 缺失 config.toml 时不再返回纯空结构，而是回落到「火山方舟 Ark」默认提供商，
+    // 以保证首次启动即可出能力（P0 阶段 Ark 集成要求）。
     let dir = std::env::temp_dir().join(format!("harness-cfg-missing-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
     let cfg = harness_config::read(dir.to_str().unwrap()).unwrap();
-    assert_eq!(cfg.model, "");
-    assert!(cfg.model_providers.is_empty());
+    assert_eq!(cfg.model, "ark-code-latest");
+    assert_eq!(cfg.model_provider, "volcengine-ark");
+    assert_eq!(cfg.approval_policy, "on-request");
+    assert_eq!(cfg.model_providers.len(), 1);
+    assert_eq!(cfg.model_providers[0].id, "volcengine-ark");
+    assert_eq!(cfg.model_providers[0].env_key, "VOLCENGINE_ARK_API_KEY");
+    assert!(cfg
+        .model_providers[0]
+        .base_url
+        .starts_with("https://ark.cn-beijing.volces.com/"));
     let _ = fs::remove_dir_all(&dir);
 }
 
