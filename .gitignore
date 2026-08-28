@@ -15,3 +15,5 @@ ok.txt
 *.sqlite-wal
 __pycache__/
 *.pyc
+# codex 二进制随包资源：占位不进仓，CI 下载真实文件
+src-tauri/resources/

@@ -26,6 +26,10 @@ env:
   CARGO_TERM_COLOR: always
   RUSTUP_TOOLCHAIN: stable
   NODE_VERSION: "20"
+  # codex 官方便利二进制版本（Windows x64）。
+  # 下载到 src-tauri/resources/ 后随 Tauri resources 打进 MSI/NSIS，
+  # 运行时 lib.rs 优先从 resourceDir/codex.exe 解析。
+  CODEX_RELEASE: "rust-v0.150.1"
 
 permissions:
   contents: write
@@ -82,6 +86,19 @@ jobs:
         run: |
           npm ci --no-audit --no-fund
           npm run build 2>&1 | Select-Object -Last 60
+
+      - name: 下载 codex Windows 二进制（随包分发）
+        shell: pwsh
+        run: |
+          $dir = Join-Path $PWD "src-tauri\resources"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          $url = "https://github.com/openai/codex/releases/download/$env:CODEX_RELEASE/codex-x86_64-pc-windows-msvc.exe"
+          $out = Join-Path $dir "codex.exe"
+          Invoke-WebRequest -Uri $url -OutFile $out | Out-Null
+          $sz = [math]::Round((Get-Item $out).Length / 1MB, 2)
+          Write-Host "codex.exe 下载完成: $out ($sz MB)"
+          # Windows 会因下载标记 Zone.Identifier 触发 Mark-of-the-Web；去掉，避免执行被拦截
+          Unblock-File -Path $out -ErrorAction SilentlyContinue
 
       - name: 安装 tauri-cli
         shell: pwsh

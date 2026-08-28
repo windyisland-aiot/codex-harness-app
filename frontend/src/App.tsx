@@ -976,11 +976,11 @@ export default function App() {
                 <h3>🛠 默认模型已就绪</h3>
                 <p>
                   火山方舟 Ark Code（ark-code-latest）已被设为默认模型，
-                  API Key 已写死在后端，可直接开箱使用。
+                  API Key 已写死在后端网关，可直接开箱使用。
                   你稍后可以在「配置」中切换到其他厂商。
                 </p>
-                <div className="ok">✓ base_url: https://ark.cn-beijing.volces.com/api/coding/v3</div>
-                <div className="ok">✓ env_key: VOLCENGINE_ARK_API_KEY 已注入到子进程</div>
+                <div className="ok">✓ 内嵌 Ark 网关 127.0.0.1:18762 转发真实 Ark 端点</div>
+                <div className="ok">✓ wire_api: responses（codex 协议）</div>
               </div>
             )}
 

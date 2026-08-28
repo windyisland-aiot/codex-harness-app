@@ -3,6 +3,7 @@
 //! T04 骨架已接通；T05 起接入 `codex app-server` stdio 客户端（`appserver` 模块）。
 
 mod appserver;
+mod ark_gateway;
 mod config;
 mod feishu;
 mod oauth;

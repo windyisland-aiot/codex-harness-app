@@ -50,21 +50,22 @@ pub async fn appserver_start(
     let st = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
         let mut child_env = HashMap::new();
-        child_env.insert("CODEX_HOME".to_string(), codex_home);
+        child_env.insert("CODEX_HOME".to_string(), codex_home.clone());
+
+        // --- 内嵌 Ark 网关（协议归一化） ---
+        // codex config.toml 的 provider base_url 指向 127.0.0.1:18762/v1，
+        // 网关把 Responses SSE 转发到火山方舟并做归一化（过滤 reasoning、补 content）。
+        // API key 只由网关持有，无需注入 codex 子进程环境。
+        let gw_port = crate::ark_gateway::start_gateway()
+            .map_err(|e| format!("启动 Ark 网关失败: {e}"))?;
+        child_env.insert(
+            "HARNESS_ARK_GW_PORT".to_string(),
+            gw_port.to_string(),
+        );
+
         if let Some(extra) = env {
             child_env.extend(extra);
         }
-
-        // --- 写死接入：火山方舟 Ark Code API（ARK 编码模型） ---
-        // 用户明确要求「先把现在的 api 写死进去，后期再更换」。
-        // baseUrl = https://ark.cn-beijing.volces.com/api/coding/v3
-        // model  = ark-code-latest
-        // envKey 在 config.toml = VOLCENGINE_ARK_API_KEY → 下面硬塞入进程 env。
-        const VOLCENGINE_ARK_API_KEY_VALUE: &str =
-            "ark-9219d6e8-6264-437e-aeab-95fdb650a043-2c85b";
-        child_env
-            .entry("VOLCENGINE_ARK_API_KEY".to_string())
-            .or_insert_with(|| VOLCENGINE_ARK_API_KEY_VALUE.to_string());
 
         // 兼容老测试：透传 MOCK_KEY（若有）。
         if let Ok(m) = std::env::var("MOCK_KEY") {

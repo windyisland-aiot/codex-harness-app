@@ -137,38 +137,37 @@ if echo "$R" | grep -q "Finished"; then
   addcase RUST-WS "Rust workspace cargo check" PASS "$(echo "$R" | tail -1)"
 else addcase RUST-WS "Rust workspace cargo check" FAIL "$R"; fi
 
-# --- Ark API real connectivity --------------------------------------
-PAYLOAD_NS='{"model":"ark-code-latest","messages":[{"role":"user","content":"用不超过10个字回答：你好"}],"max_tokens":64,"temperature":0.2}'
-PAYLOAD_SS='{"model":"ark-code-latest","messages":[{"role":"user","content":"ping"}],"max_tokens":16,"stream":true}'
-R1=$(curl -sS --max-time 40 -X POST https://ark.cn-beijing.volces.com/api/coding/v3/chat/completions \
+# --- Ark API real connectivity（responses 协议，与 codex 网关一致） ----
+PAYLOAD_R='{"model":"ark-code-latest","input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"用不超过10个字回答：你好"}]}],"max_output_tokens":64}'
+R1=$(curl -sS --max-time 60 -X POST https://ark.cn-beijing.volces.com/api/coding/v3/responses \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer ark-9219d6e8-6264-437e-aeab-95fdb650a043-2c85b" \
-  -d "$PAYLOAD_NS" 2>&1)
-R2=$(curl -sS --max-time 40 -N -X POST https://ark.cn-beijing.volces.com/api/coding/v3/chat/completions \
+  -d "$PAYLOAD_R" 2>&1)
+R2=$(curl -sS --max-time 60 -N -X POST https://ark.cn-beijing.volces.com/api/coding/v3/responses \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer ark-9219d6e8-6264-437e-aeab-95fdb650a043-2c85b" \
-  -d "$PAYLOAD_SS" 2>&1 | grep -c "^data:")
-# 解析：content + reasoning_content 任一非空即有效（deepseek 系列会同时给两者）
+  -d '{"model":"ark-code-latest","input":[{"type":"message","role":"user","content":[{"type":"input_text","text":"ping"}]}],"stream":true}' 2>&1 | grep -c "^data:")
 MODEL=$(python3 -c "import sys,json;d=json.loads(sys.argv[1]);print(d.get('model','?'))" "$R1" 2>&1)
-REASON_OR_CONTENT=$(python3 -c "
+HAS_TEXT=$(python3 -c "
 import sys,json
 d=json.loads(sys.argv[1])
-c=d['choices'][0]['message'].get('content','') or ''
-r=d['choices'][0]['message'].get('reasoning_content','') or ''
-out=(c.strip() or r.strip())[:80]
-print(repr(out))
+out=[]
+for it in d.get('output',[]):
+    if it.get('type')=='message':
+        for c in it.get('content',[]):
+            t=c.get('text','') or ''
+            out.append(t)
+print('ok' if ''.join(out).strip() else 'empty')
 " "$R1" 2>&1)
-HAS_ANY_TEXT=$(python3 -c "
-import sys,json
-d=json.loads(sys.argv[1])
-m=d['choices'][0]['message']
-c=len((m.get('content') or '').strip())
-r=len((m.get('reasoning_content') or '').strip())
-print('ok' if c+r>0 else 'empty')
-" "$R1" 2>&1)
-if [ "$HAS_ANY_TEXT" = "ok" ] && [ "$R2" -gt 2 ]; then
-  addcase ARK-LIVE "火山方舟 Ark API 真实联通" PASS "非流式文本=$REASON_OR_CONTENT model=$MODEL / SSE data 行数=$R2 > 2"
-else addcase ARK-LIVE "火山方舟 Ark API" FAIL "non-stream=$(echo "$R1" | head -c 300) sse_lines=$R2 has_text=$HAS_ANY_TEXT"; fi
+if [ "$HAS_TEXT" = "ok" ] && [ "$R2" -gt 2 ]; then
+  addcase ARK-LIVE "火山方舟 Ark API 真实联通(responses)" PASS "output 文本 OK model=$MODEL / SSE data 行数=$R2 > 2"
+else addcase ARK-LIVE "火山方舟 Ark API" FAIL "non-stream=$(echo "$R1" | head -c 300) sse_lines=$R2 has_text=$HAS_TEXT"; fi
+
+# --- ARK-GW: 内嵌网关归一化（过滤 reasoning + 补 content）单测 ---------
+RGW=$(cd "$(dirname "$0")" && cargo test -p harness-app --lib ark_gateway 2>&1 | grep "test result:")
+if echo "$RGW" | grep -q "2 passed"; then
+  addcase ARK-GW "Ark 网关 SSE 归一化(单测 2/2)" PASS "filters_reasoning + patches_missing_content"
+else addcase ARK-GW "Ark 网关" FAIL "$RGW"; fi
 
 # 汇总输出
 cat "$CASES_FILE" >> "$OUT"

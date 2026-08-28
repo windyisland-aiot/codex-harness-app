@@ -37,13 +37,27 @@ npm ci --no-audit --no-fund
 npm run build
 Pop-Location
 
-Write-Host "-- 2. 安装 @tauri-apps/cli (本地) --" -ForegroundColor Cyan
+Write-Host "-- 2. 下载 codex Windows 二进制（随包分发） --" -ForegroundColor Cyan
+$codexRel = if ($env:CODEX_RELEASE) { $env:CODEX_RELEASE } else { "rust-v0.150.1" }
+$resDir = Join-Path $BuildDir "src-tauri\resources"
+New-Item -ItemType Directory -Force -Path $resDir | Out-Null
+$codexOut = Join-Path $resDir "codex.exe"
+if (-not (Test-Path $codexOut)) {
+    $url = "https://github.com/openai/codex/releases/download/$codexRel/codex-x86_64-pc-windows-msvc.exe"
+    Write-Host "下载 codex: $url"
+    Invoke-WebRequest -Uri $url -OutFile $codexOut | Out-Null
+    Unblock-File -Path $codexOut -ErrorAction SilentlyContinue
+} else {
+    Write-Host "codex.exe 已存在，跳过下载"
+}
+
+Write-Host "-- 3. 安装 @tauri-apps/cli (本地) --" -ForegroundColor Cyan
 npm install -D @tauri-apps/cli@^2
 
-Write-Host "-- 3. tauri build（msi + nsis） --" -ForegroundColor Cyan
+Write-Host "-- 4. tauri build（msi + nsis） --" -ForegroundColor Cyan
 npx tauri build --verbose
 
-Write-Host "-- 4. 产物枚举 --" -ForegroundColor Cyan
+Write-Host "-- 5. 产物枚举 --" -ForegroundColor Cyan
 $bundle = Join-Path $BuildDir "src-tauri" "target" "release" "bundle"
 if (Test-Path $bundle) {
     Get-ChildItem -Recurse -File $bundle |

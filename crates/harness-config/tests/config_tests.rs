@@ -174,10 +174,12 @@ fn read_missing_file_returns_defaults() {
     assert_eq!(cfg.model_providers.len(), 1);
     assert_eq!(cfg.model_providers[0].id, "volcengine-ark");
     assert_eq!(cfg.model_providers[0].env_key, "VOLCENGINE_ARK_API_KEY");
-    assert!(cfg
-        .model_providers[0]
-        .base_url
-        .starts_with("https://ark.cn-beijing.volces.com/"));
+    // base_url 指向本机内嵌网关（协议归一化），真实 Ark 端点由网关持有。
+    assert_eq!(
+        cfg.model_providers[0].base_url,
+        "http://127.0.0.1:18762/v1"
+    );
+    assert_eq!(cfg.model_providers[0].wire_api, "responses");
     let _ = fs::remove_dir_all(&dir);
 }
 

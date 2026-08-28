@@ -17,9 +17,12 @@ export const MODEL_PRESETS: ModelPreset[] = [
   {
     id: "volcengine-ark",
     name: "火山方舟 Ark Code",
-    base_url: "https://ark.cn-beijing.volces.com/api/coding/v3",
+    // base_url 指向本机内嵌网关（127.0.0.1:18762），网关负责把
+    // Responses SSE 归一化（过滤 reasoning、补 content）；真实 Ark
+    // 端点与 API key 只由网关持有。改回真实地址请同步 wire_api=responses。
+    base_url: "http://127.0.0.1:18762/v1",
     env_key: "VOLCENGINE_ARK_API_KEY",
-    wire_api: "chat",
+    wire_api: "responses",
     models: ["ark-code-latest", "ark-code-250815"],
     default_model: "ark-code-latest",
   },

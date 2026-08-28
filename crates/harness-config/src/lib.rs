@@ -233,9 +233,12 @@ pub fn default_ark_config() -> AppConfig {
         model_providers: vec![ProviderConfig {
             id: "volcengine-ark".to_string(),
             name: "火山方舟 Ark Code".to_string(),
-            base_url: "https://ark.cn-beijing.volces.com/api/coding/v3".to_string(),
+            // base_url 指向本机内嵌网关（128 位，Tauri 启动时拉起），
+            // 网关负责把 Responses SSE 归一化（过滤 reasoning、补 content）；
+            // 真实 Ark 端点与 API key 只由网关持有。
+            base_url: "http://127.0.0.1:18762/v1".to_string(),
             env_key: "VOLCENGINE_ARK_API_KEY".to_string(),
-            wire_api: "chat".to_string(),
+            wire_api: "responses".to_string(),
         }],
         mcp_servers: Vec::new(),
         bundled_skills_enabled: None,
