@@ -55,6 +55,24 @@ export function pollEvents(): Promise<AppEvent[]> {
   return invoke<AppEvent[]>("appserver_poll_events");
 }
 
+/** T08：取走待处理的审批请求。 */
+export interface ApprovalRequest {
+  id: number;
+  method: string;
+  params: Record<string, unknown>;
+}
+export function pollApprovals(): Promise<ApprovalRequest[]> {
+  return invoke<ApprovalRequest[]>("appserver_poll_approvals");
+}
+
+/** T08：回复审批（decision ∈ accept / acceptForSession / decline / cancel）。 */
+export function respondApproval(requestId: number, decision: string): Promise<void> {
+  return invoke("appserver_respond_approval", {
+    request_id: requestId,
+    decision,
+  });
+}
+
 /** 停止 app-server。 */
 export function stop(): Promise<void> {
   return invoke("appserver_stop");

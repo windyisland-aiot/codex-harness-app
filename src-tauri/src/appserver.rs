@@ -148,6 +148,42 @@ pub async fn appserver_poll_events(state: State<'_, CodexHandle>) -> Result<Vec<
     .map_err(|e| e.to_string())?
 }
 
+/// 取走待处理的审批请求（`[{id, method, params}, ...]`）。T08 审批面板消费。
+#[tauri::command]
+pub async fn appserver_poll_approvals(state: State<'_, CodexHandle>) -> Result<Vec<Value>, String> {
+    let st = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut g = st.approvals.lock().map_err(|e| e.to_string())?;
+        let out: Vec<Value> = g
+            .drain(..)
+            .map(|(req_id, method, params)| {
+                serde_json::json!({ "id": req_id, "method": method, "params": params })
+            })
+            .collect();
+        Ok::<Vec<Value>, String>(out)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// 回复某个审批请求（`{"decision": "accept"|"acceptForSession"|"decline"|"cancel"}`）。
+#[tauri::command]
+pub async fn appserver_respond_approval(
+    state: State<'_, CodexHandle>,
+    request_id: u64,
+    decision: String,
+) -> Result<(), String> {
+    let st = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut guard = st.client.lock().map_err(|e| e.to_string())?;
+        let client = guard.as_mut().ok_or("app-server 未启动")?;
+        let result = serde_json::json!({ "decision": decision });
+        client.respond(request_id, result).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// 停止 app-server 子进程。
 #[tauri::command]
 pub async fn appserver_stop(state: State<'_, CodexHandle>) -> Result<(), String> {

@@ -277,6 +277,23 @@ impl AppServerClient {
         self.call("turn/start", params, None)
     }
 
+    /// 回复服务器主动请求（如审批 `item/commandExecution/requestApproval`）。
+    ///
+    /// `result` 是要写回的 JSON-RPC `result` 载荷（如 `{"decision": "accept"}`）。
+    /// 对应 T05 里 `on_server_request` 返回 `None` 后由业务侧延后回包的场景。
+    pub fn respond(&mut self, request_id: u64, result: Value) -> Result<()> {
+        let msg = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": request_id,
+            "result": result,
+        });
+        self.writer
+            .write_all(msg.to_string().as_bytes())
+            .and_then(|_| self.writer.write_all(b"\n"))
+            .and_then(|_| self.writer.flush())
+            .map_err(|e| AppServerError::Io(e.to_string()))
+    }
+
     /// 关闭子进程。
     pub fn shutdown(&mut self) {
         if let Some(mut c) = self.child.take() {

@@ -1,7 +1,10 @@
 //! T06 基础对话 UI：指令输入、流式输出（Markdown 渲染）、会话列表。
+//! T08 审批面板：命令/文件变更需审批时弹出确认/拒绝。
 import { useEffect, useRef, useState } from "react";
 import Markdown from "./components/Markdown";
+import ApprovalPanel from "./components/ApprovalPanel";
 import * as codex from "./codexClient";
+import type { ApprovalRequest } from "./codexClient";
 
 interface Msg {
   role: "user" | "assistant";
@@ -34,6 +37,7 @@ export default function App() {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [running, setRunning] = useState(false);
+  const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
 
   const runningRef = useRef(false);
   const activeThreadRef = useRef<string | null>(null);
@@ -101,6 +105,31 @@ export default function App() {
       if (timerRef.current) clearInterval(timerRef.current);
     };
   }, [running]);
+
+  // 轮询审批请求：只在前端持有待审批项为空时继续（避免重复弹窗应由后端缓冲保证）。
+  useEffect(() => {
+    if (!connected) return;
+    const t = setInterval(async () => {
+      try {
+        const list = await codex.pollApprovals();
+        if (list.length > 0) {
+          setApprovals((prev) => [...prev, ...list]);
+        }
+      } catch (e) {
+        // 轮询失败静默，避免打断对话状态。
+      }
+    }, POLL_MS);
+    return () => clearInterval(t);
+  }, [connected]);
+
+  async function respondApproval(id: number, decision: string) {
+    try {
+      await codex.respondApproval(id, decision);
+      setApprovals((prev) => prev.filter((a) => a.id !== id));
+    } catch (e) {
+      setStatus(`审批回复失败: ${e}`);
+    }
+  }
 
   async function send() {
     const text = input.trim();
@@ -170,6 +199,7 @@ export default function App() {
       </aside>
 
       <main className="main">
+        <ApprovalPanel approvals={approvals} onRespond={respondApproval} />
         <section className="msglist">
           {messages.length === 0 && (
             <div className="placeholder">输入指令开始与 Agent 对话</div>

@@ -192,3 +192,50 @@ body {
   text-overflow: ellipsis;
   max-width: 320px;
 }
+
+/* T08 审批面板 */
+.approval-panel {
+  background: #2a2113;
+  border: 1px solid #6b4e1b;
+  border-radius: 10px;
+  margin: 12px 20px 0;
+  padding: 12px 16px;
+  color: #f5e3c6;
+}
+.approval-panel h3 {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: #f0c674;
+}
+.approval-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid #3a2f1a;
+}
+.approval-item:last-child {
+  border-bottom: none;
+}
+.approval-cmd {
+  font-size: 13px;
+  word-break: break-all;
+}
+.approval-actions {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.approval-actions button {
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid #54401e;
+  background: #3a2f1a;
+  color: #f5e3c6;
+  cursor: pointer;
+  font-size: 12px;
+}
+.approval-actions button:hover {
+  background: #4a3b22;
+}
