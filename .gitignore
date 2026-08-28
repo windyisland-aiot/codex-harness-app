@@ -4,6 +4,7 @@
 !**/*.toml
 approval-home/
 .codex-home/
+.codex-t10-probe/
 target/
 node_modules/
 dist/

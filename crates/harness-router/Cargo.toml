@@ -1,0 +1,9 @@
+[package]
+name = "harness-router"
+version = "0.1.0"
+edition = "2021"
+description = "T11 模型路由：按任务类型/上下文长度/成本/敏感度路由到不同模型"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"

@@ -422,3 +422,44 @@ body {
 .model-switch select:disabled {
   opacity: 0.5;
 }
+
+/* T11 模型路由 */
+.router-panel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  font-size: 12px;
+  color: #8b96a5;
+}
+.router-panel label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.router-panel input[type="checkbox"] {
+  accent-color: #2f81f7;
+}
+.router-btn {
+  background: #1f2733;
+  color: #9ecbff;
+  border: 1px solid #2c3644;
+  border-radius: 8px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 12px;
+}
+.router-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.router-decision {
+  color: #9ecbff;
+  white-space: nowrap;
+}
+.router-time {
+  color: #5c6672;
+  font-size: 11px;
+}

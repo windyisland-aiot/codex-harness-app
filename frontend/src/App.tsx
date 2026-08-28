@@ -5,8 +5,9 @@ import Markdown from "./components/Markdown";
 import ApprovalPanel from "./components/ApprovalPanel";
 import ConfigPanel from "./components/ConfigPanel";
 import ModelSwitcher from "./components/ModelSwitcher";
+import RouterPanel from "./components/RouterPanel";
 import * as codex from "./codexClient";
-import type { ApprovalRequest, AppConfig, ProviderConfig } from "./codexClient";
+import type { ApprovalRequest, AppConfig, ProviderConfig, RouteDecision } from "./codexClient";
 import type { ModelPreset } from "./models";
 
 interface Msg {
@@ -42,6 +43,10 @@ export default function App() {
   const [input, setInput] = useState("");
   const [running, setRunning] = useState(false);
   const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
+
+  // T11 模型路由：自动路由开关 + 敏感标记（路由决策应用到线程）。
+  const [autoRoute, setAutoRoute] = useState(true);
+  const [sensitive, setSensitive] = useState(false);
 
   // 发送时记录当前线程所用 provider，用于 T10 判断切换是否需新开线程。
   const threadProviderRef = useRef<string | null>(null);
@@ -152,16 +157,39 @@ export default function App() {
     setMessages(next);
 
     try {
+      // T11 模型路由：开启自动路由时，先按指令路由到合适模型，再应用到线程。
+      let routeModel = model;
+      let routeProvider = provider;
+      if (autoRoute) {
+        try {
+          const d = await codex.route(text, { sensitive });
+          routeModel = d.model;
+          routeProvider = d.provider;
+        } catch (e) {
+          setStatus(`路由失败，回退当前模型: ${e}`);
+        }
+      }
       let threadId = activeThreadRef.current;
       if (!threadId) {
-        const nid = await codex.threadStart({ model, modelProvider: provider, cwd });
+        const nid = await codex.threadStart({ model: routeModel, modelProvider: routeProvider, cwd });
         threadId = nid;
-        threadProviderRef.current = provider;
+        threadProviderRef.current = routeProvider;
         setActiveThread(nid);
         setSessions((s) => [
           ...s,
           { id: nid, title: text.slice(0, 24) + (text.length > 24 ? "…" : "") },
         ]);
+      } else if (autoRoute && routeModel !== model) {
+        // 已有线程：把路由到的模型应用到当前线程（下个 turn 生效）。
+        try {
+          await codex.threadSetModel(threadId, routeModel);
+        } catch (e) {
+          setStatus(`切换路由模型失败: ${e}`);
+        }
+      }
+      if (routeModel !== model || routeProvider !== provider) {
+        setModel(routeModel);
+        setProvider(routeProvider);
       }
       const tid = threadId as string;
       await codex.turnStart({ threadId: tid, cwd, text });
@@ -233,6 +261,24 @@ export default function App() {
     }
   }
 
+  /** T11：手动路由命中后，将推荐模型应用到当前线程（供后续 turn 使用）。 */
+  async function handleRouted(d: RouteDecision | null) {
+    if (!d || d.model === model) return;
+    setModel(d.model);
+    setProvider(d.provider);
+    const tid = activeThreadRef.current;
+    if (tid) {
+      try {
+        await codex.threadSetModel(tid, d.model);
+        setStatus(`已按路由应用 ${d.provider}/${d.model}`);
+      } catch (e) {
+        setStatus(`应用路由模型失败: ${e}`);
+      }
+    } else {
+      setStatus(`路由推荐 ${d.provider}/${d.model}（新会话将使用）`);
+    }
+  }
+
   return (
     <div className="chat">
       <aside className="sidebar">
@@ -280,6 +326,15 @@ export default function App() {
         </section>
 
         <footer className="inputbar">
+          <RouterPanel
+            prompt={input}
+            disabled={pending || running}
+            autoRoute={autoRoute}
+            onAutoRouteChange={setAutoRoute}
+            sensitive={sensitive}
+            onSensitiveChange={setSensitive}
+            onRouted={handleRouted}
+          />
           <ModelSwitcher
             provider={provider}
             model={model}

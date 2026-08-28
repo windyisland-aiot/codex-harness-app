@@ -4,6 +4,7 @@
 
 mod appserver;
 mod config;
+mod router;
 
 /// 前端调用的最小命令，用于验证前后端 IPC 连通（T04）。
 #[tauri::command]
@@ -29,6 +30,7 @@ pub fn run() {
             appserver::appserver_stop,
             config::config_read,
             config::config_write,
+            router::router_resolve,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
