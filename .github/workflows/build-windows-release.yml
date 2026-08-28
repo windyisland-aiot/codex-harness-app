@@ -88,15 +88,15 @@ jobs:
           }
           npm install -D @tauri-apps/cli@^2.0 2>&1 | Select-Object -Last 15
 
-      - name: 预装 WiX Toolset（避免 Tauri bundler 下载失败）
+      - name: 检查 WiX（windows-latest 已预装）
         shell: pwsh
         run: |
-          # WiX 3.14 通过 choco 安装到系统 PATH，Tauri 会自动检测。
-          choco install wixtoolset --version=3.14.0 -y --no-progress 2>&1 | Select-Object -Last 10
-          # 刷新 PATH
-          $env:PATH = [System.Environment]::GetEnvironmentVariable("PATH", "Machine") + ";" + [System.Environment]::GetEnvironmentVariable("PATH", "User")
-          Write-Host "candle.exe path:"
-          (Get-Command candle.exe -ErrorAction SilentlyContinue).Source
+          $candle = (Get-Command candle.exe -ErrorAction SilentlyContinue).Source
+          if ($candle) {
+            Write-Host "WiX candle.exe: $candle"
+          } else {
+            Write-Host "WiX 未在 PATH 中，Tauri 将自行下载"
+          }
 
       - name: 构建 Tauri 安装包（MSI + NSIS）
         shell: pwsh
