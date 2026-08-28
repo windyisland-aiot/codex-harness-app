@@ -185,6 +185,44 @@ export function feishuStatus(codexHome: string): Promise<FeishuStatus> {
   return invoke<FeishuStatus>("feishu_status", { codex_home: codexHome });
 }
 
+// --- T13 飞书 OAuth ---
+
+/** OAuth 命令公共参数（app_id/app_secret 为空时回退到环境变量）。 */
+export interface OAuthParams {
+  appId?: string;
+  appSecret?: string;
+  redirectUri?: string;
+  baseUrl?: string;
+}
+
+export interface TokenBundle {
+  access_token: string;
+  refresh_token: string;
+  token_type: string;
+  scope: string;
+  exp_ts: number;
+}
+
+/** 用 app_id/app_secret 取 `app_access_token`（校验应用凭据）。 */
+export function feishuAppToken(p: OAuthParams): Promise<{ app_access_token: string; expire: number }> {
+  return invoke("feishu_oauth_app_token", { params: p });
+}
+
+/** 生成用户授权页 URL（`state` 用于回调防 CSRF）。 */
+export function feishuAuthorizeUrl(p: OAuthParams, state: string): Promise<string> {
+  return invoke<string>("feishu_oauth_authorize_url", { params: p, state });
+}
+
+/** 用回调 `code` 换取 `user_access_token` + `refresh_token`。 */
+export function feishuExchange(p: OAuthParams, code: string): Promise<TokenBundle> {
+  return invoke<TokenBundle>("feishu_oauth_exchange", { params: p, code });
+}
+
+/** 用 `refresh_token` 刷新，返回滚动后的新 token。 */
+export function feishuRefresh(p: OAuthParams, refreshToken: string): Promise<TokenBundle> {
+  return invoke<TokenBundle>("feishu_oauth_refresh", { params: p, refresh_token: refreshToken });
+}
+
 /** 从通知中抽取某个 method 携带的文本增量（用于流式渲染）。 */
 export function textDelta(e: AppEvent): string | null {
   if (e.method === "item/agentMessage/delta") {

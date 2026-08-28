@@ -481,3 +481,22 @@ body {
   font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
   font-size: 12px;
 }
+/* T13 飞书 OAuth 面板 */
+.cfg-row {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+}
+.feishu-oauth .cfg-section {
+  gap: 8px;
+}
+.oauth-url {
+  word-break: break-all;
+  user-select: text;
+  cursor: text;
+}
+.feishu-oauth textarea {
+  resize: vertical;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 12px;
+}

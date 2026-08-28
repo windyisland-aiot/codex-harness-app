@@ -6,6 +6,7 @@ import ApprovalPanel from "./components/ApprovalPanel";
 import ConfigPanel from "./components/ConfigPanel";
 import ModelSwitcher from "./components/ModelSwitcher";
 import RouterPanel from "./components/RouterPanel";
+import FeishuOAuthPanel from "./components/FeishuOAuthPanel";
 import * as codex from "./codexClient";
 import type { ApprovalRequest, AppConfig, ProviderConfig, RouteDecision } from "./codexClient";
 import type { ModelPreset } from "./models";
@@ -31,6 +32,7 @@ export default function App() {
   const [model, setModel] = useState("mock-model");
   const [provider, setProvider] = useState("mock");
   const [cfgOpen, setCfgOpen] = useState(false);
+  const [feishuOpen, setFeishuOpen] = useState(false);
   const cwd = "/workspace/codex-harness-app";
 
   const [connected, setConnected] = useState(false);
@@ -304,6 +306,9 @@ export default function App() {
         <button className="new-btn" onClick={() => setCfgOpen(true)}>
           ⚙ 配置
         </button>
+        <button className="new-btn" onClick={() => setFeishuOpen(true)}>
+          ✈ 飞书
+        </button>
         <div className="conn">
           <div className={`dot ${connected ? "on" : "off"}`} /> {status}
         </div>
@@ -367,6 +372,11 @@ export default function App() {
         onClose={() => setCfgOpen(false)}
         codexHome={codexHome}
         onSaved={onConfigSaved}
+        onStatus={setStatus}
+      />
+      <FeishuOAuthPanel
+        open={feishuOpen}
+        onClose={() => setFeishuOpen(false)}
         onStatus={setStatus}
       />
     </div>
