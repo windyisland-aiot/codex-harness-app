@@ -47,11 +47,9 @@ jobs:
             if ($env:GITHUB_REF -like "refs/tags/*") {
               $v = ($env:GITHUB_REF -replace "^refs/tags/", "")
             } else {
-              # 无前缀时用短 sha 做快照
               $v = (git describe --tags --always --dirty=-snapshot)
             }
           }
-          # 去前导 v（若有）便于统一；产物名里仍然保留原始输入
           $canon = $v -replace "^v", ""
           "version_raw=$v" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           "version=$canon" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
@@ -73,28 +71,31 @@ jobs:
       - name: 缓存 Rust / cargo
         uses: Swatinem/rust-cache@v2
         with:
-          workspaces: |
-            codex-harness-app -> target
           cache-on-failure: true
 
       - name: 前端依赖 & 构建
         shell: pwsh
+        working-directory: frontend
         run: |
-          cd frontend
           npm ci --no-audit --no-fund
           npm run build 2>&1 | Select-Object -Last 60
 
-      # --- Tauri bundler 对依赖下载走代理更稳（参考 T17 经验） ---
+      - name: 安装 tauri-cli
+        shell: pwsh
+        run: |
+          # 作为 root 级 devDependency 安装；不依赖前端 package.json
+          if (-not (Test-Path package.json)) {
+            '{"name":"harness-root","private":true}' | Out-File -FilePath package.json -Encoding utf8
+          }
+          npm install -D @tauri-apps/cli@^2.0 2>&1 | Select-Object -Last 15
+
       - name: 构建 Tauri 安装包（MSI + NSIS）
         shell: pwsh
         env:
-          # 若需要企业代理，请在仓库 Secrets 中配置 HTTP_PROXY/HTTPS_PROXY 并在此注入。
           HTTP_PROXY: ${{ vars.HTTP_PROXY }}
           HTTPS_PROXY: ${{ vars.HTTPS_PROXY }}
         run: |
-          # npm 直接调用 tauri-cli（项目未作为 devDependency 安装时回退到 cargo install）
-          npm install -D @tauri-apps/cli@^2 2>&1 | Select-Object -Last 10
-          npx tauri build --verbose 2>&1 | Select-Object -Last 200
+          npx tauri build --verbose 2>&1 | Select-Object -Last 400
 
       - name: 枚举产物
         id: artifacts
@@ -111,7 +112,7 @@ jobs:
           if ($msi.Count -eq 0 -and $exe.Count -eq 0) { Write-Error "no installer built"; exit 1 }
           $list = @()
           foreach ($p in ($msi + $exe)) { $list += $p }
-          $($list -join "`n") | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append -NoNewline
+          "artifact_count=$($list.Count)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           "artifacts_path=$($bundle)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
 
       - name: 上传安装包作为 workflow artifact
@@ -159,6 +160,7 @@ jobs:
             Sort-Object SizeMB -Descending
           $all | Format-Table -AutoSize
           $csv = ($all | ConvertTo-Csv -NoTypeInformation) -join "`n"
+          "## 体积报告" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
           "size_report<<EOF" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
           "`n$csv`n" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
           "EOF" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append

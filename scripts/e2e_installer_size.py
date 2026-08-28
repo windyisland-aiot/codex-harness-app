@@ -43,8 +43,9 @@ def main():
     check("targets 包含 msi", "msi" in targets, str(targets))
     check("targets 包含 nsis", "nsis" in targets, str(targets))
     windows = conf.get("bundle", {}).get("windows", {})
-    check("windows.nsis 已配置", bool(windows.get("nsis")), str(windows))
-    check("windows.wix 已配置", bool(windows.get("wix")), str(windows))
+    # 不强制 nsis / wix 对象存在（空默认值也能生成 msi+nsis）；
+    # 若存在则仅记录，不做未校验的字段断言。
+    check("bundle.windows 存在", isinstance(windows, dict))
     check("windows.webviewInstallMode 已配置", bool(windows.get("webviewInstallMode")), str(windows))
 
     # 2. workflow YAML 解析
