@@ -15,7 +15,7 @@
 | T02 | 账号密码登录功能 | 应用级账号/口令登录：登录界面、后端校验、token 会话保持、登出；与多模型/飞书等工具凭据分离 | ✅ |
 | T03 | 验证 `codex mcp-server` 最小对话 | 用 MCP inspect/client 打通 thread/start → turn/start → turn/completed → approval | ✅ |
 | T04 | Tauri 2.x 工程骨架 | 建桌面应用骨架，面向 Windows（.msi/.exe，WebView2），预留跨平台结构 | ✅ |
-| T05 | app-server stdio 集成 | Tauri 后端将 `codex` 作为子进程启动，实现 JSON-RPC over stdio 客户端 | ⏳ |
+| T05 | app-server stdio 集成 | Tauri 后端将 `codex` 作为子进程启动，实现 JSON-RPC over stdio 客户端 | ✅ |
 | T06 | 基础对话 UI | 指令输入、流式输出（Markdown 渲染）、会话列表 | ⏳ |
 | T07 | 单模型打通（OpenAI） | `[model_providers.openai]` 配置 + `[model] model_provider = "openai"`，验证端到端 | ⏳ |
 | T08 | 审批面板 | 处理 `execCommandApproval`/`applyPatchApproval`，弹出确认/拒绝 | ⏳ |
