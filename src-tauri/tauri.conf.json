@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Harness",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "identifier": "com.enterprise.harness",
   "build": {
     "beforeDevCommand": "npm --prefix frontend run dev",
@@ -15,14 +15,14 @@
         "title": "Harness — 企业内部 Agent",
         "width": 1180,
         "height": 760,
-        "minWidth": 900,
-        "minHeight": 600,
+        "minWidth": 720,
+        "minHeight": 520,
         "resizable": true,
         "center": true
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self' ipc: http://127.0.0.1: https://127.0.0.1: asset: https://asset.localhost; script-src 'self' 'unsafe-inline' asset: https://asset.localhost; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: http: blob: asset: https://asset.localhost; connect-src 'self' ipc: http://127.0.0.1: https://127.0.0.1: ws: wss: https: asset: https://asset.localhost; media-src 'self' data: blob: asset: https://asset.localhost; font-src 'self' data: asset: https://asset.localhost; worker-src 'self' blob: asset: https://asset.localhost"
     }
   },
   "bundle": {

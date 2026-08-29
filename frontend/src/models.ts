@@ -1,4 +1,4 @@
-//! T10 多模型切换：内置 OpenAI / DeepSeek / GLM 预设提供商。
+//! T10 多模型切换：内置 OpenAI / DeepSeek / GLM / Qwen / Claude / Moonshot / Doubao 预设提供商。
 
 export interface ModelPreset {
   id: string;
@@ -61,6 +61,47 @@ export const MODEL_PRESETS: ModelPreset[] = [
     wire_api: "responses",
     models: ["glm-4-plus", "glm-4-air"],
     default_model: "glm-4-plus",
+  },
+  {
+    id: "qwen",
+    name: "Qwen（阿里百炼）",
+    base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    env_key: "DASHSCOPE_API_KEY",
+    // wire_api=responses：若百炼该端点暂不直接兼容 Responses，
+    // codex 侧仍会走统一 wire；遇到兼容问题时可在网关侧加翻译层（参照 ark_gateway）。
+    wire_api: "responses",
+    models: ["qwen-max", "qwen-plus", "qwen-coder-turbo"],
+    default_model: "qwen-plus",
+  },
+  {
+    id: "claude",
+    name: "Claude（Anthropic）",
+    base_url: "https://api.anthropic.com/v1",
+    env_key: "ANTHROPIC_API_KEY",
+    // wire_api=responses：Anthropic Messages API 并非完全兼容 Responses，
+    // 实际生产建议通过兼容代理（如 OpenRouter 或自建类似 ark_gateway 的翻译层）接入；
+    // 此处保留统一 wire_api=responses，便于 codex 侧调用链一致。
+    wire_api: "responses",
+    models: ["claude-3-5-sonnet-latest", "claude-3-opus-latest", "claude-3-haiku-20240307"],
+    default_model: "claude-3-5-sonnet-latest",
+  },
+  {
+    id: "moonshot",
+    name: "Moonshot（月之暗面）",
+    base_url: "https://api.moonshot.cn/v1",
+    env_key: "MOONSHOT_API_KEY",
+    wire_api: "responses",
+    models: ["moonshot-v1-auto", "moonshot-v1-128k", "moonshot-v1-8k"],
+    default_model: "moonshot-v1-auto",
+  },
+  {
+    id: "doubao",
+    name: "Doubao（字节豆包）",
+    base_url: "https://ark.cn-beijing.volces.com/api/v3",
+    env_key: "ARK_API_KEY",
+    wire_api: "responses",
+    models: ["doubao-pro-32k", "doubao-1-5-pro-32k-250115"],
+    default_model: "doubao-pro-32k",
   },
 ];
 

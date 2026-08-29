@@ -20,12 +20,14 @@
 | T07 | 单模型打通（OpenAI） | `[model_providers.openai]` 配置 + `[model] model_provider = "openai"`，验证端到端 | ✅ |
 | T08 | 审批面板 | 处理 `execCommandApproval`/`applyPatchApproval`，弹出确认/拒绝 | ✅ |
 
+> 默认模型已切换为 volcengine-ark (ark-code-latest)，经由内嵌网关 127.0.0.1:18762 做 Chat→Responses 协议归一化。
+
 ## P1 —— 核心功能（MVP 主循环）
 
-| ID | 任务 | 说明 / 验收 |
-|----|------|-------------|
-| T09 | 配置面板 | 模型选择、MCP server 管理、权限设置，写/读 config.toml |
-| T10 | 多模型切换 | 预设 OpenAI/DeepSeek/GLM，改 base_url + env_key，下一个 Turn 生效 |
+| ID | 任务 | 说明 / 验收 | 状态 |
+|----|------|-------------|------|
+| T09 | 配置面板 | 模型选择、MCP server 管理、权限设置，写/读 config.toml | ✅ |
+| T10 | 多模型切换 | 预设 OpenAI/DeepSeek/GLM，改 base_url + env_key，下一个 Turn 生效 | ✅ |
 | T11 | 模型路由 | 按任务类型/上下文长度/成本/敏感度路由到不同模型 | ✅ |
 | T12 | 飞书 MCP 集成 | 注册 `[mcp_servers.feishu]`（lark-openapi-mcp），验证消息/文档操作 | ✅ |
 | T13 | 飞书 OAuth | 用户授权流程 + token 自动刷新（app_access_token/user_access_token） | ✅ |
@@ -33,6 +35,18 @@
 | T15 | 联网搜索 | 注册 Tavily/Serper MCP，搜索过程与来源展示 | ✅ |
 | T16 | 会话持久化 | SQLite 存历史会话，支持搜索/重命名/恢复 | ✅ |
 | T17 | Windows 安装包 | 生成 Windows .msi/.exe（NSIS/WebView2），校准体积（承接体积结论），CI 上构建并上传 GitHub Release | ✅ |
+
+## UI/UX · Trae Work 风格改版
+
+| ID | 任务 | 说明 / 验收 | 状态 |
+|----|------|-------------|------|
+| T25 | UI 顶栏重构 | 高度 42px、汉堡/搜索/菜单/主题切换/窗口按钮，`app-region: drag`，移除旧 brand/H/pill/model-switch/RouterPanel 等 | ✅ |
+| T26 | 左栏 Trae 风格重构 | 合并 rail+sidebar 为单栏 272px，顶部 Work/Code/Design pill，菜单项 5 个，任务列表+搜索，底部 user footer；collapsed 时宽度 0 | ✅ |
+| T27 | 对话框模型下拉切换器 | composer 正上方内联 ModelSwitcher pill，欢迎页正中再放一个，可切 provider+模型二级菜单 | ✅ |
+| T28 | 单按钮发送 + 清理杂项控件 | 单圆形发送按钮（↑ SVG，紫蓝 gradient），删除 Work/Code 双按钮、三个勾选框、Enter 发送提示 | ✅ |
+| T29 | Markdown 渲染增强（表格/代码块复制/列表） | 代码块 header+复制按钮（DOM 挂载式），表格全边框+zebra，blockquote 左侧 #6366F1 竖线，列表缩进美化 | ✅ |
+| T30 | 小窗口布局弹性修复 | 所有 flex/grid 容器 min-width/min-height:0；`@media (max-width:720px)` 侧栏 auto-collapse、composer 模型 pill 简化、msglist padding 减 | ✅ |
+| T31 | Ark 网关流式 SSE writer-closed 修复 | `stream.set_write_timeout` 600s；`write_simple` 吞 BrokenPipe/ConnectionReset；SSE 场景 chunked streaming 每 256ms flush；5xx body sanitize；upstream 错误不泄漏 key | ✅ |
 
 ## P2 —— 增强与规模化
 
@@ -53,6 +67,6 @@
 ```
 P0: T01→T03→T04→T05→T06→T07→T08
     T02(账号密码登录)：逻辑可先行设计，端到端验证依赖 T04/T05/T06 应用外壳与 UI 就绪，与 T06–T08 并行推进
-P1: T09→T10→T11 (模型主线)，T09→T12→T13 (飞书主线)，T14/T15/T16/T17 可并行
+P1: T09→T10→T11 (模型主线)，T09→T12→T13 (飞书主线)，T14/T15/T16/T17 可并行；T25–T31 (UI/UX) 并行迭代
 P2: T18→T19→T22 (知识库)，T20→T21 (多 Agent)，T23/T24 贯穿
 ```

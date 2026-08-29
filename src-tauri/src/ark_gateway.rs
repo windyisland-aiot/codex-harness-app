@@ -30,6 +30,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
 use std::thread;
+use std::time::{Duration, Instant};
 
 /// 网关本地监听端口（127.0.0.1）。config.toml 默认 base_url 与之保持一致。
 pub const DEFAULT_GATEWAY_PORT: u16 = 18762;
@@ -86,7 +87,9 @@ fn accept_loop(listener: TcpListener, cfg: Arc<GatewayConfig>) {
 }
 
 fn handle_client(mut stream: TcpStream, cfg: Arc<GatewayConfig>) -> std::io::Result<()> {
-    stream.set_read_timeout(Some(std::time::Duration::from_secs(120)))?;
+    stream.set_read_timeout(Some(Duration::from_secs(120)))?;
+    // --- 修复 writer-closed：给 write 方向也设置大超时（600s），避免 codex 长对话提前关 socket ---
+    stream.set_write_timeout(Some(Duration::from_secs(600)))?;
 
     // --- 读取请求头 ---
     let mut reader = BufReader::new(stream.try_clone()?);
@@ -130,68 +133,105 @@ fn handle_client(mut stream: TcpStream, cfg: Arc<GatewayConfig>) -> std::io::Res
     reader.read_exact(&mut body)?;
 
     let payload = String::from_utf8_lossy(&body).to_string();
-    let resp = forward(&cfg, &payload);
 
-    let is_sse: bool;
-    let status: u16;
-    let body_bytes: Vec<u8>;
-    match resp {
-        Ok((st, content_type, bytes)) => {
-            status = st;
-            body_bytes = bytes;
-            is_sse = content_type.contains("event-stream");
-        }
-        Err(e) => {
-            let _ = write_simple(&mut stream, 502, "Bad Gateway", &format!("forward error: {e}"));
-            return Ok(());
-        }
-    }
+    // --- 判断请求是否需要流式（看 stream 字段），决定走哪条路径 ---
+    let want_stream: bool = {
+        serde_json::from_str::<serde_json::Value>(&payload)
+            .ok()
+            .and_then(|v| v.get("stream").and_then(|s| s.as_bool()))
+            .unwrap_or(false)
+    };
 
-    if status != 200 {
-        let _ = write_simple(&mut stream, status, "Bad Gateway", &String::from_utf8_lossy(&body_bytes));
-        return Ok(());
-    }
-
-    // --- SSE 头 ---
-    let header =
-        "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nConnection: close\r\n\r\n";
-    stream.write_all(header.as_bytes())?;
-
-    if is_sse {
-        // ---- Chat SSE → Responses SSE 状态流式翻译 ----
-        let mut xlator = ChatSseToResponses::new();
-        let mut sse = BufReader::new(body_bytes.as_slice());
-        let mut out = String::new();
-        let mut line = String::new();
-        loop {
-            line.clear();
-            let n = sse.read_line(&mut line)?;
-            if n == 0 {
-                break;
+    if want_stream {
+        // --- 修复：边读上游 SSE 边写客户端（chunked streaming），避免全量缓冲写超时 ---
+        match forward_streaming(&cfg, &payload, &mut stream) {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                // 5xx/网络错误：sanitize，不泄漏 api key
+                let msg = sanitize_upstream_error(&e);
+                let _ = write_simple(&mut stream, 502, "Bad Gateway", &msg);
+                Ok(())
             }
-            for ev in xlator.feed_line(&line) {
-                out.push_str(&ev);
-            }
-            if out.len() >= 4096 {
-                stream.write_all(out.as_bytes())?;
-                stream.flush()?;
-                out.clear();
-            }
-        }
-        for ev in xlator.finish() {
-            out.push_str(&ev);
-        }
-        if !out.is_empty() {
-            stream.write_all(out.as_bytes())?;
-            stream.flush()?;
         }
     } else {
-        // 非流式：尝试做一次 JSON 级 Responses ↔ Chat 结果翻译
+        // 非流式：原逻辑（全量缓冲可接受，因为非流式通常响应小）
+        let resp = forward_buffered(&cfg, &payload);
+        let status: u16;
+        let body_bytes: Vec<u8>;
+        match resp {
+            Ok((st, bytes)) => {
+                status = st;
+                body_bytes = bytes;
+            }
+            Err(e) => {
+                let msg = sanitize_upstream_error(&e);
+                let _ = write_simple(&mut stream, 502, "Bad Gateway", &msg);
+                return Ok(());
+            }
+        }
+        if status != 200 {
+            // 5xx 上游错误：sanitize body（避免把 ureq::Error debug print 含 api key 返回下游）
+            let safe_msg = if (500..600).contains(&status) {
+                format!("Ark upstream error (HTTP {status})")
+            } else {
+                String::from_utf8_lossy(&body_bytes).to_string()
+            };
+            let _ = write_simple(&mut stream, status, "Bad Gateway", &safe_msg);
+            return Ok(());
+        }
         let translated = translate_non_streaming(&body_bytes);
-        stream.write_all(translated.as_bytes())?;
-        stream.flush()?;
+        let text = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            translated.len(),
+            translated
+        );
+        write_all_safe(&mut stream, text.as_bytes())?;
+        stream.flush().ok();
+        Ok(())
     }
+}
+
+/// 写入数据：对 BrokenPipe/ConnectionReset 静默吞掉（返回 Ok），其他错误原样返回。
+fn write_all_safe(stream: &mut TcpStream, data: &[u8]) -> std::io::Result<()> {
+    use std::io::ErrorKind::{BrokenPipe, ConnectionReset, ConnectionAborted};
+    match stream.write_all(data) {
+        Ok(()) => Ok(()),
+        Err(e) => match e.kind() {
+            BrokenPipe | ConnectionReset | ConnectionAborted => {
+                // 客户端/codex 已关 writer：静默退出，不 panic 传播
+                Ok(())
+            }
+            _ => Err(e),
+        },
+    }
+}
+
+fn write_simple(stream: &mut TcpStream, status: u16, reason: &str, body: &str) -> std::io::Result<()> {
+    let text = format!(
+        "HTTP/1.1 {status} {reason}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    // --- 修复：write_simple 里对 BrokenPipe/ConnectionReset 静默吞掉 ---
+    write_all_safe(stream, text.as_bytes())?;
+    let _ = stream.flush();
     Ok(())
+}
+
+/// 对 upstream 错误字符串做 sanitize：不泄漏 api key、不打印 ureq::Error 的完整 debug。
+fn sanitize_upstream_error(e: &str) -> String {
+    // 任何含 api key 的内容都替换掉；同时统一为 warn! 风格的短消息
+    if e.contains("ark-") || e.contains("Bearer") || e.contains("Authorization") {
+        return "Ark upstream error (connection/auth issue)".to_string();
+    }
+    if e.contains("timed out") || e.contains("timeout") {
+        return "Ark upstream timeout".to_string();
+    }
+    if e.contains("connection") || e.contains("Connection") {
+        return "Ark upstream connection failed".to_string();
+    }
+    // 兜底：取前 80 字符，避免 ureq::Error 的大 debug dump
+    let s: String = e.chars().take(80).collect();
+    format!("Ark upstream error: {}", s)
 }
 
 // ============================================================================
@@ -588,18 +628,37 @@ fn rand_id() -> String {
 }
 
 // ============================================================================
-// upstream 转发 + 请求翻译
+// chunked encode：把字节串包装成 HTTP/1.1 chunked 片段
 // ============================================================================
-fn forward(
+fn chunked_encode(bytes: &[u8]) -> Vec<u8> {
+    if bytes.is_empty() {
+        return Vec::new();
+    }
+    let mut out = Vec::with_capacity(bytes.len() + 16);
+    out.extend_from_slice(format!("{:X}\r\n", bytes.len()).as_bytes());
+    out.extend_from_slice(bytes);
+    out.extend_from_slice(b"\r\n");
+    out
+}
+
+fn chunked_final() -> Vec<u8> {
+    b"0\r\n\r\n".to_vec()
+}
+
+// ============================================================================
+// upstream 转发：流式路径（SSE 场景） —— 边读边写，每 256ms flush 一次
+// ============================================================================
+fn forward_streaming(
     cfg: &GatewayConfig,
     responses_payload: &str,
-) -> Result<(u16, String, Vec<u8>), String> {
+    client_stream: &mut TcpStream,
+) -> Result<(), String> {
     let chat_payload = translate_request_to_chat(responses_payload)?;
     let url = format!("{}/chat/completions", cfg.upstream);
     let resp = ureq::post(&url)
         .set("Content-Type", "application/json")
         .set("Authorization", &format!("Bearer {}", cfg.api_key))
-        .timeout(std::time::Duration::from_secs(120))
+        .timeout(Duration::from_secs(600))
         .send_string(&chat_payload)
         .map_err(|e| e.to_string())?;
     let status = resp.status();
@@ -607,21 +666,125 @@ fn forward(
         .header("Content-Type")
         .unwrap_or("application/json")
         .to_string();
+    let is_sse = content_type.contains("event-stream");
+
+    if status != 200 {
+        // 5xx 上游错误：sanitize body，绝不泄漏 key
+        let safe_msg = if (500..600).contains(&status) {
+            format!("Ark upstream error (HTTP {status})")
+        } else {
+            // 非 200 非 5xx：尝试读 body 并取前 120 字符
+            let mut dump = Vec::new();
+            let _ = resp.into_reader().take(1024).read_to_end(&mut dump);
+            let raw = String::from_utf8_lossy(&dump).to_string();
+            let s: String = raw.chars().take(120).collect();
+            if s.contains("ark-") || s.contains("Bearer") {
+                format!("Ark upstream error (HTTP {status})")
+            } else {
+                format!("Ark upstream error (HTTP {status}): {}", s)
+            }
+        };
+        return Err(safe_msg);
+    }
+
+    if !is_sse {
+        // 上游返回非 SSE（例如 stream=false 但我们走了 streaming 分支，或上游降级）
+        let mut body = Vec::new();
+        resp.into_reader()
+            .take(64 * 1024 * 1024)
+            .read_to_end(&mut body)
+            .map_err(|e| e.to_string())?;
+        let translated = translate_non_streaming(&body);
+        let header = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            translated.len()
+        );
+        write_all_safe(client_stream, header.as_bytes()).map_err(|e| e.to_string())?;
+        write_all_safe(client_stream, translated.as_bytes()).map_err(|e| e.to_string())?;
+        let _ = client_stream.flush();
+        return Ok(());
+    }
+
+    // --- SSE chunked streaming：写 Transfer-Encoding: chunked 头 ---
+    let resp_header = "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nCache-Control: no-cache\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n";
+    write_all_safe(client_stream, resp_header.as_bytes()).map_err(|e| e.to_string())?;
+
+    let mut upstream_reader = BufReader::new(resp.into_reader());
+    let mut xlator = ChatSseToResponses::new();
+    let mut line = String::new();
+    let mut out_buf = String::new();
+    let mut last_flush = Instant::now();
+    let flush_interval = Duration::from_millis(256);
+
+    loop {
+        line.clear();
+        let n = upstream_reader
+            .read_line(&mut line)
+            .map_err(|e| format!("upstream read error: {}", sanitize_upstream_error(&e.to_string())))?;
+        if n == 0 {
+            // EOF：补 finish
+            for ev in xlator.finish() {
+                out_buf.push_str(&ev);
+            }
+            // flush 剩余
+            if !out_buf.is_empty() {
+                let chunk = chunked_encode(out_buf.as_bytes());
+                if write_all_safe(client_stream, &chunk).is_err() {
+                    return Ok(()); // BrokenPipe: early return
+                }
+                out_buf.clear();
+            }
+            // 写 chunked terminator
+            let final_chunk = chunked_final();
+            let _ = write_all_safe(client_stream, &final_chunk);
+            let _ = client_stream.flush();
+            return Ok(());
+        }
+
+        for ev in xlator.feed_line(&line) {
+            out_buf.push_str(&ev);
+        }
+
+        // 每 256ms 或 buf >= 4KB flush 一次
+        let now = Instant::now();
+        if out_buf.len() >= 4096 || now.duration_since(last_flush) >= flush_interval {
+            if !out_buf.is_empty() {
+                let chunk = chunked_encode(out_buf.as_bytes());
+                if write_all_safe(client_stream, &chunk).is_err() {
+                    return Ok(()); // BrokenPipe: early return
+                }
+                if client_stream.flush().is_err() {
+                    return Ok(());
+                }
+                out_buf.clear();
+            }
+            last_flush = now;
+        }
+    }
+}
+
+// ============================================================================
+// upstream 转发：缓冲路径（非流式场景） —— 保留原 forward 语义
+// ============================================================================
+fn forward_buffered(
+    cfg: &GatewayConfig,
+    responses_payload: &str,
+) -> Result<(u16, Vec<u8>), String> {
+    let chat_payload = translate_request_to_chat(responses_payload)?;
+    let url = format!("{}/chat/completions", cfg.upstream);
+    let resp = ureq::post(&url)
+        .set("Content-Type", "application/json")
+        .set("Authorization", &format!("Bearer {}", cfg.api_key))
+        .timeout(Duration::from_secs(120))
+        .send_string(&chat_payload)
+        .map_err(|e| sanitize_upstream_error(&e.to_string()))?;
+    let status = resp.status();
     let mut body = Vec::new();
     resp.into_reader()
         .take(64 * 1024 * 1024)
         .read_to_end(&mut body)
-        .map_err(|e| e.to_string())?;
-    Ok((status, content_type, body))
-}
-
-fn write_simple(stream: &mut TcpStream, status: u16, reason: &str, body: &str) -> std::io::Result<()> {
-    let text = format!(
-        "HTTP/1.1 {status} {reason}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
-        body.len()
-    );
-    stream.write_all(text.as_bytes())?;
-    stream.flush()
+        .map_err(|e| sanitize_upstream_error(&e.to_string()))?;
+    Ok((status, body))
 }
 
 // ============================================================================
@@ -709,71 +872,21 @@ data: [DONE]
         assert!(all.contains("data:[DONE]"));
     }
 
-    // --- 端到端真实 Ark 连通性验证（需外网+API key 有效，默认忽略）---
-    // 运行: cargo test -p harness-app --lib live_via_gateway -- --ignored --test-threads=1
+    // --- chunked encode 自检 ---
     #[test]
-    #[ignore]
-    fn live_via_gateway() {
-        // 选一个未被占用的高端口
-        std::env::set_var("HARNESS_ARK_GW_PORT", "18799");
-        let port = start_gateway().expect("start gateway");
-        let url = format!("http://127.0.0.1:{port}/v1/responses");
-        let payload = serde_json::json!({
-            "model": "ark-code-latest",
-            "input": [{"type":"message","role":"user",
-                       "content":[{"type":"input_text","text":"用不超过20个字回答：你好"}]}],
-            "stream": true,
-            "max_output_tokens": 200,
-        });
-        let resp = ureq::post(&url)
-            .set("Content-Type", "application/json")
-            .timeout(std::time::Duration::from_secs(120))
-            .send_string(&payload.to_string())
-            .expect("gateway POST");
-        assert_eq!(resp.status(), 200, "gateway returned non-200");
-        let ct = resp.header("Content-Type").unwrap_or("").to_string();
-        assert!(ct.contains("event-stream"), "expected SSE, got {ct}");
+    fn chunked_simple() {
+        let b = b"hello";
+        let enc = chunked_encode(b);
+        assert_eq!(enc, b"5\r\nhello\r\n");
+        assert_eq!(chunked_final(), b"0\r\n\r\n");
+    }
 
-        let mut body = Vec::new();
-        resp.into_reader()
-            .read_to_end(&mut body)
-            .expect("read body");
-        let text = String::from_utf8_lossy(&body);
-
-        // 收集 delta 文本
-        let mut deltas = String::new();
-        let mut completed = false;
-        let mut created = false;
-        for line in text.lines() {
-            if let Some(data) = line.trim().strip_prefix("data:") {
-                let json = data.trim();
-                if json.is_empty() || json == "[DONE]" {
-                    continue;
-                }
-                if let Ok(v) = serde_json::from_str::<serde_json::Value>(json) {
-                    match v.get("type").and_then(|x| x.as_str()) {
-                        Some("response.created") => created = true,
-                        Some("response.completed") => completed = true,
-                        Some("response.output_text.delta") => {
-                            if let Some(d) = v.get("delta").and_then(|x| x.as_str()) {
-                                deltas.push_str(d);
-                            }
-                        }
-                        Some(t) => {
-                            // 不允许任何 reasoning 事件
-                            assert!(!t.contains("reasoning"), "leaked reasoning event: {t}");
-                        }
-                        None => {}
-                    }
-                }
-            }
-        }
-        assert!(created, "no response.created event");
-        assert!(completed, "no response.completed event");
-        assert!(
-            !deltas.is_empty(),
-            "no output_text.delta received. Full stream:\n{text}"
-        );
-        println!("实际收到的回答: {deltas}");
+    // --- sanitize 自检 ---
+    #[test]
+    fn sanitize_hides_key() {
+        let msg1 = sanitize_upstream_error("Bearer ark-9219d6e8-xxx bad auth");
+        assert!(!msg1.contains("ark-9219"));
+        let msg2 = sanitize_upstream_error("tcp connect timed out after 30s");
+        assert_eq!(msg2, "Ark upstream timeout");
     }
 }

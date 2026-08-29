@@ -1,8 +1,27 @@
 # Harness 企业内部 Agent — 部署文档
 
-> 版本：v0.1.0-p1（P1 阶段）
+> 版本：v0.2.0（P1 阶段 · Trae Work 风格 UI 重构）
 > 目标平台：Windows 10 / Windows 11 x64
 > 源码仓库：`windyisland-aiot/codex-harness-app`（私有）
+
+---
+
+## 〇、v0.2.0 版更新要点（What's New）
+
+本版本是**界面与交互重构的里程碑版本**，整体风格向 Trae Work 对齐，同时修复 P0 级的 LLM 调用故障。
+
+| 分类 | 变更内容 | 对应计划项 |
+|------|----------|------------|
+| 🎨 UI 重构 | 顶栏改为 TraeWork 风格（拖拽区 / 搜索 / 编辑·帮助菜单 / 窗口三键） | T26 |
+| 🎨 UI 重构 | 左侧栏改为 Work / Code / Design 三段 Pill + 新建任务 / 插件市场 / 模板库 / 自动化 / 办公助理 + 任务列表 | T25 / T31 |
+| 🎨 UI 重构 | 单发送按钮（移除 Work / Code 双按钮），移除审批 / 终端 / 浏览器 / 画布 / 快捷键 / 自动路由等杂项勾选框 | T27 / T29 |
+| 🎨 UI 重构 | 移除右侧会话详情面板；空白态统一为「新建任务」引导 | T30 |
+| 🎨 UI 重构 | 小窗口拉伸布局修复（min-width/min-height 降到 720×520 + flex 容器最小尺寸约束） | T28 |
+| 🤖 模型 | 输入框内嵌「提供商 + 模型」下拉切换；预设火山方舟 / DeepSeek / 智谱 GLM / 豆包 / Qwen / Claude / Moonshot / Doubao / OpenAI | T10 增强 |
+| 🤖 模型 | **修复 io writer closed**：Ark 网关 SSE 改为边读边写（chunked streaming）、写超时 600s、BrokenPipe 归一化、上游错误消息脱敏（不泄漏 key） | P0 / T07 补注 |
+| ✍️ 消息渲染 | AI 消息 Markdown 加固：表格 / 引用 / 列表 / 代码块样式；代码块一键复制按钮；DOMPurify 防 XSS | T19 增强 / CR-4 |
+| 🔐 安全 | tauri.conf.json 启用正式 CSP（不再为 null）；覆盖 script/style/img/connect/media/font/worker 协议源 | CR-2 |
+| 📦 打包 | 版本号统一提升到 0.2.0；前端生产产物 266 KB JS（gzip 86 KB）+ 27 KB CSS（gzip 6 KB） | T17 |
 
 ---
 
@@ -24,8 +43,8 @@
 
 | 格式 | 下载链接 | 体积 | 适用场景 |
 |------|----------|------|----------|
-| MSI | [Harness_0.1.0_x64_en-US.msi](https://github.com/windyisland-aiot/codex-harness-app/releases/download/v0.1.0-p1/Harness_0.1.0_x64_en-US.msi) | 5.63 MB | 企业 IT 批量部署、组策略管理 |
-| NSIS (EXE) | [Harness_0.1.0_x64-setup.exe](https://github.com/windyisland-aiot/codex-harness-app/releases/download/v0.1.0-p1/Harness_0.1.0_x64-setup.exe) | 4.03 MB | 个人开发者本地双击安装 |
+| MSI | [Harness_0.2.0_x64_en-US.msi](https://github.com/windyisland-aiot/codex-harness-app/releases/download/v0.2.0/Harness_0.2.0_x64_en-US.msi) | ≈ 6 MB | 企业 IT 批量部署、组策略管理 |
+| NSIS (EXE) | [Harness_0.2.0_x64-setup.exe](https://github.com/windyisland-aiot/codex-harness-app/releases/download/v0.2.0/Harness_0.2.0_x64-setup.exe) | ≈ 4.5 MB | 个人开发者本地双击安装 |
 
 安装步骤：
 1. 双击安装包（如被 SmartScreen 拦截，点「更多信息」→「仍要运行」）。
@@ -88,8 +107,8 @@ npm install -D @tauri-apps/cli@^2
 npx tauri build --verbose
 
 # 产物输出目录（两者均有可能，取决于 workspace 布局）：
-#   - target\release\bundle\msi\Harness_0.1.0_x64_en-US.msi
-#   - target\release\bundle\nsis\Harness_0.1.0_x64-setup.exe
+#   - target\release\bundle\msi\Harness_0.2.0_x64_en-US.msi
+#   - target\release\bundle\nsis\Harness_0.2.0_x64-setup.exe
 # 或者：
 #   - src-tauri\target\release\bundle\msi\...
 #   - src-tauri\target\release\bundle\nsis\...
@@ -346,7 +365,7 @@ cargo test -p appserver     # JSON-RPC 客户端
 |------|----------|------|
 | 口令存储 | PBKDF2-HMAC-SHA256 + 每用户随机盐 + 200k 轮 | ✅ 达标；建议后续切 Argon2id |
 | 密钥存储 | secrets.bin = AES-GCM 256-bit + 机器标识派生 key | ⚠️ 迁移场景需先「导出凭据」；建议改 DPAPI/CryptoNG |
-| 跨站脚本（CSP） | 已在 tauri.conf.json 关闭默认 CSP（=null） | ⚠️ P2 阶段收紧：允许 unsafe-inline 仅限 Vite dev 模式 |
+| 跨站脚本（CSP） | tauri.conf.json 已启用严格 CSP（default-src 限制协议源；script/style 仅允许 unsafe-inline；AI 消息 HTML 经 DOMPurify 再渲染） | ✅ v0.2.0 生效；后续可进一步 hash 内联脚本 |
 | 网络访问审批 | 通过审批面板控制 execCommand / applyPatch | 建议生产环境把 approval_policy 设为 `suspicious` |
 | WebView2 同源 | 前端资源从本地 `assets/` 协议加载，无远程 | ✅ |
 | 文件系统 | Codex 的文件沙箱默认 `cwd = %USERPROFILE%\\harness-workspace` | 可配置为只允许单目录工作；建议开启 |
@@ -368,7 +387,7 @@ cargo test -p appserver     # JSON-RPC 客户端
 
 ## 八、参考链接
 
-- GitHub Release: https://github.com/windyisland-aiot/codex-harness-app/releases/tag/v0.1.0-p1
+- GitHub Release: https://github.com/windyisland-aiot/codex-harness-app/releases/tag/v0.2.0
 - CI Workflow: `.github/workflows/build-windows-release.yml`
 - 任务清单: [TASKS.md](TASKS.md)
 - Tauri 2.x 文档: https://v2.tauri.app/

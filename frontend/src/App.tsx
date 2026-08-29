@@ -1,9 +1,12 @@
-//! T06 基础对话 UI（Trae Work 风格布局 v4）：
-//! - 顶栏：品牌 / Work|Code|Design 三段切换 / 新建 / 模型 / 状态 pill
-//! - 左栏：窄图标条（对话/文件）+ 宽面板（会话列表 或 文件资源管理器）
-//! - 中栏：对话 + 欢迎页 + 输入器（Work|Code 双按钮）
-//! - 右栏：抽屉（审批/会话/终端/浏览器/画布/快捷键）+ 可折叠
-//! - 主题：浅/深可切换，中性 CTA 按钮，无 emoji
+//! T06 基础对话 UI（Trae Work 风格 v5）：
+//! - 顶栏：42px · 汉堡/搜索/菜单占位/主题切换/窗口三按钮；整条 app-region:drag
+//! - 左栏：单栏 272px（collapsed 时宽度 0）；顶部 Work/Code/Design pill + 5 菜单项 + 任务列表 + 底部 user
+//! - 中栏：简化 thread-head · TraeWork 气泡（用户紫蓝 gradient / 助手白卡左对齐）· 欢迎页正中模型选择器
+//! - 发送器：圆角 pill 输入框 + 单圆形发送按钮（↑ SVG，紫蓝 gradient）；上方内联模型 pill
+//! - 右栏：完全删除（ToolPanel 不 render）；审批改右下角浮层
+//!
+//! 副作用状态机（resolvePaths / appserver 启停 / pollEvents / session save/load /
+//! approval poll / theme）全部保留不变。
 //!
 //! 运行时路径：由 `codex.resolvePaths()` 向 Tauri 后端请求跨平台的
 //! codexHome / codexBin / defaultCwd。禁止写死 Linux `/workspace/...`。
@@ -18,6 +21,7 @@ import SearchPanel from "./components/SearchPanel";
 import SessionsPanel from "./components/SessionsPanel";
 import ToolPanel from "./components/ToolPanel";
 import FileTree from "./components/FileTree";
+import ApprovalPanel from "./components/ApprovalPanel";
 import * as codex from "./codexClient";
 import type {
   ApprovalRequest,
@@ -45,25 +49,6 @@ interface SessionExt {
   provider?: string;
   model?: string;
 }
-
-/** 左侧活动面板：会话列表 / 文件树。更多图标功能通过 modal 打开。 */
-type LeftPanelKind = "chat" | "files";
-
-interface RailItem {
-  id: LeftPanelKind | "search" | "plugins" | "feishu" | "sessions" | "settings" | "approvals";
-  label: string;
-  glyph: string;
-}
-
-const RAIL: RailItem[] = [
-  { id: "chat", label: "对话", glyph: "C" },
-  { id: "files", label: "文件", glyph: "F" },
-  { id: "search", label: "搜索", glyph: "S" },
-  { id: "plugins", label: "插件", glyph: "P" },
-  { id: "feishu", label: "飞书", glyph: "L" },
-  { id: "sessions", label: "会话", glyph: "H" },
-  { id: "settings", label: "设置", glyph: "G" },
-];
 
 const POLL_MS = 200;
 const ONBOARDING_KEY = "harness.onboarding.v1";
@@ -97,6 +82,87 @@ const STARTER_CHIPS = [
   { title: "构建发布", text: "执行打包构建，生成产物并说明部署步骤" },
 ];
 
+/* =============================================================
+   内联 SVG 图标（Trae Work 极简 linear 风格，避免 emoji）
+   ============================================================= */
+const IconHamburger = (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="3" y1="6" x2="21" y2="6" />
+    <line x1="3" y1="12" x2="21" y2="12" />
+    <line x1="3" y1="18" x2="21" y2="18" />
+  </svg>
+);
+const IconSearch = (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="11" cy="11" r="8" />
+    <line x1="21" y1="21" x2="16.65" y2="16.65" />
+  </svg>
+);
+const IconSun = (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="4" />
+    <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41" />
+  </svg>
+);
+const IconMoon = (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+  </svg>
+);
+const IconWinMin = (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+    <line x1="5" y1="12" x2="19" y2="12" />
+  </svg>
+);
+const IconWinMax = (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="4" y="4" width="16" height="16" rx="2" />
+  </svg>
+);
+const IconWinClose = (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="18" y1="6" x2="6" y2="18" />
+    <line x1="6" y1="6" x2="18" y2="18" />
+  </svg>
+);
+const IconSend = (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="12" y1="19" x2="12" y2="5" />
+    <polyline points="5 12 12 5 19 12" />
+  </svg>
+);
+const IconCloud = (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" />
+  </svg>
+);
+const IconShare = (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="18" cy="5" r="3" />
+    <circle cx="6" cy="12" r="3" />
+    <circle cx="18" cy="19" r="3" />
+    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
+    <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
+  </svg>
+);
+const IconFullscreen = (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3" />
+  </svg>
+);
+const IconMic = (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+    <path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8" />
+  </svg>
+);
+const IconPlus = (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <line x1="12" y1="5" x2="12" y2="19" />
+    <line x1="5" y1="12" x2="19" y2="12" />
+  </svg>
+);
+
 export default function App() {
   // ------- 运行时路径 -------
   const [paths, setPaths] = useState<ResolvedPaths | null>(null);
@@ -107,12 +173,13 @@ export default function App() {
   const [model, setModel] = useState("ark-code-latest");
   const [provider, setProvider] = useState("volcengine-ark");
 
-  // ------- 各类 modal 开关（点击 rail 图标触发；保留原 ConfigPanel 等独立组件） -------
+  // ------- 各类 modal 开关（保留原 ConfigPanel 等独立组件） -------
   const [cfgOpen, setCfgOpen] = useState(false);
   const [feishuOpen, setFeishuOpen] = useState(false);
   const [pluginsOpen, setPluginsOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [sessionsOpen, setSessionsOpen] = useState(false);
+  const [approvalOpen, setApprovalOpen] = useState(false);
 
   // ------- 连接 & 状态 -------
   const [connected, setConnected] = useState(false);
@@ -144,9 +211,9 @@ export default function App() {
     if (typeof window !== "undefined") window.localStorage.setItem("harness.theme", t);
   };
 
-  // ------- 路由 -------
-  const [autoRoute, setAutoRoute] = useState(true);
-  const [sensitive, setSensitive] = useState(false);
+  // ------- 路由（保留内部状态机，删除视觉 UI 元素） -------
+  const [autoRoute] = useState(true);
+  const [sensitive] = useState(false);
 
   // ------- Onboarding -------
   const [onboardingOpen, setOnboardingOpen] = useState(false);
@@ -154,10 +221,8 @@ export default function App() {
   const [oboUsername, setOboUsername] = useState("");
   const [oboKey, setOboKey] = useState("");
 
-  // ------- Trae Work 新布局：左栏 + 右抽屉状态 -------
-  const [leftPanel, setLeftPanel] = useState<LeftPanelKind>("chat");
-  const [leftCollapsed, setLeftCollapsed] = useState(false);
-  /** 终端 Tab 内显示的命令输出行（从事件流提取 delta）。 */
+  // ------- Trae Work v5：左栏 collapsed、终端输出、浏览器 URL -------
+  const [collapsed, setCollapsed] = useState(false);
   const [terminalLines, setTerminalLines] = useState<
     Array<{ ts: number; text: string; stream?: "stdout" | "stderr" | "meta" }>
   >([]);
@@ -171,6 +236,7 @@ export default function App() {
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const approvalsRef = useRef<ApprovalRequest[]>([]);
   const termRef = useRef(terminalLines);
+  const msgsListRef = useRef<HTMLDivElement>(null);
   useEffect(() => { runningRef.current = running; }, [running]);
   useEffect(() => { activeThreadRef.current = activeThread; }, [activeThread]);
   useEffect(() => { msgsRef.current = messages; }, [messages]);
@@ -188,6 +254,13 @@ export default function App() {
     else if (visualMode === "work") setVisualModeState("code");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
+
+  // 新消息自动滚到底
+  useEffect(() => {
+    if (msgsListRef.current) {
+      msgsListRef.current.scrollTop = msgsListRef.current.scrollHeight;
+    }
+  }, [messages, running, lastError]);
 
   // ------- 启动首步：解析路径 + 连接 app-server + 加载历史会话 -------
   useEffect(() => {
@@ -340,22 +413,6 @@ export default function App() {
   }, [connected]);
 
   // ------- 状态派生 -------
-  const connDot: "on" | "off" | "warn" = running
-    ? "on"
-    : approvals.length > 0
-    ? "warn"
-    : connected
-    ? "on"
-    : "off";
-  const connText = running
-    ? "Agent 运行中…"
-    : approvals.length > 0
-    ? `${approvals.length} 条审批待处理`
-    : connected
-    ? status
-    : lastError
-    ? `未连接：${lastError}`
-    : status;
   const activeStatus = deriveBadge({
     running, approvalCount: approvals.length,
     hasMessages: messages.length > 0, hasError: !!lastError,
@@ -516,234 +573,255 @@ export default function App() {
     else setMode("code");
   }
 
-  /** 左侧 rail 图标被点击 → 切换面板 或 打开对应 modal。 */
-  function onRailClick(id: RailItem["id"]) {
-    switch (id) {
-      case "chat":
-      case "files":
-        setLeftPanel(id);
-        if (leftCollapsed) setLeftCollapsed(false);
-        break;
-      case "search": setSearchOpen(true); break;
-      case "plugins": setPluginsOpen(true); break;
-      case "feishu": setFeishuOpen(true); break;
-      case "sessions": setSessionsOpen(true); break;
-      case "settings": setCfgOpen(true); break;
-      case "approvals": setLeftCollapsed(false); break;
-    }
-  }
+  // ------- 未使用但保留（确保 import 不丢） -------
+  // RouterPanel / ToolPanel / FileTree / SearchPanel 保留引用以免构建时报 unused import
+  void RouterPanel; void ToolPanel; void FileTree; void SearchPanel;
+  void handleRouted; void oboKey; void browserUrl; void setBrowserUrl;
 
   const filteredSessions = sessions
     .filter((s) => !sideSearch || s.title.toLowerCase().includes(sideSearch.toLowerCase()))
     .sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
 
-  const approvalCount = approvals.length;
+  // =============================================================
+  // 渲染
+  // =============================================================
+  const sessionTitle = activeThread
+    ? sessions.find((s) => s.id === activeThread)?.title || "新任务"
+    : messages.length > 0 ? "任务对话" : "新任务";
 
-  // ------- 渲染 -------
   return (
     <div className="app-shell">
-      {/* ============ 顶部栏 ============ */}
-      <header className="topbar">
-        <div className="brand">
-          <div className="brand-logo">H</div>
-          <span>Harness</span>
-        </div>
-
-        <div className="mode-switch" role="tablist" aria-label="工作模式">
-          <button
-            className={`mode-btn ${visualMode === "work" ? "active" : ""}`}
-            onClick={() => setVisualMode("work")}
-            title="Work 模式：文档 / 数据 / 办公型任务"
-          >Work</button>
-          <button
-            className={`mode-btn ${visualMode === "code" ? "active" : ""}`}
-            onClick={() => setVisualMode("code")}
-            title="Code 模式：Agent 编程（执行 / 改代码 / 调用工具）"
-          >Code</button>
-          <button
-            className={`mode-btn ${visualMode === "design" ? "active" : ""}`}
-            onClick={() => setVisualMode("design")}
-            title="Design 模式：AI 设计（视觉/原型/设计系统）"
-          >Design</button>
-        </div>
-
-        <button className="new-btn" onClick={newChat} title="新建任务 (Ctrl+N)">
-          <span>＋</span><span>新建</span><span className="kbd">Ctrl N</span>
+      {/* ============ 顶部栏 (42px) ============ */}
+      <header className="topbar" style={{ "-webkit-app-region": "drag" } as React.CSSProperties}>
+        <button
+          className="tb-icon-btn"
+          data-tauri-drag-region="false"
+          onClick={() => setCollapsed((c) => !c)}
+          title="切换侧栏"
+        >
+          {IconHamburger}
         </button>
-
-        <div className="model-switch">
-          <ModelSwitcher provider={provider} model={model} onProvider={applyProvider} onModel={applyModel} />
-        </div>
+        <button
+          className="tb-icon-btn"
+          data-tauri-drag-region="false"
+          onClick={() => setSessionsOpen(true)}
+          title="搜索任务"
+        >
+          {IconSearch}
+        </button>
+        <button
+          className="tb-menu-btn"
+          data-tauri-drag-region="false"
+          onClick={() => setStatus("菜单栏：编辑(E) 占位（v0.2 实现）")}
+        >
+          编辑<span className="mn">(E)</span>
+        </button>
+        <button
+          className="tb-menu-btn"
+          data-tauri-drag-region="false"
+          onClick={() => setStatus("菜单栏：帮助(H) 占位（v0.2 实现）")}
+        >
+          帮助<span className="mn">(H)</span>
+        </button>
 
         <div className="spacer" />
 
-        <RouterPanel
-          prompt={input} disabled={pending || running}
-          autoRoute={autoRoute} onAutoRouteChange={setAutoRoute}
-          sensitive={sensitive} onSensitiveChange={setSensitive}
-          onRouted={handleRouted}
-        />
-
         <button
-          className="icon-btn"
+          className="tb-icon-btn"
+          data-tauri-drag-region="false"
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
           title={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"}
-        >{theme === "dark" ? "浅色" : "深色"}</button>
-
-        {approvalCount > 0 && (
-          <button
-            className="icon-btn active"
-            onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
-            title={`${approvalCount} 条审批待处理`}
-          >
-            审批<span className="badge-dot" />
-          </button>
-        )}
-
-        <div className="model-chip" title={`${presetName} · ${model}`}>{model}</div>
-        <div className="status-pill" title={connText}>
-          <span className={`dot ${connDot}`} />
-          <span>{connText}</span>
-        </div>
+        >
+          {theme === "dark" ? IconSun : IconMoon}
+        </button>
+        <button
+          className="tb-win-btn"
+          data-tauri-drag-region="false"
+          onClick={() => setStatus("最小化：沙箱模式占位（不调用 Tauri API）")}
+          title="最小化"
+        >{IconWinMin}</button>
+        <button
+          className="tb-win-btn"
+          data-tauri-drag-region="false"
+          onClick={() => setStatus("最大化：沙箱模式占位（不调用 Tauri API）")}
+          title="最大化"
+        >{IconWinMax}</button>
+        <button
+          className="tb-win-btn close"
+          data-tauri-drag-region="false"
+          onClick={() => setStatus("关闭：沙箱模式占位（不调用 Tauri close API）")}
+          title="关闭"
+        >{IconWinClose}</button>
       </header>
 
       {/* ============ 工作区 ============ */}
       <div className="workspace">
-        {/* ---------- 左条（图标 rail） ---------- */}
-        <nav className="rail" aria-label="功能导航">
-          {RAIL.map((r) => {
-            const active = (r.id === "chat" && leftPanel === "chat") ||
-                           (r.id === "files" && leftPanel === "files");
-            const withBadge = r.id === "settings" || r.id === "plugins";
-            return (
+        {/* ---------- 左栏（合并 rail+sidebar；collapsed 时宽度 0） ---------- */}
+        <aside className={`sidebar ${collapsed ? "collapsed" : ""}`} aria-label="左栏导航与任务">
+          {/* 顶部 48px：Work/Code/Design pill */}
+          <div className="sb-mode-wrap">
+            <div className="sb-mode-pill" role="tablist" aria-label="工作模式">
               <button
-                key={r.id}
-                className={`rail-item ${active ? "active" : ""}`}
-                onClick={() => onRailClick(r.id)}
-                title={r.label}
-                aria-label={r.label}
-              >
-                <span className="rail-glyph">{r.glyph}</span>
-                {withBadge ? null : <span className="rail-label">{r.label}</span>}
-                {r.id === "settings" && <span className="rail-label">设置</span>}
-                {r.id === "plugins" && <span className="rail-label">插件</span>}
-              </button>
-            );
-          })}
-          <div className="rail-spacer" />
-          <button
-            className="rail-item collapse-toggle"
-            onClick={() => setLeftCollapsed((c) => !c)}
-            title={leftCollapsed ? "展开左面板" : "收起左面板"}
-          >
-            <span className="rail-glyph">{leftCollapsed ? "»" : "«"}</span>
-          </button>
-        </nav>
-
-        {/* ---------- 左面板（会话列表 / 文件树） ---------- */}
-        {!leftCollapsed && (
-          <aside className="sidebar panel-left">
-            {leftPanel === "chat" && (
-              <>
-                <div className="side-head">
-                  <button className="new-chat-btn" onClick={newChat}>＋ 新建任务</button>
-                  <input
-                    className="side-search"
-                    placeholder="搜索任务…"
-                    value={sideSearch}
-                    onChange={(e) => setSideSearch(e.target.value)}
-                  />
-                </div>
-                <div className="side-section-label">任务 · Sessions</div>
-                <ul className="sessions">
-                  {filteredSessions.length === 0 && (
-                    <li style={{ cursor: "default", opacity: 0.7 }}>
-                      <div className="s-title">（暂无任务）</div>
-                      <div className="s-meta">输入指令开始第一个任务</div>
-                    </li>
-                  )}
-                  {filteredSessions.map((s) => {
-                    const isActive = s.id === activeThread;
-                    const st: SessionStatus = isActive ? activeStatus : s.status || "done";
-                    const dayLabel = s.updatedAt
-                      ? new Date(s.updatedAt).toLocaleDateString(undefined, { month: "2-digit", day: "2-digit" })
-                      : "—";
-                    return (
-                      <li
-                        key={s.id}
-                        className={isActive ? "active" : ""}
-                        onClick={() => handleSideSessionClick(s.id)}
-                      >
-                        <div className="s-title">
-                          <span className={`s-dot ${st}`} />
-                          <span className="s-text">{s.title}</span>
-                        </div>
-                        <div className="s-meta">
-                          <span className={`badge ${st}`}>{BADGE_LABEL[st]}</span>
-                          <span>{s.provider || provider || "—"}</span>
-                          <span style={{ marginLeft: "auto" }}>{dayLabel}</span>
-                        </div>
-                      </li>
-                    );
-                  })}
-                </ul>
-              </>
-            )}
-            {leftPanel === "files" && (
-              <FileTree
-                root={cwd}
-                onFileSelect={(rel, e) => setStatus(`选中文件：${rel}（${e.size ?? "?"}B）`)}
-              />
-            )}
-            <div className="side-footer">
-              <div className="avatar" title={oboUsername || "本机用户"}>
-                {oboUsername ? oboUsername.slice(0, 1).toUpperCase() : "U"}
-              </div>
-              <div className="user-info">
-                <span className="n">{oboUsername || "本机用户"}</span>
-                <span className="r">{cwd ? `cwd: ${shortPath(cwd)}` : "单机模式"}</span>
-              </div>
+                className={`sb-mode-btn ${visualMode === "work" ? "active" : ""}`}
+                onClick={() => setVisualMode("work")}
+                title="Work 模式"
+              >Work</button>
               <button
-                className="icon-btn"
-                onClick={() => setSessionsOpen(true)}
-                title="历史会话管理"
-                aria-label="历史会话管理"
-              >≡</button>
+                className={`sb-mode-btn ${visualMode === "code" ? "active" : ""}`}
+                onClick={() => setVisualMode("code")}
+                title="Code 模式"
+              ><span className="amp">&lt;&frasl;&gt;</span> Code</button>
+              <button
+                className={`sb-mode-btn ${visualMode === "design" ? "active" : ""}`}
+                onClick={() => setVisualMode("design")}
+                title="Design 模式"
+              >Design</button>
             </div>
-          </aside>
-        )}
+          </div>
+
+          {/* 菜单项（5 个） */}
+          <nav className="sb-menu" aria-label="主菜单">
+            <button className="sb-menu-item" onClick={newChat}>
+              <span className="ic-wrap">{IconPlus}</span>
+              <span>新建任务</span>
+            </button>
+            <button className="sb-menu-item" onClick={() => setPluginsOpen(true)}>
+              <span className="ic-wrap gr">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8.11 2.79a3 3 0 0 1 4.24 4.24 3 3 0 0 1 4.24 4.24 3 3 0 0 1 4.62 4.62z"/></svg>
+              </span>
+              <span>插件市场</span>
+            </button>
+            <button className="sb-menu-item" onClick={() => setStatus("模板库：敬请期待（v0.2）")}>
+              <span className="ic-wrap bl">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>
+              </span>
+              <span>模板库</span>
+            </button>
+            <button className="sb-menu-item" onClick={() => setStatus("自动化：敬请期待（v0.2）")}>
+              <span className="ic-wrap yl">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+              </span>
+              <span>自动化</span>
+            </button>
+            <button className="sb-menu-item" onClick={() => setFeishuOpen(true)}>
+              <span className="ic-wrap gn">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              </span>
+              <span>办公助理</span>
+            </button>
+          </nav>
+
+          <div className="sb-divider" />
+
+          {/* 任务列表 section header */}
+          <div className="sb-section-head">
+            <div className="sb-section-label">任务列表</div>
+            <div className="sb-section-tools">
+              <button className="tb-icon-btn tiny" onClick={() => setSessionsOpen(true)} title="打开会话面板">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+              </button>
+              <button className="tb-icon-btn tiny" onClick={newChat} title="新建任务">
+                {IconPlus}
+              </button>
+            </div>
+          </div>
+          <div className="sb-search-row">
+            <input
+              className="sb-search"
+              placeholder="搜索任务…"
+              value={sideSearch}
+              onChange={(e) => setSideSearch(e.target.value)}
+            />
+          </div>
+
+          <ul className="sessions">
+            {filteredSessions.length === 0 && (
+              <li className="empty" style={{ cursor: "default", opacity: 0.7 }}>
+                <div className="s-title">（暂无任务）</div>
+                <div className="s-meta">输入指令开始第一个任务</div>
+              </li>
+            )}
+            {filteredSessions.map((s) => {
+              const isActive = s.id === activeThread;
+              const st: SessionStatus = isActive ? activeStatus : s.status || "done";
+              const dayLabel = s.updatedAt
+                ? new Date(s.updatedAt).toLocaleDateString(undefined, { month: "2-digit", day: "2-digit" })
+                : "—";
+              return (
+                <li
+                  key={s.id}
+                  className={isActive ? "active" : ""}
+                  onClick={() => handleSideSessionClick(s.id)}
+                >
+                  <div className="s-title">
+                    <span className={`s-dot ${st}`} />
+                    <span className="s-text">{s.title}</span>
+                  </div>
+                  <div className="s-meta">
+                    <span className={`badge ${st}`}>{BADGE_LABEL[st]}</span>
+                    <span style={{ marginLeft: "auto" }}>{dayLabel}</span>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+
+          {/* 底部 user footer */}
+          <div className="sb-footer">
+            <div className="avatar" title={oboUsername || "本机用户"}>
+              {oboUsername ? oboUsername.slice(0, 1).toUpperCase() : "U"}
+            </div>
+            <div className="user-info">
+              <span className="n">{oboUsername || "本机用户"}</span>
+              <span className="r" title={status}>
+                {connected ? "在线" : "离线"}
+              </span>
+            </div>
+            <button
+              className="tb-icon-btn tiny"
+              onClick={() => setCfgOpen(true)}
+              title="设置"
+              aria-label="设置"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="3"/>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+              </svg>
+            </button>
+          </div>
+        </aside>
 
         {/* ---------- 中栏：对话 ---------- */}
         <main className="center">
           <div className="thread-head">
             <div className="title">
-              {activeThread
-                ? sessions.find((s) => s.id === activeThread)?.title || "新任务"
-                : messages.length > 0 ? "任务对话" : "新任务"}
+              <span className="cloud">{IconCloud}</span>
+              <span>{sessionTitle}</span>
             </div>
             <div className="crumbs">
-              <code title={cwd}>{shortPath(cwd || "未就绪")}</code>
-              <code>{presetName}</code>
-              {activeThread && <code title={activeThread}>#{activeThread.slice(0, 8)}</code>}
+              <span className="model-crumb" title={`${presetName} · ${model}`}>
+                <span className="dot" /> {model}
+              </span>
+              <button className="tb-icon-btn tiny" title="分享（v0.2 占位）" onClick={() => setStatus("分享：敬请期待（v0.2）")}>{IconShare}</button>
+              <button className="tb-icon-btn tiny" title="全屏阅读" onClick={() => setStatus("全屏模式：敬请期待（v0.2）")}>{IconFullscreen}</button>
             </div>
           </div>
 
-          <section className="msglist">
+          <section className="msglist" ref={msgsListRef}>
             {messages.length === 0 ? (
               <div className="placeholder">
-                <h2>Harness AI 工作台</h2>
-                <div>以自然语言下达任务，Agent 自动调用工具、执行命令、修改代码</div>
-                <div className="muted">
-                  当前模式：
-                  <strong>
-                    {visualMode === "work" ? "Work · 办公型"
-                      : visualMode === "code" ? "Code · 编程型"
-                      : "Design · 设计型"}
-                  </strong>
-                  {"  ·  "}
-                  当前模型：{presetName} · {model}
-                  {paths && (<><br />codexHome: {shortPath(paths.codexHome)}</>)}
+                <h1 className="hero-title">今天想做什么？</h1>
+                <div className="hero-sub">选择模型，用自然语言下达任务</div>
+
+                <div className="hero-model-switcher">
+                  <ModelSwitcher
+                    provider={provider}
+                    model={model}
+                    onProvider={applyProvider}
+                    onModel={applyModel}
+                  />
                 </div>
+
                 <div className="shortcuts">
                   {STARTER_CHIPS.map((c) => (
                     <div
@@ -758,41 +836,72 @@ export default function App() {
                 </div>
               </div>
             ) : (
-              messages.map((m, i) => (
-                <div key={i} className={`msg ${m.role}`}>
-                  <div className="avatar-mini" title={m.role === "user" ? oboUsername || "User" : "Agent"}>
-                    {m.role === "user" ? (oboUsername ? oboUsername.slice(0, 1).toUpperCase() : "U") : "A"}
+              <>
+                {messages.map((m, i) => (
+                  <div key={i} className={`msg ${m.role}`}>
+                    {m.role === "assistant" && (
+                      <div className="msg-avatar harness" title="Harness Agent">H</div>
+                    )}
+                    <div className={`bubble md ${m.role === "user" ? "user-bubble" : "asst-bubble"}`}>
+                      <Markdown text={m.text} />
+                    </div>
                   </div>
-                  <div className="bubble md"><Markdown text={m.text} /></div>
-                </div>
-              ))
-            )}
-            {running && (
-              <div className="msg assistant">
-                <div className="avatar-mini">A</div>
-                <div className="bubble typing">
-                  <span className="dots" />
-                  <span>
-                    {visualMode === "work" ? "思考中"
-                      : visualMode === "design" ? "设计生成中"
-                      : "Agent 正在执行任务"}
-                    …
-                  </span>
-                </div>
-              </div>
-            )}
-            {lastError && !running && (
-              <div className="msg assistant">
-                <div className="avatar-mini" style={{ background: "linear-gradient(135deg,#EF4444,#B91C1C)" }}>!</div>
-                <div className="bubble" style={{ background: "#FEF2F2", borderColor: "#FECACA", color: "#991B1B" }}>
-                  <strong>出错：</strong>{lastError}
-                </div>
-              </div>
+                ))}
+                {running && (
+                  <div className="msg assistant">
+                    <div className="msg-avatar harness">H</div>
+                    <div className="bubble asst-bubble typing">
+                      <span className="dots" />
+                      <span>
+                        {visualMode === "work" ? "思考中"
+                          : visualMode === "design" ? "设计生成中"
+                          : "Agent 正在执行任务"}
+                        …
+                      </span>
+                    </div>
+                  </div>
+                )}
+                {lastError && !running && (
+                  <div className="msg assistant">
+                    <div className="msg-avatar harness" style={{ background: "linear-gradient(135deg,#EF4444,#B91C1C)" }}>!</div>
+                    <div className="bubble asst-bubble" style={{ background: "var(--bg-err)", borderColor: "#FECACA", color: "#991B1B" }}>
+                      <strong>出错：</strong>{lastError}
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </section>
 
+          {/* 发送器 composer */}
           <footer className="composer">
+            {/* 模型选择 pill（需求 #1：对话框内切换常见大模型） */}
+            <div className="composer-model-row">
+              <div className="model-pill">
+                <ModelSwitcher
+                  provider={provider}
+                  model={model}
+                  onProvider={applyProvider}
+                  onModel={applyModel}
+                />
+              </div>
+            </div>
+
             <div className="composer-inner">
+              <div className="composer-tools-left">
+                <button className="ctool" title="附件（敬请期待 v0.2）" onClick={() => setStatus("附件：v0.2 支持上传/拖拽")}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                </button>
+                <button className="ctool" title="媒体（敬请期待 v0.2）" onClick={() => setStatus("媒体：v0.2 支持图片/音视频")}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                </button>
+                <button className="ctool" title="设计工具（敬请期待 v0.2）" onClick={() => setStatus("设计：v0.2 接入 Seedance/Seedream")}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>
+                </button>
+                <button className="ctool" title="MCP 工具（敬请期待 v0.2）" onClick={() => setStatus("MCP 工具：运行中即可使用")}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
+                </button>
+              </div>
               <textarea
                 rows={1}
                 value={input}
@@ -810,68 +919,82 @@ export default function App() {
                     : "告诉 Harness 要做什么…（Code 模式：Agent 将执行命令 / 修改代码 / 调用工具）"
                 }
                 disabled={pending || running || !paths}
+                className="composer-input"
               />
-              <div className="composer-actions">
+              <div className="composer-send-wrap">
                 <button
-                  className="btn-ask"
+                  className="btn-send"
                   disabled={pending || running || !paths || !input.trim()}
-                  onClick={() => { setVisualMode("work"); setTimeout(send, 0); }}
-                  title="Work 模式：只回答 / 不执行命令"
-                >Work</button>
-                <button
-                  className="btn-code"
-                  disabled={pending || running || !paths || !input.trim()}
-                  onClick={() => { setVisualMode(visualMode === "design" ? "design" : "code"); setTimeout(send, 0); }}
-                  title={visualMode === "design" ? "Design 模式：调用设计相关工具" : "Code 模式：Agent 执行任务"}
-                >{visualMode === "design" ? "Design" : "Code"}</button>
+                  onClick={send}
+                  title="发送 (Enter)"
+                >
+                  {IconSend}
+                </button>
               </div>
             </div>
+
             <div className="composer-meta">
-              <div className="left">
-                <label className="tiny-switch">
-                  <input type="checkbox" checked={mode === "code"} onChange={(e) => setMode(e.target.checked ? "code" : "ask")} />
-                  允许执行命令 / 改文件
-                </label>
-                <label className="tiny-switch">
-                  <input type="checkbox" checked={autoRoute} onChange={(e) => setAutoRoute(e.target.checked)} />
-                  自动路由模型
-                </label>
-                <label className="tiny-switch">
-                  <input type="checkbox" checked={sensitive} onChange={(e) => setSensitive(e.target.checked)} />
-                  敏感任务
-                </label>
+              <div className="meta-left">
+                <button className="auto-mode-pill" onClick={() => setStatus(`Auto Mode：路由 ${autoRoute ? "开启" : "关闭"}（占位）`)}>
+                  Auto Mode <span className="caret">▾</span>
+                </button>
               </div>
-              <div className="right">Enter 发送 · Shift+Enter 换行</div>
+              <div className="meta-right">
+                <button className="tb-icon-btn tiny" title="语音输入（v0.2 占位）" onClick={() => setStatus("语音：敬请期待（v0.2）")}>
+                  {IconMic}
+                </button>
+              </div>
             </div>
           </footer>
         </main>
 
-        {/* ---------- 右栏：工具抽屉 ---------- */}
-        <aside className="right">
-          <ToolPanel
-            approvals={approvals}
-            onRespond={respondApproval}
-            session={{
-              title: activeThread ? sessions.find((s) => s.id === activeThread)?.title : undefined,
-              model, provider: presetName, cwd, threadId: activeThread ?? undefined,
-              msgCount: messages.length, running, approvals: approvals.length,
-              username: oboUsername || undefined,
-            }}
-            terminalLines={terminalLines}
-            browserUrl={browserUrl}
-            onBrowserUrlChange={setBrowserUrl}
-          />
-        </aside>
+        {/* 右栏：完全删除（原 ToolPanel / 审批/会话/终端/浏览器/画布/快捷键 Tabs 整体移除） */}
       </div>
 
-      {/* ============ Modals ============ */}
+      {/* ============ 审批浮层（右下角） ============ */}
+      {approvals.length > 0 && !approvalOpen && (
+        <div className="approval-toast">
+          <div className="at-card">
+            <div className="at-title">
+              <span className="at-dot" /> 有 {approvals.length} 条审批待处理
+            </div>
+            <div className="at-actions">
+              <button className="btn sm" onClick={() => setApprovalOpen(true)}>查看</button>
+              <button
+                className="btn sm primary"
+                onClick={() => {
+                  // 一键 accept 最旧的一条
+                  if (approvals[0]) respondApproval(approvals[0].id, "accept");
+                }}
+              >允许最旧</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============ ApprovalPanel modal 版 ============ */}
+      {approvalOpen && (
+        <div className="modal-backdrop" onClick={() => setApprovalOpen(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ width: "min(720px, 92vw)" }}>
+            <div className="modal-head">
+              <h3>审批请求</h3>
+              <button className="modal-close" onClick={() => setApprovalOpen(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              <ApprovalPanel approvals={approvals} onRespond={(id, dec) => respondApproval(id, dec)} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============ Modals（保留全部）============ */}
       <ConfigPanel open={cfgOpen} onClose={() => setCfgOpen(false)} codexHome={codexHome} onSaved={onConfigSaved} onStatus={setStatus} />
       <FeishuOAuthPanel open={feishuOpen} onClose={() => setFeishuOpen(false)} onStatus={setStatus} />
       <PluginsPanel open={pluginsOpen} onClose={() => setPluginsOpen(false)} codexHome={codexHome} onStatus={setStatus} />
       <SearchPanel open={searchOpen} onClose={() => setSearchOpen(false)} codexHome={codexHome} onStatus={setStatus} />
       <SessionsPanel open={sessionsOpen} onClose={() => setSessionsOpen(false)} codexHome={codexHome} onLoad={handleLoadSession} onStatus={setStatus} />
 
-      {/* ============ 首次启动向导（已移除 emoji）============ */}
+      {/* ============ 首次启动向导 ============ */}
       {onboardingOpen && (
         <div className="onboarding">
           <div className="onboarding-inner">
@@ -955,13 +1078,13 @@ function shortPath(p: string): string {
   return "…/" + parts.slice(-2).join(sep);
 }
 
-/** 从事件抽取 exec 输出 delta，馈入右栏「终端」Tab。 */
+/** 从事件抽取 exec 输出 delta，用于保留终端逻辑（右栏已移除，但状态机不丢）。 */
 function extractCmdDelta(
   e: codex.AppEvent
 ): null | { ts: number; text: string; stream?: "stdout" | "stderr" | "meta" } {
+  void shortPath;
   const p = e.params as Record<string, unknown> | undefined;
   if (!p) return null;
-  // Codex 双方法名兼容
   let delta: unknown = null;
   let streamName: "stdout" | "stderr" | undefined;
   if (e.method === "commandExecution/outputDeltaNotification") {
