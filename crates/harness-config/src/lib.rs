@@ -247,9 +247,10 @@ pub fn read(codex_home: &str) -> Result<AppConfig> {
         return Ok(def);
     }
 
-    // ---------- 配置自动迁移（2026-08 起 wire_api="chat" 被 codex 废弃） ----------
-    // 升级用户已存在的 config.toml：任何 provider wire_api=chat → responses；
-    // 火山方舟 base_url 直连真实端点 → 改为指向本机内嵌网关（127.0.0.1:18762/v1）。
+    // ---------- 配置自动迁移（2026-08-30 单模型直连版） ----------
+    // 1) 废弃 wire_api=chat 强制升级 → responses
+    // 2) 火山方舟 Ark base_url：旧版本机网关 127.0.0.1:18762 → 直接真实 Responses 地址
+    //    `https://ark.cn-beijing.volces.com/api/v3`（用户要求无需再经网关翻译/路由）。
     // 若有任何字段被修正，立即写回磁盘以保证下次 codex app-server 读取即生效。
     let mut migrated = false;
     for p in cfg.model_providers.iter_mut() {
@@ -258,15 +259,23 @@ pub fn read(codex_home: &str) -> Result<AppConfig> {
             p.wire_api = "responses".to_string();
             migrated = true;
         }
-        // 2) Ark 提供商未通过内嵌网关 → 切到本机网关
+        // 2) Ark 提供商：base_url 归一化到火山方舟官方 Responses 端点
+        //    `https://ark.cn-beijing.volces.com/api/v3`。
+        //    触发迁移的情况：空 / 旧本机网关 127.0.0.1 / localhost / 历史遗留的
+        //    `/api/coding/v3`（那是旧编码端点，不支持 responses）等非官方 URL。
         if p.id == "volcengine-ark" {
-            let gw = "http://127.0.0.1:18762/v1";
-            if !p.base_url.contains("127.0.0.1") && !p.base_url.contains("localhost") {
-                p.base_url = gw.to_string();
+            let official = "https://ark.cn-beijing.volces.com/api/v3";
+            let url = p.base_url.trim();
+            if url != official {
+                p.base_url = official.to_string();
                 migrated = true;
             }
             if p.env_key.trim().is_empty() {
                 p.env_key = "VOLCENGINE_ARK_API_KEY".to_string();
+                migrated = true;
+            }
+            if p.name.trim().is_empty() {
+                p.name = "火山方舟 Ark Code".to_string();
                 migrated = true;
             }
         }
@@ -281,7 +290,7 @@ pub fn read(codex_home: &str) -> Result<AppConfig> {
         migrated = true;
     }
     // 4) Ark 提供商缺失且"默认提供商指向 Ark"或"完全无任何 provider" → 补上
-    //    （若用户已有 mock/openai/deepseek 等提供商，不强行塞 Ark，避免破坏纯 mock 测试 / 多供应商场景）
+    //    （若用户已有 mock 等调试提供商，不强行塞 Ark，避免破坏纯 mock 测试场景）
     let needs_ark = cfg.model_providers.is_empty()
         || cfg.model_provider == "volcengine-ark"
         || cfg.model_provider.is_empty();
@@ -303,6 +312,10 @@ pub fn read(codex_home: &str) -> Result<AppConfig> {
 }
 
 /// 火山方舟 Ark 编码模型默认配置（首次启动 / 配置文件缺失时使用）。
+///
+/// 2026-08-30 起：火山方舟原生支持 Responses API（端点 `ark.cn-beijing.volces.com/api/v3`），
+/// 因此不再经过本机 ark_gateway 翻译/路由，codex 直接发 `/responses` 请求即可。
+/// wire_api = "responses"，和原协议一致。
 pub fn default_ark_config() -> AppConfig {
     use crate::model::{AppConfig, ProviderConfig};
     AppConfig {
@@ -312,10 +325,7 @@ pub fn default_ark_config() -> AppConfig {
         model_providers: vec![ProviderConfig {
             id: "volcengine-ark".to_string(),
             name: "火山方舟 Ark Code".to_string(),
-            // base_url 指向本机内嵌网关（128 位，Tauri 启动时拉起），
-            // 网关负责把 Responses SSE 归一化（过滤 reasoning、补 content）；
-            // 真实 Ark 端点与 API key 只由网关持有。
-            base_url: "http://127.0.0.1:18762/v1".to_string(),
+            base_url: "https://ark.cn-beijing.volces.com/api/v3".to_string(),
             env_key: "VOLCENGINE_ARK_API_KEY".to_string(),
             wire_api: "responses".to_string(),
         }],

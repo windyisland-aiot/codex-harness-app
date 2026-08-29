@@ -1,19 +1,13 @@
-//! T06 基础对话 UI（Trae Work 风格 v5）：
-//! - 顶栏：42px · 汉堡/搜索/菜单占位/主题切换/窗口三按钮；整条 app-region:drag
-//! - 左栏：单栏 272px（collapsed 时宽度 0）；顶部 Work/Code/Design pill + 5 菜单项 + 任务列表 + 底部 user
-//! - 中栏：简化 thread-head · TraeWork 气泡（用户紫蓝 gradient / 助手白卡左对齐）· 欢迎页正中模型选择器
-//! - 发送器：圆角 pill 输入框 + 单圆形发送按钮（↑ SVG，紫蓝 gradient）；上方内联模型 pill
-//! - 右栏：完全删除（ToolPanel 不 render）；审批改右下角浮层
-//!
-//! 副作用状态机（resolvePaths / appserver 启停 / pollEvents / session save/load /
-//! approval poll / theme）全部保留不变。
-//!
-//! 运行时路径：由 `codex.resolvePaths()` 向 Tauri 后端请求跨平台的
-//! codexHome / codexBin / defaultCwd。禁止写死 Linux `/workspace/...`。
+//! T06 基础对话 UI（Trae Work 风格 v6，2026-08-30 精简版）：
+//! - 顶栏：42px · 汉堡/搜索/编辑/帮助菜单/主题切换/真实窗口三按钮（Tauri API）；整条 app-region:drag
+//! - 左栏：单栏 272px（collapsed 时宽度 0）；顶部 5 菜单项（删除 Work/Code/Design Pill）+ 任务列表 + 底部 user
+//! - 中栏：简化 thread-head · TraeWork 气泡 · 欢迎页正中标题+快捷卡片（无模型选择器）
+//! - 发送器：圆角 pill 输入框 + 单圆形发送按钮（↑ SVG，紫蓝 gradient）；上方无模型 pill
+//! - 模型：仅火山方舟 Ark（responses 直连，不经网关翻译）
+//! - 右栏：完全删除；审批改右下角浮层
 import { useEffect, useRef, useState } from "react";
 import Markdown from "./components/Markdown";
 import ConfigPanel from "./components/ConfigPanel";
-import ModelSwitcher from "./components/ModelSwitcher";
 import RouterPanel from "./components/RouterPanel";
 import FeishuOAuthPanel from "./components/FeishuOAuthPanel";
 import PluginsPanel from "./components/PluginsPanel";
@@ -33,6 +27,44 @@ import type {
 } from "./codexClient";
 import { MODEL_PRESETS, presetFor } from "./models";
 import type { ModelPreset } from "./models";
+import ModelSwitcher from "./components/ModelSwitcher";
+
+// 窗口控制：Tauri 2.x 下优先用 @tauri-apps/api/window（@tauri-apps/plugin-window 未安装时的替代）。
+// 非 Tauri 环境（Web dev / 沙箱）失败则降级为占位状态消息。
+async function withWindow<T>(
+  cb: (w: typeof import("@tauri-apps/api/window")) => Promise<T>,
+  fallback: T,
+  onErr?: (e: unknown) => void,
+): Promise<T> {
+  try {
+    const w = await import("@tauri-apps/api/window");
+    return await cb(w);
+  } catch (e) {
+    onErr?.(e);
+    return fallback;
+  }
+}
+async function doMinimize(setStatus: (s: string) => void) {
+  await withWindow(
+    async (w) => { await w.getCurrentWindow().minimize(); },
+    undefined,
+    () => setStatus("最小化：非 Tauri 环境或 API 不可用"),
+  );
+}
+async function doToggleMaximize(setStatus: (s: string) => void) {
+  await withWindow(
+    async (w) => { await w.getCurrentWindow().toggleMaximize(); },
+    undefined,
+    () => setStatus("最大化：非 Tauri 环境或 API 不可用"),
+  );
+}
+async function doClose(setStatus: (s: string) => void) {
+  await withWindow(
+    async (w) => { await w.getCurrentWindow().close(); },
+    undefined,
+    () => setStatus("关闭：非 Tauri 环境或 API 不可用"),
+  );
+}
 
 interface Msg {
   role: "user" | "assistant";
@@ -193,9 +225,6 @@ export default function App() {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [running, setRunning] = useState(false);
-  // 用户明确：Work/Code 无意义（需求 #2）。visualMode 仅作为左侧 Pill / 占位文案的视觉状态，
-  // 不在 prompt 中插入前缀，也不影响模型行为。
-  const [visualMode, setVisualModeState] = useState<"work" | "code" | "design">("code");
   const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
   const [sideSearch, setSideSearch] = useState("");
 
@@ -560,15 +589,12 @@ export default function App() {
     setOnboardingOpen(false);
   }
 
-  function setVisualMode(vm: "work" | "code" | "design") {
-    // 用户明确 Work/Code 仅视觉 Pill（需求 #2），只更新 UI 状态，不改 prompt 语义。
-    setVisualModeState(vm);
-  }
-
   // ------- 未使用但保留（确保 import 不丢） -------
   // RouterPanel / ToolPanel / FileTree / SearchPanel 保留引用以免构建时报 unused import
   void RouterPanel; void ToolPanel; void FileTree; void SearchPanel;
   void handleRouted; void oboKey; void browserUrl; void setBrowserUrl;
+  // 2026-08-30 精简：UI 不再暴露 provider/model 下拉，但逻辑保留以防以后复用时需要
+  void applyProvider; void applyModel; void ModelSwitcher;
 
   const filteredSessions = sessions
     .filter((s) => !sideSearch || s.title.toLowerCase().includes(sideSearch.toLowerCase()))
@@ -629,50 +655,29 @@ export default function App() {
         <button
           className="tb-win-btn"
           data-tauri-drag-region="false"
-          onClick={() => setStatus("最小化：沙箱模式占位（不调用 Tauri API）")}
+          onClick={() => doMinimize(setStatus)}
           title="最小化"
         >{IconWinMin}</button>
         <button
           className="tb-win-btn"
           data-tauri-drag-region="false"
-          onClick={() => setStatus("最大化：沙箱模式占位（不调用 Tauri API）")}
+          onClick={() => doToggleMaximize(setStatus)}
           title="最大化"
         >{IconWinMax}</button>
         <button
           className="tb-win-btn close"
           data-tauri-drag-region="false"
-          onClick={() => setStatus("关闭：沙箱模式占位（不调用 Tauri close API）")}
+          onClick={() => doClose(setStatus)}
           title="关闭"
         >{IconWinClose}</button>
       </header>
 
       {/* ============ 工作区 ============ */}
       <div className="workspace">
-        {/* ---------- 左栏（合并 rail+sidebar；collapsed 时宽度 0） ---------- */}
+        {/* ---------- 左栏（collapsed 时宽度 0） ---------- */}
         <aside className={`sidebar ${collapsed ? "collapsed" : ""}`} aria-label="左栏导航与任务">
-          {/* 顶部 48px：Work/Code/Design pill */}
-          <div className="sb-mode-wrap">
-            <div className="sb-mode-pill" role="tablist" aria-label="工作模式">
-              <button
-                className={`sb-mode-btn ${visualMode === "work" ? "active" : ""}`}
-                onClick={() => setVisualMode("work")}
-                title="Work 模式"
-              >Work</button>
-              <button
-                className={`sb-mode-btn ${visualMode === "code" ? "active" : ""}`}
-                onClick={() => setVisualMode("code")}
-                title="Code 模式"
-              ><span className="amp">&lt;&frasl;&gt;</span> Code</button>
-              <button
-                className={`sb-mode-btn ${visualMode === "design" ? "active" : ""}`}
-                onClick={() => setVisualMode("design")}
-                title="Design 模式"
-              >Design</button>
-            </div>
-          </div>
-
           {/* 菜单项（5 个） */}
-          <nav className="sb-menu" aria-label="主菜单">
+          <nav className="sb-menu" aria-label="主菜单" style={{ paddingTop: 20 }}>
             <button className="sb-menu-item" onClick={newChat}>
               <span className="ic-wrap">{IconPlus}</span>
               <span>新建任务</span>
@@ -803,16 +808,7 @@ export default function App() {
             {messages.length === 0 ? (
               <div className="placeholder">
                 <h1 className="hero-title">今天想做什么？</h1>
-                <div className="hero-sub">选择模型，用自然语言下达任务</div>
-
-                <div className="hero-model-switcher">
-                  <ModelSwitcher
-                    provider={provider}
-                    model={model}
-                    onProvider={applyProvider}
-                    onModel={applyModel}
-                  />
-                </div>
+                <div className="hero-sub">用自然语言下达任务，Harness 会调用火山方舟 Ark Code 自动完成</div>
 
                 <div className="shortcuts">
                   {STARTER_CHIPS.map((c) => (
@@ -844,12 +840,7 @@ export default function App() {
                     <div className="msg-avatar harness">H</div>
                     <div className="bubble asst-bubble typing">
                       <span className="dots" />
-                      <span>
-                        {visualMode === "work" ? "思考中"
-                          : visualMode === "design" ? "设计生成中"
-                          : "Agent 正在执行任务"}
-                        …
-                      </span>
+                      <span>Agent 正在执行任务…</span>
                     </div>
                   </div>
                 )}
@@ -867,18 +858,6 @@ export default function App() {
 
           {/* 发送器 composer */}
           <footer className="composer">
-            {/* 模型选择 pill（需求 #1：对话框内切换常见大模型） */}
-            <div className="composer-model-row">
-              <div className="model-pill">
-                <ModelSwitcher
-                  provider={provider}
-                  model={model}
-                  onProvider={applyProvider}
-                  onModel={applyModel}
-                />
-              </div>
-            </div>
-
             <div className="composer-inner">
               <div className="composer-tools-left">
                 <button className="ctool" title="附件（敬请期待 v0.2）" onClick={() => setStatus("附件：v0.2 支持上传/拖拽")}>
@@ -903,13 +882,7 @@ export default function App() {
                   e.target.style.height = Math.min(e.target.scrollHeight, 180) + "px";
                 }}
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-                placeholder={
-                  visualMode === "work"
-                    ? "告诉 Harness 你想做什么…（Work 模式：仅回答，不执行命令）"
-                    : visualMode === "design"
-                    ? "描述你的设计需求…（Design 模式：Agent 将调用工具生成设计/原型）"
-                    : "告诉 Harness 要做什么…（Code 模式：Agent 将执行命令 / 修改代码 / 调用工具）"
-                }
+                placeholder="告诉 Harness 你想做什么，用自然语言下达任务"
                 disabled={pending || running || !paths}
                 className="composer-input"
               />

@@ -176,10 +176,10 @@ fn read_missing_file_returns_defaults() {
     assert_eq!(cfg.model_providers.len(), 1);
     assert_eq!(cfg.model_providers[0].id, "volcengine-ark");
     assert_eq!(cfg.model_providers[0].env_key, "VOLCENGINE_ARK_API_KEY");
-    // base_url 指向本机内嵌网关（协议归一化），真实 Ark 端点由网关持有。
+    // base_url 直接指向火山方舟官方 Responses API 端点（2026-08-30 起不再经本机网关）。
     assert_eq!(
         cfg.model_providers[0].base_url,
-        "http://127.0.0.1:18762/v1"
+        "https://ark.cn-beijing.volces.com/api/v3"
     );
     assert_eq!(cfg.model_providers[0].wire_api, "responses");
 
@@ -188,7 +188,10 @@ fn read_missing_file_returns_defaults() {
         .expect("read() 应对缺失文件把 default_ark_config() 写回磁盘");
     assert!(raw.contains("wire_api = \"responses\""), "缺失默认写入: {raw}");
     assert!(raw.contains("ark-code-latest"), "缺失默认模型写入: {raw}");
-    assert!(raw.contains("127.0.0.1:18762"), "缺失默认网关写入: {raw}");
+    assert!(
+        raw.contains("ark.cn-beijing.volces.com/api/v3"),
+        "缺失官方 Responses 端点写入: {raw}"
+    );
     let _ = fs::remove_dir_all(&dir);
 }
 
@@ -220,7 +223,8 @@ wire_api = "chat"
     let cfg = harness_config::read(home).unwrap();
     // 内存结构必须已修正。
     assert_eq!(cfg.model_providers[0].wire_api, "responses");
-    assert!(cfg.model_providers[0].base_url.contains("127.0.0.1"));
+    // 2026-08-30 起：base_url 归一化到火山方舟官方 Responses 端点（绕过本机网关）
+    assert_eq!(cfg.model_providers[0].base_url, "https://ark.cn-beijing.volces.com/api/v3");
     assert_eq!(cfg.model_providers[0].env_key, "VOLCENGINE_ARK_API_KEY");
 
     // 磁盘上的真实文件必须同步修改（此条才是让 codex 正常的关键）。
@@ -230,7 +234,10 @@ wire_api = "chat"
         "wire_api=chat 仍留在磁盘上! file:\n{raw}"
     );
     assert!(raw.contains("wire_api = \"responses\""), "磁盘缺 responses: {raw}");
-    assert!(raw.contains("127.0.0.1:18762"), "磁盘缺网关 base_url: {raw}");
+    assert!(
+        raw.contains("ark.cn-beijing.volces.com/api/v3"),
+        "磁盘缺官方 Responses 端点 base_url: {raw}"
+    );
     assert!(raw.contains("VOLCENGINE_ARK_API_KEY"), "磁盘缺 env_key: {raw}");
     let _ = fs::remove_dir_all(&dir);
 }
