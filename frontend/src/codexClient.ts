@@ -450,3 +450,38 @@ export interface ResolvedPaths {
 export function resolvePaths(): Promise<ResolvedPaths> {
   return invoke<ResolvedPaths>("harness_resolve_paths");
 }
+
+// --- T18 文件资源管理器（功能树）---
+// 所有操作锚定在 root(= defaultCwd)，避免越权访问系统路径。
+// rel_path 为空串表示根目录本身，子目录形如 "src/components" 或 "src\\components"。
+
+export interface FsEntry {
+  name: string;
+  path: string;
+  isDir: boolean;
+  size: number | null;
+  ext: string | null;
+}
+
+/** 列出目录条目（目录优先，按名字排序）。 */
+export function fsListDir(root: string, relPath: string): Promise<FsEntry[]> {
+  return invoke<FsEntry[]>("fs_list_dir", { root, relPath });
+}
+
+/** 读取小型文本文件（默认最多 4MB）。 */
+export function fsReadFile(
+  root: string,
+  relPath: string,
+  maxBytes?: number
+): Promise<string> {
+  return invoke<string>("fs_read_file", { root, relPath, maxBytes: maxBytes ?? null });
+}
+
+/** 写入文本文件（父目录自动创建）。 */
+export function fsWriteFile(
+  root: string,
+  relPath: string,
+  content: string
+): Promise<void> {
+  return invoke("fs_write_file", { root, relPath, content });
+}

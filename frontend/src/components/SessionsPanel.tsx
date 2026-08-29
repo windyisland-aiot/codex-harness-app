@@ -37,9 +37,14 @@ export default function SessionsPanel({
       .sessionList(codexHome)
       .then((l) => {
         setList(l);
-        setLoaded(true);
       })
-      .catch((e) => onStatus(`读取历史会话失败: ${e}`));
+      .catch((e) => {
+        onStatus(`读取历史会话失败: ${e}（已切换到本地空列表）`);
+        setList([]);
+      })
+      .finally(() => {
+        setLoaded(true);
+      });
     return null;
   }
   if (!list) return null;
@@ -115,11 +120,11 @@ export default function SessionsPanel({
 
   return (
     <div className="cfg-backdrop" onClick={onClose}>
-      <div className="cfg-panel plugins-panel" onClick={(e) => e.stopPropagation()}>
+      <div className="cfg-panel sessions-panel" onClick={(e) => e.stopPropagation()}>
         <div className="cfg-head">
           <h2>历史会话</h2>
           <button className="cfg-close" onClick={onClose} title="关闭">
-            ✕
+            ×
           </button>
         </div>
 

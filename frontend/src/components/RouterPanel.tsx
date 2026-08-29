@@ -66,7 +66,7 @@ export default function RouterPanel({
         onClick={runRoute}
         disabled={disabled || busy || !prompt.trim()}
       >
-        {busy ? "路由中…" : "⚡ 路由"}
+        {busy ? "路由中…" : "路由"}
       </button>
       {decision && (
         <span className="router-decision" title={decision.reason}>

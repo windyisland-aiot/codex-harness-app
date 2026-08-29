@@ -39,9 +39,17 @@ export default function SearchPanel({
       .searchStatus(codexHome)
       .then((s) => {
         setStatusView(s);
-        setLoaded(true);
       })
-      .catch((e) => onStatus(`读取搜索配置失败: ${e}`));
+      .catch((e) => {
+        onStatus(`读取搜索配置失败: ${e}（已切换到本地空状态）`);
+        setStatusView({
+          tavily: { registered: false, envKeys: [] },
+          serper: { registered: false, envKeys: [] },
+        });
+      })
+      .finally(() => {
+        setLoaded(true);
+      });
     return null;
   }
 
@@ -104,11 +112,11 @@ export default function SearchPanel({
 
   return (
     <div className="cfg-backdrop" onClick={onClose}>
-      <div className="cfg-panel plugins-panel" onClick={(e) => e.stopPropagation()}>
+      <div className="cfg-panel search-panel" onClick={(e) => e.stopPropagation()}>
         <div className="cfg-head">
           <h2>联网搜索</h2>
           <button className="cfg-close" onClick={onClose} title="关闭">
-            ✕
+            ×
           </button>
         </div>
 

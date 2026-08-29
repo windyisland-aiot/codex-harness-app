@@ -7,15 +7,17 @@
 #   减少泄露面）；有 env 时 codex 走 ApiKey 模式，无需 ChatGPT 登录界面。
 # - approval_policy = "never" 仅为自动测试默认；生产可通过 T08/T09 面板调整。
 
-model = "gpt-5.2-codex"
-model_provider = "openai"
+model = "ark-code-latest"
+model_provider = "volcengine-ark"
 approval_policy = "never"
 
-# `openai` 是内置 provider（不可覆盖，base_url 固定为 https://api.openai.com/v1）。
-# 若企业需自定义端点/密钥名，可新增自定义 provider 并在 `[model]` 指向：
-#
-# [model_providers.enterprise-gw]
-# name = "enterprise-gateway"
-# base_url = "http://model-gw.example.com/v1"
-# env_key = "HARNESS_MODEL_KEY"
-# wire_api = "responses"
+# 自定义 provider：本机内嵌 Ark 网关（127.0.0.1:18762）。
+# 网关持有真实火山方舟 Ark API Key 与上游地址，做 wire_api 翻译：
+# codex (Responses) ↔ 网关 ↔ 火山方舟 Ark (Chat Completions SSE)。
+# wire_api 固定为 responses，codex 前端与 app-server 之间走新版协议。
+
+[model_providers.volcengine-ark]
+name = "火山方舟 Ark Code（内嵌网关）"
+base_url = "http://127.0.0.1:18762/v1"
+env_key = "VOLCENGINE_ARK_API_KEY"
+wire_api = "responses"

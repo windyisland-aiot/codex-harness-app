@@ -6,6 +6,7 @@ mod appserver;
 mod ark_gateway;
 mod config;
 mod feishu;
+mod fs;
 mod oauth;
 mod plugins;
 mod router;
@@ -111,6 +112,9 @@ pub fn run() {
             sessions::session_get,
             sessions::session_rename,
             sessions::session_delete,
+            fs::fs_list_dir,
+            fs::fs_read_file,
+            fs::fs_write_file,
             harness_resolve_paths,
         ])
         .run(tauri::generate_context!())

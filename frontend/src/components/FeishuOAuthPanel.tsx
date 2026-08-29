@@ -101,7 +101,7 @@ export default function FeishuOAuthPanel({
         <div className="cfg-head">
           <h2>飞书 OAuth</h2>
           <button className="cfg-close" onClick={onClose} title="关闭">
-            ✕
+            ×
           </button>
         </div>
 
@@ -187,7 +187,7 @@ export default function FeishuOAuthPanel({
                     刷新 token
                   </button>
                   <button className="cfg-add" onClick={copy} disabled={busy}>
-                    {copied ? "已复制 ✓" : "复制 access_token"}
+                    {copied ? "已复制" : "复制 access_token"}
                   </button>
                 </div>
               </div>

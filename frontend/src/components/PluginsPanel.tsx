@@ -38,9 +38,15 @@ export default function PluginsPanel({
       })
       .then((l) => {
         setList(l);
-        setLoaded(true);
       })
-      .catch((e) => onStatus(`加载技能/插件失败: ${e}`));
+      .catch((e) => {
+        onStatus(`加载技能/插件失败: ${e}（已切换到本地占位展示）`);
+        // 浏览器无 Tauri 或 远端未响应时，给空结构保证面板可渲染。
+        setList({ skills: [], plugins: [], bundledSkillsEnabled: true, skillsIncludeInstructions: null });
+      })
+      .finally(() => {
+        setLoaded(true);
+      });
     return null;
   }
   if (!list) return null;
@@ -126,7 +132,7 @@ export default function PluginsPanel({
         <div className="cfg-head">
           <h2>插件与 Skill</h2>
           <button className="cfg-close" onClick={onClose} title="关闭">
-            ✕
+            ×
           </button>
         </div>
 
@@ -165,7 +171,7 @@ export default function PluginsPanel({
                 type="checkbox"
                 checked={list.bundledSkillsEnabled}
                 onChange={(e) => {
-                  const next = { ...list, bundled_skills_enabled: e.target.checked };
+                  const next = { ...list, bundledSkillsEnabled: e.target.checked };
                   setList(next);
                   save(next);
                 }}
