@@ -164,10 +164,12 @@ fn feishu_mcp_disabled_flag_roundtrips() {
 fn read_missing_file_returns_defaults() {
     // 缺失 config.toml 时不再返回纯空结构，而是回落到「火山方舟 Ark」默认提供商，
     // 以保证首次启动即可出能力（P0 阶段 Ark 集成要求）。
+    // 并且：默认配置必须**写回磁盘**，防止随后启动的 codex 二进制回退到内置废弃默认值。
     let dir = std::env::temp_dir().join(format!("harness-cfg-missing-{}", std::process::id()));
     let _ = fs::remove_dir_all(&dir);
     fs::create_dir_all(&dir).unwrap();
-    let cfg = harness_config::read(dir.to_str().unwrap()).unwrap();
+    let home = dir.to_str().unwrap();
+    let cfg = harness_config::read(home).unwrap();
     assert_eq!(cfg.model, "ark-code-latest");
     assert_eq!(cfg.model_provider, "volcengine-ark");
     assert_eq!(cfg.approval_policy, "on-request");
@@ -180,6 +182,56 @@ fn read_missing_file_returns_defaults() {
         "http://127.0.0.1:18762/v1"
     );
     assert_eq!(cfg.model_providers[0].wire_api, "responses");
+
+    // 关键：read() 必须已把默认配置写到磁盘，codex 二进制才能读到。
+    let raw = fs::read_to_string(format!("{home}/config.toml"))
+        .expect("read() 应对缺失文件把 default_ark_config() 写回磁盘");
+    assert!(raw.contains("wire_api = \"responses\""), "缺失默认写入: {raw}");
+    assert!(raw.contains("ark-code-latest"), "缺失默认模型写入: {raw}");
+    assert!(raw.contains("127.0.0.1:18762"), "缺失默认网关写入: {raw}");
+    let _ = fs::remove_dir_all(&dir);
+}
+
+/// 回归测试（2026-08）：用户既有 config.toml 中 wire_api="chat"（已被 codex 废弃），
+/// 必须在 read() 时自动改成 "responses"，并把修正结果写回磁盘（保证 codex 读到）。
+#[test]
+fn migration_fixes_chat_wire_api_on_disk() {
+    let dir = std::env::temp_dir().join(format!("harness-cfg-chat-mig-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    let home = dir.to_str().unwrap();
+
+    // 模拟用户旧 config（典型场景：默认 Ark，但 wire_api 还是 chat）。
+    fs::write(
+        format!("{home}/config.toml"),
+        r#"
+model = "ark-code-latest"
+model_provider = "volcengine-ark"
+
+[model_providers.volcengine-ark]
+name = "火山方舟 Ark Code"
+base_url = "https://ark.cn-beijing.volces.com/api/coding/v3"
+env_key = ""
+wire_api = "chat"
+"#,
+    )
+    .unwrap();
+
+    let cfg = harness_config::read(home).unwrap();
+    // 内存结构必须已修正。
+    assert_eq!(cfg.model_providers[0].wire_api, "responses");
+    assert!(cfg.model_providers[0].base_url.contains("127.0.0.1"));
+    assert_eq!(cfg.model_providers[0].env_key, "VOLCENGINE_ARK_API_KEY");
+
+    // 磁盘上的真实文件必须同步修改（此条才是让 codex 正常的关键）。
+    let raw = fs::read_to_string(format!("{home}/config.toml")).unwrap();
+    assert!(
+        !raw.contains("wire_api = \"chat\""),
+        "wire_api=chat 仍留在磁盘上! file:\n{raw}"
+    );
+    assert!(raw.contains("wire_api = \"responses\""), "磁盘缺 responses: {raw}");
+    assert!(raw.contains("127.0.0.1:18762"), "磁盘缺网关 base_url: {raw}");
+    assert!(raw.contains("VOLCENGINE_ARK_API_KEY"), "磁盘缺 env_key: {raw}");
     let _ = fs::remove_dir_all(&dir);
 }
 

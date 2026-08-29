@@ -49,6 +49,13 @@ pub async fn appserver_start(
 ) -> Result<String, String> {
     let st = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || {
+        // ⚠️ 启动 codex 子进程前先做一次配置读取（会触发自动迁移）：
+        // 把旧版 wire_api="chat"、Ark base_url 直连等问题修正并写回磁盘，
+        // 确保后续 codex app-server 加载到的 config.toml 始终合规。
+        // ——迁移/写入失败直接报错返回，绝不带着 wire_api=chat 启动 codex。
+        harness_config::read(&codex_home)
+            .map_err(|e| format!("config 迁移失败: {e}"))?;
+
         let mut child_env = HashMap::new();
         child_env.insert("CODEX_HOME".to_string(), codex_home.clone());
 

@@ -71,15 +71,26 @@ mod conv {
 /// - `[model_providers.volcengine-ark]` baseUrl / envKey / wireApi 预填
 /// - 审批策略默认 `on-request`
 /// （首次启动即可出模型能力，用户后续可在配置面板切换 / 覆盖）。
+///
+/// **配置迁移（自动）**：读取后若发现任一 provider 使用已废弃的
+/// `wire_api = "chat"`，或 Ark 提供商 base_url 未指向本机内嵌网关，
+/// 则自动修正并写回磁盘（保证旧版用户升级后立即可用，无需手动改配置）。
 pub fn read(codex_home: &str) -> Result<AppConfig> {
     let path = config_path(codex_home);
     let mut cfg = AppConfig::default();
     if !path.exists() {
-        return Ok(default_ark_config());
+        // 文件不存在：生成 Ark 默认配置 **并写回磁盘**，
+        // 保证紧随其后启动的 codex app-server 读取到合规 config.toml
+        // （避免 codex 用自带内置默认值，默认值里 wire_api 可能为废弃 "chat"）。
+        let def = default_ark_config();
+        write(codex_home, &def)?;
+        return Ok(def);
     }
     let text = std::fs::read_to_string(&path)?;
     if text.trim().is_empty() {
-        return Ok(default_ark_config());
+        let def = default_ark_config();
+        write(codex_home, &def)?;
+        return Ok(def);
     }
     let table: toml::map::Map<String, toml::Value> = match toml::from_str(&text) {
         Ok(m) => m,
@@ -217,7 +228,63 @@ pub fn read(codex_home: &str) -> Result<AppConfig> {
         && cfg.skills.is_empty()
         && cfg.plugins.is_empty();
     if empty {
-        return Ok(default_ark_config());
+        // 文件存在但全为空关键字段（例如用户写了一份空 `[model_providers]` 占位），
+        // 仍需要把 Ark 默认配置**写回磁盘**，避免 codex 二进制回退到内置废弃默认值。
+        let def = default_ark_config();
+        write(codex_home, &def)?;
+        return Ok(def);
+    }
+
+    // ---------- 配置自动迁移（2026-08 起 wire_api="chat" 被 codex 废弃） ----------
+    // 升级用户已存在的 config.toml：任何 provider wire_api=chat → responses；
+    // 火山方舟 base_url 直连真实端点 → 改为指向本机内嵌网关（127.0.0.1:18762/v1）。
+    // 若有任何字段被修正，立即写回磁盘以保证下次 codex app-server 读取即生效。
+    let mut migrated = false;
+    for p in cfg.model_providers.iter_mut() {
+        // 1) 废弃 wire_api=chat 强制升级
+        if p.wire_api == "chat" || p.wire_api.trim().is_empty() {
+            p.wire_api = "responses".to_string();
+            migrated = true;
+        }
+        // 2) Ark 提供商未通过内嵌网关 → 切到本机网关
+        if p.id == "volcengine-ark" {
+            let gw = "http://127.0.0.1:18762/v1";
+            if !p.base_url.contains("127.0.0.1") && !p.base_url.contains("localhost") {
+                p.base_url = gw.to_string();
+                migrated = true;
+            }
+            if p.env_key.trim().is_empty() {
+                p.env_key = "VOLCENGINE_ARK_API_KEY".to_string();
+                migrated = true;
+            }
+        }
+    }
+    // 3) 默认模型/提供商为空 → 补齐 Ark 默认
+    if cfg.model.trim().is_empty() {
+        cfg.model = "ark-code-latest".to_string();
+        migrated = true;
+    }
+    if cfg.model_provider.trim().is_empty() {
+        cfg.model_provider = "volcengine-ark".to_string();
+        migrated = true;
+    }
+    // 4) Ark 提供商缺失且"默认提供商指向 Ark"或"完全无任何 provider" → 补上
+    //    （若用户已有 mock/openai/deepseek 等提供商，不强行塞 Ark，避免破坏纯 mock 测试 / 多供应商场景）
+    let needs_ark = cfg.model_providers.is_empty()
+        || cfg.model_provider == "volcengine-ark"
+        || cfg.model_provider.is_empty();
+    if needs_ark && !cfg.model_providers.iter().any(|p| p.id == "volcengine-ark") {
+        let def = default_ark_config();
+        if let Some(ark) = def.model_providers.into_iter().next() {
+            cfg.model_providers.push(ark);
+            migrated = true;
+        }
+    }
+    if migrated {
+        // 迁移完成必须写回：失败则直接返回错误，
+        // 防止上层仍用"看似迁移完成的内存 cfg"但磁盘仍是 wire_api=chat 旧值，
+        // 导致随后启动的 codex 子进程加载到废弃配置。
+        write(codex_home, &cfg)?;
     }
 
     Ok(cfg)

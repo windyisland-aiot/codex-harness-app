@@ -116,6 +116,8 @@ export default function App() {
   const [input, setInput] = useState("");
   const [running, setRunning] = useState(false);
   const [mode, setMode] = useState<"ask" | "code">("code");
+  // Trae Work 视觉三模式（Work→ask 行为；Code/Design→code 行为）
+  const [visualMode, setVisualModeState] = useState<"work" | "code" | "design">("code");
   const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
   const [sideSearch, setSideSearch] = useState("");
 
@@ -148,6 +150,14 @@ export default function App() {
   useEffect(() => {
     approvalsRef.current = approvals;
   }, [approvals]);
+
+  // 复选框（允许执行命令）直接改 mode 时同步视觉三模式
+  useEffect(() => {
+    if (mode === "ask") setVisualModeState("work");
+    else if (visualMode === "work") setVisualModeState("code"); // code 行为默认 Code 视觉
+    // else 保持用户选中的 Design/Code
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode]);
 
   // 启动首步：先解析运行时路径，再连接 app-server、加载历史会话。
   useEffect(() => {
@@ -573,42 +583,57 @@ export default function App() {
   const presetName =
     MODEL_PRESETS.find((p) => p.id === provider)?.name || provider || "未知";
 
+  /** Trae Work 视觉 3 模式切换：同步更新内部 ask/code 行为模式。 */
+  function setVisualMode(vm: "work" | "code" | "design") {
+    setVisualModeState(vm);
+    if (vm === "work") setMode("ask");
+    else setMode("code"); // Code / Design → code 行为（Design 以后可加专属提示词叠加）
+  }
+
+  const approvalCount = approvals.length;
+
   return (
     <div className="app-shell">
-      {/* ============ 顶部工具条 ============ */}
+      {/* ============ 顶部栏 (Trae Work 风格) ============ */}
       <header className="topbar">
         <div className="brand">
           <div className="brand-logo">H</div>
           <span>Harness</span>
         </div>
 
-        {/* 模式分段切换（形态参考 Trae Work 左上角 Work / Code 切换；功能沿用 Ask / Code） */}
+        {/* 三模式分段切换（Work / Code / Design pill 渐变） */}
         <div className="mode-switch" role="tablist" aria-label="工作模式">
           <button
-            className={`mode-btn ${mode === "ask" ? "active" : ""}`}
-            onClick={() => setMode("ask")}
-            title="Ask 模式：只问答，不执行命令 / 修改文件"
+            className={`mode-btn ${visualMode === "work" ? "active" : ""}`}
+            onClick={() => setVisualMode("work")}
+            title="Work 模式：文档 / 数据 / 办公型任务（不执行命令 / 不改文件）"
           >
-            ⌨ Ask
+            💼 Work
           </button>
           <button
-            className={`mode-btn ${mode === "code" ? "active" : ""}`}
-            onClick={() => setMode("code")}
-            title="Code 模式：Agent 可执行命令 / 修改文件 / 调用工具"
+            className={`mode-btn ${visualMode === "code" ? "active" : ""}`}
+            onClick={() => setVisualMode("code")}
+            title="Code 模式：Agent 编程（执行命令 / 修改代码 / 调用工具）"
           >
-            ⚡ Code
+            💻 Code
+          </button>
+          <button
+            className={`mode-btn ${visualMode === "design" ? "active" : ""}`}
+            onClick={() => setVisualMode("design")}
+            title="Design 模式：AI 设计（视觉/原型/设计系统）"
+          >
+            🎨 Design
           </button>
         </div>
 
-        <button
-          className="tool-btn"
-          onClick={newChat}
-          title="新建会话 (Ctrl+N)"
-        >
-          <span>＋</span> 新建
+        {/* 新建任务（紫蓝渐变 + 圆角阴影） */}
+        <button className="new-btn" onClick={newChat} title="新建任务 (Ctrl+N)">
+          <span>＋</span>
+          <span>新建</span>
           <span className="kbd">Ctrl N</span>
         </button>
 
+        {/* 模型切换器 */}
         <div className="model-switch">
           <ModelSwitcher
             provider={provider}
@@ -620,6 +645,7 @@ export default function App() {
 
         <div className="spacer" />
 
+        {/* 路由面板（紧凑化 — 功能保留但视觉收敛） */}
         <RouterPanel
           prompt={input}
           disabled={pending || running}
@@ -630,33 +656,41 @@ export default function App() {
           onRouted={handleRouted}
         />
 
+        {/* 右对齐图标按钮（线性 style，Trae 风） */}
         <button
-          className={`tool-btn ${cfgOpen ? "active" : ""}`}
+          className={`icon-btn ${cfgOpen ? "active" : ""}`}
           onClick={() => setCfgOpen(true)}
-          title="配置 (,)"
+          title="模型与 MCP 配置"
         >
-          ⚙ <span>配置</span>
+          ⚙
         </button>
         <button
-          className={`tool-btn ${searchOpen ? "active" : ""}`}
+          className={`icon-btn ${searchOpen ? "active" : ""}`}
           onClick={() => setSearchOpen(true)}
-          title="联网搜索"
+          title="联网搜索（Tavily / Serper）"
         >
-          ⌕ <span>搜索</span>
+          🔍
         </button>
         <button
-          className={`tool-btn ${pluginsOpen ? "active" : ""}`}
+          className={`icon-btn ${pluginsOpen ? "active" : ""}`}
           onClick={() => setPluginsOpen(true)}
-          title="技能 / 插件"
+          title="技能 / 插件管理"
         >
-          ⚇ <span>技能</span>
+          🧩
         </button>
         <button
-          className={`tool-btn ${feishuOpen ? "active" : ""}`}
+          className={`icon-btn ${feishuOpen ? "active" : ""}`}
           onClick={() => setFeishuOpen(true)}
-          title="飞书 OAuth / MCP"
+          title="飞书授权 / 飞书 MCP"
         >
-          ✈ <span>飞书</span>
+          ✈️
+        </button>
+        <button
+          className="icon-btn"
+          onClick={() => setSessionsOpen(true)}
+          title="全局搜索任务 / 历史会话"
+        >
+          ⌕
         </button>
 
         <div className="model-chip" title={`${presetName} · ${model}`}>
@@ -666,28 +700,42 @@ export default function App() {
           <span className={`dot ${connDot}`} />
           <span>{connText}</span>
         </div>
+        {/* 审批角标 */}
+        {approvalCount > 0 && (
+          <button
+            className="icon-btn active"
+            onClick={() =>
+              // 切到审批面板：右栏第一个 Tab；此处仅展开面板提示
+              window.scrollTo({ top: 0, behavior: "smooth" })
+            }
+            title={`${approvalCount} 条审批待处理`}
+          >
+            ⚠
+            <span className="badge-dot" />
+          </button>
+        )}
       </header>
 
       {/* ============ 三栏工作区 ============ */}
       <div className="workspace">
-        {/* 左栏：会话列表 */}
+        {/* 左栏：任务 / 会话列表 */}
         <aside className="sidebar">
           <div className="side-head">
             <button className="new-chat-btn" onClick={newChat}>
-              ＋ 新建对话
+              ＋ 新建任务
             </button>
             <input
               className="side-search"
-              placeholder="搜索会话…"
+              placeholder="搜索任务…"
               value={sideSearch}
               onChange={(e) => setSideSearch(e.target.value)}
             />
           </div>
-          <div className="side-section-label">会话 · Sessions</div>
+          <div className="side-section-label">任务 · Sessions</div>
           <ul className="sessions">
             {filteredSessions.length === 0 && (
               <li style={{ cursor: "default", opacity: 0.7 }}>
-                <div className="s-title">（暂无会话）</div>
+                <div className="s-title">（暂无任务）</div>
                 <div className="s-meta">输入指令开始第一个任务</div>
               </li>
             )}
@@ -730,10 +778,10 @@ export default function App() {
               <span className="r">{cwd ? `cwd: ${shortPath(cwd)}` : "单机模式"}</span>
             </div>
             <button
-              className="tool-btn"
+              className="icon-btn"
               onClick={() => setSessionsOpen(true)}
               title="历史会话管理"
-              style={{ padding: "4px 8px" }}
+              aria-label="历史会话管理"
             >
               ☰
             </button>
@@ -746,10 +794,10 @@ export default function App() {
             <div className="title">
               {activeThread
                 ? sessions.find((s) => s.id === activeThread)?.title ||
-                  "新对话"
+                  "新任务"
                 : messages.length > 0
-                ? "对话"
-                : "新对话"}
+                ? "任务对话"
+                : "新任务"}
             </div>
             <div className="crumbs">
               <code title={cwd}>{shortPath(cwd || "未就绪")}</code>
@@ -763,11 +811,20 @@ export default function App() {
           <section className="msglist">
             {messages.length === 0 ? (
               <div className="placeholder">
-                <h2>Codex Agent 工作台</h2>
+                <h2>Harness AI 工作台</h2>
                 <div>
-                  以自然语言下达任务，Agent 自动调用工具、执行命令、修改代码。
+                  以自然语言下达任务，Agent 自动调用工具、执行命令、修改代码
                 </div>
                 <div className="muted">
+                  当前模式：
+                  <strong>
+                    {visualMode === "work"
+                      ? "Work · 办公型"
+                      : visualMode === "code"
+                      ? "Code · 编程型"
+                      : "Design · 设计型"}
+                  </strong>
+                  {"  ·  "}
                   当前模型：{presetName} · {model}
                   {paths && (
                     <>
@@ -791,9 +848,9 @@ export default function App() {
                       </div>
                       <div
                         style={{
-                          fontSize: 11,
+                          fontSize: 12,
                           color: "var(--text-muted)",
-                          lineHeight: 1.45,
+                          lineHeight: 1.5,
                         }}
                       >
                         {c.text}
@@ -827,7 +884,12 @@ export default function App() {
                 <div className="bubble typing">
                   <span className="dots" />
                   <span>
-                    {mode === "ask" ? "思考中" : "Agent 正在执行任务"}…
+                    {visualMode === "work"
+                      ? "思考中"
+                      : visualMode === "design"
+                      ? "设计生成中"
+                      : "Agent 正在执行任务"}
+                    …
                   </span>
                 </div>
               </div>
@@ -836,16 +898,16 @@ export default function App() {
               <div className="msg assistant">
                 <div
                   className="avatar-mini"
-                  style={{ background: "linear-gradient(135deg, #f85149, #b62324)" }}
+                  style={{ background: "linear-gradient(135deg, #EF4444, #B91C1C)" }}
                 >
                   !
                 </div>
                 <div
                   className="bubble"
                   style={{
-                    background: "#2a1618",
-                    borderColor: "#5a2428",
-                    color: "#ffc9cb",
+                    background: "#FEF2F2",
+                    borderColor: "#FECACA",
+                    color: "#991B1B",
                   }}
                 >
                   <strong>出错：</strong>
@@ -855,7 +917,7 @@ export default function App() {
             )}
           </section>
 
-          {/* 输入栏：Ask / Code 双按钮 */}
+          {/* 底部输入：Trae Work 风格（大圆角 pill + 紫蓝渐变按钮） */}
           <footer className="composer">
             <div className="composer-inner">
               <textarea
@@ -874,9 +936,11 @@ export default function App() {
                   }
                 }}
                 placeholder={
-                  mode === "ask"
-                    ? "询问任何问题（Ask 模式：不会执行命令 / 修改文件）…"
-                    : "下达一个任务（Code 模式：Agent 将执行命令 / 修改文件 / 调用工具）…"
+                  visualMode === "work"
+                    ? "告诉 Harness 你想做什么…（Work 模式：仅回答，不执行命令）"
+                    : visualMode === "design"
+                    ? "描述你的设计需求…（Design 模式：Agent 将调用工具生成设计/原型）"
+                    : "告诉 Harness 要做什么…（Code 模式：Agent 将执行命令 / 修改代码 / 调用工具）"
                 }
                 disabled={pending || running || !paths}
               />
@@ -885,21 +949,29 @@ export default function App() {
                   className="btn-ask"
                   disabled={pending || running || !paths || !input.trim()}
                   onClick={() => {
-                    setMode("ask");
+                    setVisualMode("work");
                     setTimeout(send, 0);
                   }}
+                  title="Work 模式：只回答 / 不执行命令"
                 >
-                  💬 Ask
+                  💼 Work
                 </button>
                 <button
                   className="btn-code"
                   disabled={pending || running || !paths || !input.trim()}
                   onClick={() => {
-                    setMode("code");
+                    setVisualMode(
+                      visualMode === "design" ? "design" : "code"
+                    );
                     setTimeout(send, 0);
                   }}
+                  title={
+                    visualMode === "design"
+                      ? "Design 模式：调用设计相关工具"
+                      : "Code 模式：Agent 执行命令 / 改代码 / 调用工具"
+                  }
                 >
-                  ▶ Code
+                  {visualMode === "design" ? "🎨 Design" : "💻 Code"}
                 </button>
               </div>
             </div>
@@ -909,7 +981,9 @@ export default function App() {
                   <input
                     type="checkbox"
                     checked={mode === "code"}
-                    onChange={(e) => setMode(e.target.checked ? "code" : "ask")}
+                    onChange={(e) =>
+                      setMode(e.target.checked ? "code" : "ask")
+                    }
                   />
                   允许执行命令 / 改文件
                 </label>
@@ -931,15 +1005,13 @@ export default function App() {
                 </label>
               </div>
               <div className="right">
-                <span>
-                  Enter 发送 · Shift+Enter 换行
-                </span>
+                Enter 发送 · Shift+Enter 换行
               </div>
             </div>
           </footer>
         </main>
 
-        {/* 右栏：工具面板（审批 / 会话摘要 / 快捷键） */}
+        {/* 右栏：工具面板（Tabs：审批 / 任务摘要 / 终端 & 浏览器 占位） */}
         <aside className="right">
           <ToolPanel
             approvals={approvals}
@@ -998,9 +1070,10 @@ export default function App() {
       {onboardingOpen && (
         <div className="onboarding">
           <div className="onboarding-inner">
-            <h1>欢迎使用 Codex Harness</h1>
+            <h1>欢迎使用 Harness AI 工作台</h1>
             <div className="sub">
-              你的本地 Agent 工作台。火山方舟 Ark Code 已预置为默认模型。
+              你的本地 Agent 工作台，Work/Code/Design 三模式切换，
+              火山方舟 Ark Code 已预置为默认模型。
             </div>
             <div className="steps">
               <div className={`step ${onboardingStep >= 1 ? "done" : onboardingStep === 0 ? "now" : ""}`} />
@@ -1012,18 +1085,18 @@ export default function App() {
               <div className="onboarding-card">
                 <h3>🛠 默认模型已就绪</h3>
                 <p>
-                  火山方舟 Ark Code（ark-code-latest）已被设为默认模型，
-                  API Key 已写死在后端网关，可直接开箱使用。
+                  火山方舟 Ark Code（<code>ark-code-latest</code>）已被设为默认模型，
+                  API Key 由后端内嵌网关持有，可直接开箱使用。
                   你稍后可以在「配置」中切换到其他厂商。
                 </p>
                 <div className="ok">✓ 内嵌 Ark 网关 127.0.0.1:18762 转发真实 Ark 端点</div>
-                <div className="ok">✓ wire_api: responses（codex 协议）</div>
+                <div className="ok">✓ wire_api: responses（Codex 2026-08 新版协议）</div>
               </div>
             )}
 
             {onboardingStep === 1 && (
               <div className="onboarding-card">
-                <h3>👤 账号（单机模式）</h3>
+                <h3>👤 账号信息（单机模式）</h3>
                 <p>当前为单机运行。填写以下信息用于界面展示。</p>
                 <div className="onboarding-form" style={{ marginTop: 10 }}>
                   <div>
@@ -1052,12 +1125,12 @@ export default function App() {
               <div className="onboarding-card">
                 <h3>🚀 开始你的第一个任务</h3>
                 <p>
-                  点击下方完成即可进入工作台。你可以直接尝试让 Agent：
+                  点击下方完成即可进入工作台。你可以直接尝试：
                 </p>
-                <ul style={{ color: "var(--text-secondary)", fontSize: 12, paddingLeft: 18, margin: 0 }}>
-                  <li>分析当前目录下的项目结构</li>
-                  <li>运行测试并修复失败的用例</li>
-                  <li>为你的代码生成文档</li>
+                <ul style={{ color: "var(--text-secondary)", fontSize: 13, paddingLeft: 18, margin: 0, lineHeight: 1.8 }}>
+                  <li>分析当前目录下的项目结构并生成 README</li>
+                  <li>运行测试套件，定位并修复失败用例</li>
+                  <li>为最近修改过的代码生成单元测试</li>
                 </ul>
               </div>
             )}
