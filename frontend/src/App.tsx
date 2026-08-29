@@ -121,6 +121,21 @@ export default function App() {
   const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
   const [sideSearch, setSideSearch] = useState("");
 
+  // 主题切换（浅色 / 深色，贴合 Trae Work）；记忆在 localStorage
+  const [theme, setThemeState] = useState<"light" | "dark">(() => {
+    if (typeof window === "undefined") return "light";
+    const saved = window.localStorage.getItem("harness.theme");
+    if (saved === "dark" || saved === "light") return saved;
+    const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)").matches;
+    return prefersDark ? "dark" : "light";
+  });
+  const setTheme = (t: "light" | "dark") => {
+    setThemeState(t);
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("harness.theme", t);
+    }
+  };
+
   // T11 模型路由
   const [autoRoute, setAutoRoute] = useState(true);
   const [sensitive, setSensitive] = useState(false);
@@ -150,6 +165,13 @@ export default function App() {
   useEffect(() => {
     approvalsRef.current = approvals;
   }, [approvals]);
+
+  // 主题切换：应用/移除 body.theme-dark，让 CSS 变量生效
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    if (theme === "dark") document.body.classList.add("theme-dark");
+    else document.body.classList.remove("theme-dark");
+  }, [theme]);
 
   // 复选框（允许执行命令）直接改 mode 时同步视觉三模式
   useEffect(() => {
@@ -663,6 +685,13 @@ export default function App() {
           title="模型与 MCP 配置"
         >
           ⚙
+        </button>
+        <button
+          className="icon-btn"
+          onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+          title={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"}
+        >
+          {theme === "dark" ? "☀️" : "🌙"}
         </button>
         <button
           className={`icon-btn ${searchOpen ? "active" : ""}`}

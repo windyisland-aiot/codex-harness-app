@@ -1,10 +1,11 @@
 /* =========================================================
-   Harness App — Trae Work 风格 UI (v2)
+   Harness App — Trae Work 风格 UI (v3)
    参考：TraeWork Work/Code/Design 三模式工作台
    布局：顶栏（品牌+模式切+工具+模型） / 左栏（新建+搜索+任务列表）
          / 中心（对话+欢迎+输入） / 右栏（工具面板 Tabs）
-   配色：极简浅色（白+浅灰）+ 紫蓝渐变强调色（#7A5AF8 → #5B8DEF）
-   质感：软阴影（Neumorphism light）、大圆角、线性图标、大量留白
+   主题：双主题可切换（浅色 纯白 / 深色 暗夜）
+   配色：极简（白 / 深灰 分层色板）+ 紫蓝纯色强调色 #6C71E4
+   质感：极微阴影、大圆角、线性图标、大量留白
    ========================================================= */
 
 :root {
@@ -12,8 +13,8 @@
   font-family: "Inter", "Segoe UI", system-ui, -apple-system, "PingFang SC",
     "Microsoft YaHei", Roboto, sans-serif;
 
-  /* --- 背景 --- */
-  --bg-app: #FAFBFC;          /* 应用最底色：极浅灰 */
+  /* --- 背景（浅色主题 = 纯白，贴合 Trae） --- */
+  --bg-app: #FFFFFF;          /* 应用最底色：纯白（Trae Work 浅色） */
   --bg-sidebar: #FFFFFF;      /* 侧栏：纯白 */
   --bg-surface: #FFFFFF;      /* 卡片/面板：白 */
   --bg-sunken: #F3F4F6;       /* 输入框/搜索框底色 */
@@ -31,12 +32,12 @@
   --text-muted: #9CA3AF;      /* 辅助文本 */
   --text-invert: #FFFFFF;     /* 按钮上的反白 */
 
-  /* --- 品牌强调色（紫蓝渐变 Trae 风） --- */
-  --brand-start: #7A5AF8;     /* 紫 */
-  --brand-end: #5B8DEF;       /* 蓝 */
-  --brand: #6C71E4;           /* 单色近似（用于边框/文字）*/
-  --brand-soft: #EEF0FF;      /* 浅紫底 */
-  --brand-600: #5E54D6;
+  /* --- 品牌强调色（紫蓝纯色 Trae 风，无多余渐变） --- */
+  --brand-start: #7A5AF8;     /* 紫（品牌 LOGO 小方块用） */
+  --brand-end: #5B8DEF;       /* 蓝（品牌 LOGO 小方块用） */
+  --brand: #6C71E4;           /* 按钮强调色：紫蓝纯色 */
+  --brand-soft: #EEF0FF;      /* 浅紫底（选中行/提示） */
+  --brand-600: #5E54D6;       /* 悬停态深紫蓝 */
 
   /* --- 语义色 --- */
   --success: #10B981;
@@ -57,6 +58,38 @@
   --radius-pill: 999px;
 
   --mono: ui-monospace, "JetBrains Mono", "Cascadia Mono", "Fira Code", Consolas, monospace;
+}
+
+/* ---------- 深色主题（Trae Work 暗色） ----------
+   打开方式：<body class="theme-dark">
+   色板参考：Trae 官方暗色（#16181D 主底 + 分层灰 + 同一紫蓝强调）*/
+body.theme-dark {
+  color-scheme: dark;
+
+  --bg-app: #16181D;          /* 应用最底色：纯暗黑（不刺眼的深炭） */
+  --bg-sidebar: #1A1D23;      /* 侧栏：略亮于底（层级区分） */
+  --bg-surface: #1E222A;      /* 卡片/面板：再亮一级 */
+  --bg-sunken: #242832;       /* 输入框/搜索框底色（凹陷） */
+  --bg-hover: #272B36;        /* hover 行 */
+  --bg-active: #2B2A44;       /* 选中行（深紫调，与浅色 --brand-soft 呼应）*/
+
+  --border: #2B2F3A;          /* 普通分隔（深灰） */
+  --border-strong: #383D4B;   /* 强调分隔 */
+  --border-input: #30343F;    /* 输入框边框 */
+
+  --text: #E5E7EB;            /* 主文本：亮灰白 */
+  --text-secondary: #9CA3AF;  /* 次文本：中灰 */
+  --text-muted: #6B7280;      /* 辅助文本：暗灰 */
+  --text-invert: #0B0C10;     /* 按钮上的反色（暗色时用深炭反衬品牌字，极少用） */
+
+  /* 品牌色在暗色下保持紫蓝基调不变（本身已够亮），--brand-soft 换成深紫 */
+  --brand-soft: #2B2A44;
+
+  /* 暗色阴影换成更柔和的纯黑（rgba 黑），避免浅色阴影突兀 */
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.35), 0 1px 3px rgba(0,0,0,.4);
+  --shadow-md: 0 4px 8px rgba(0,0,0,.35), 0 2px 4px rgba(0,0,0,.3);
+  --shadow-lg: 0 16px 40px -12px rgba(0,0,0,.6);
+  --shadow-input: 0 2px 10px rgba(0,0,0,.35);
 }
 
 * { box-sizing: border-box; }
