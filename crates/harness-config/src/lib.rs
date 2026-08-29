@@ -99,15 +99,27 @@ pub fn read(codex_home: &str) -> Result<AppConfig> {
     };
 
     cfg.model = conv::get_str(&table, "model", "top")?.unwrap_or("").to_string();
-    cfg.model_provider = conv::get_str(&table, "model_provider", "top")?.unwrap_or("").to_string();
+    let raw_provider = conv::get_str(&table, "model_provider", "top")?.unwrap_or("").to_string();
+    // 迁移：codex 不允许 model_provider = "openai"（保留内置 ID）
+    cfg.model_provider = if raw_provider == "openai" {
+        "openai-custom".to_string()
+    } else {
+        raw_provider
+    };
     cfg.approval_policy = conv::get_str(&table, "approval_policy", "top")?.unwrap_or("").to_string();
 
     if let Some(toml::Value::Table(providers)) = table.get("model_providers") {
         for (id, v) in providers {
             if let toml::Value::Table(p) = v {
+                // codex 保留内置 provider ID（如 "openai"），不允许自定义覆盖。
+                // 旧版 Harness 可能已把 openai 写入 config.toml，这里自动迁移。
+                let safe_id = match id.as_str() {
+                    "openai" => "openai-custom".to_string(),
+                    other => other.to_string(),
+                };
                 cfg.model_providers.push(ProviderConfig {
-                    id: id.clone(),
-                    name: conv::get_str(p, "name", "model_providers")?.unwrap_or(id).to_string(),
+                    id: safe_id.clone(),
+                    name: conv::get_str(p, "name", "model_providers")?.unwrap_or(&safe_id).to_string(),
                     base_url: conv::get_str(p, "base_url", "model_providers")?
                         .unwrap_or("")
                         .to_string(),
@@ -331,7 +343,9 @@ pub fn write(codex_home: &str, cfg: &AppConfig) -> Result<()> {
     }
 
     conv::put_str(&mut table, "model", Some(cfg.model.as_str()));
-    conv::put_str(&mut table, "model_provider", Some(cfg.model_provider.as_str()));
+    // 迁移：codex 不允许 model_provider = "openai"
+    let safe_provider = if cfg.model_provider == "openai" { "openai-custom" } else { cfg.model_provider.as_str() };
+    conv::put_str(&mut table, "model_provider", Some(safe_provider));
     conv::put_str(&mut table, "approval_policy", Some(cfg.approval_policy.as_str()));
 
     // model_providers
@@ -340,12 +354,14 @@ pub fn write(codex_home: &str, cfg: &AppConfig) -> Result<()> {
         if p.id.is_empty() {
             continue;
         }
+        // 防止写入 codex 保留的内置 ID（"openai"）导致加载失败
+        let safe_id = if p.id == "openai" { "openai-custom" } else { &p.id };
         let mut t = toml::map::Map::new();
-        conv::put_str(&mut t, "name", Some(if p.name.is_empty() { &p.id } else { &p.name }));
+        conv::put_str(&mut t, "name", Some(if p.name.is_empty() { safe_id } else { &p.name }));
         conv::put_str(&mut t, "base_url", Some(p.base_url.as_str()));
         conv::put_str(&mut t, "env_key", Some(p.env_key.as_str()));
         conv::put_str(&mut t, "wire_api", Some(p.wire_api.as_str()));
-        providers.insert(p.id.clone(), toml::Value::Table(t));
+        providers.insert(safe_id.to_string(), toml::Value::Table(t));
     }
     table.insert(
         "model_providers".to_string(),

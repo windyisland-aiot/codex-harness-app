@@ -36,7 +36,7 @@ export const MODEL_PRESETS: ModelPreset[] = [
     default_model: "mock-model",
   },
   {
-    id: "openai",
+    id: "openai-custom",
     name: "OpenAI",
     base_url: "https://api.openai.com/v1",
     env_key: "OPENAI_API_KEY",
