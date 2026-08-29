@@ -47,6 +47,7 @@
 | T29 | Markdown 渲染增强（表格/代码块复制/列表） | 代码块 header+复制按钮（DOM 挂载式），表格全边框+zebra，blockquote 左侧 #6366F1 竖线，列表缩进美化 | ✅ |
 | T30 | 小窗口布局弹性修复 | 所有 flex/grid 容器 min-width/min-height:0；`@media (max-width:720px)` 侧栏 auto-collapse、composer 模型 pill 简化、msglist padding 减 | ✅ |
 | T31 | Ark 网关流式 SSE writer-closed 修复 | `stream.set_write_timeout` 600s；`write_simple` 吞 BrokenPipe/ConnectionReset；SSE 场景 chunked streaming 每 256ms flush；5xx body sanitize；upstream 错误不泄漏 key | ✅ |
+| T32 | v0.2.1 三项缺陷修复 + 发版 | (1) `ProviderConfig.provider_type` 默认 "Custom"，写入 codex config.toml 必带 `type = "Custom"`，修复 `Model provider 'deepseek' not found`；(2) 自绘顶栏三按钮：capabilities 补 `core:window:allow-{minimize,toggleMaximize,close,isMaximized,start-dragging}` + `shell:default`，前端 `toggleMaximize` 不存在时退化为 `isMaximized+maximize/unmaximize`；(3) codex.exe 子进程：Windows 下 `creation_flags(CREATE_NO_WINDOW=0x08000000)` + `stderr=null()`，消灭启动黑命令行窗口。版本三处升至 0.2.1。产物：Harness_0.2.1_x64-setup.exe (71MB) + Harness_0.2.1_x64_en-US.msi (105MB) → https://github.com/windyisland-aiot/codex-harness-app/releases/tag/v0.2.1 | ✅ |
 
 ## P2 —— 增强与规模化
 
