@@ -100,73 +100,13 @@ jobs:
           # Windows 会因下载标记 Zone.Identifier 触发 Mark-of-the-Web；去掉，避免执行被拦截
           Unblock-File -Path $out -ErrorAction SilentlyContinue
 
-      # ---------- 预缓存 NSIS（仅 NSIS；WiX 在 windows-latest 上已预装 candle.exe） ----------
-      # 背景：tauri-cli 在 bundling 阶段会从 github.com/tauri-apps/binary-releases 拉 nsis-3.zip；
-      # GitHub CDN 偶发 504 Gateway Timeout（run 33264434811 明确失败）。
-      # 前置 6 次指数退避拉取，解压后通过 TAURI_NSIS_PATH 指向解压根目录，tauri-bundler 跳过 CDN。
-      # WiX 不缓存：windows-latest runner 自带 WiX Toolset v3.14（C:\Program Files (x86)\WiX Toolset v3.14\bin）。
-      - name: 预缓存 NSIS 打包工具（6 次退避 + TAURI_NSIS_PATH）
-        shell: pwsh
-        run: |
-          $ProgressPreference = 'SilentlyContinue'
-          $root = "D:\tauri-bundler-tools"
-          New-Item -ItemType Directory -Force -Path $root | Out-Null
-          function Download-WithRetry($url, $out) {
-            $maxRetries = 6
-            $delaySec = 5
-            for ($i = 1; $i -le $maxRetries; $i++) {
-              try {
-                # 显式 curl.exe 避免 PowerShell curl = Invoke-WebRequest 别名
-                & curl.exe --proto '=https' --tlsv1.2 --location --fail `
-                           --retry 3 --retry-connrefused --retry-delay $delaySec `
-                           --connect-timeout 30 --max-time 300 `
-                           -o "$out" "$url"
-                if ($LASTEXITCODE -eq 0 -and (Test-Path -LiteralPath $out)) {
-                  $sz = [Math]::Round(((Get-Item $out).Length / 1MB), 2)
-                  Write-Host "OK ($i/$maxRetries): $url -> $out ($sz MB)"
-                  return $true
-                }
-              } catch {
-                Write-Host "attempt $i/$maxRetries failed for $url : $_"
-              }
-              $wait = $delaySec * [Math]::Pow(2, ($i - 1))
-              Write-Host "retry $i/$maxRetries wait ${wait}s ..."
-              Start-Sleep -Seconds $wait
-            }
-            return $false
-          }
-          $nsisZip = Join-Path $root "nsis-3.zip"
-          if (-not (Download-WithRetry "https://github.com/tauri-apps/binary-releases/releases/download/nsis-3/nsis-3.zip" $nsisZip)) {
-            Write-Error "NSIS 下载失败（已重试 6 次），tauri build 可能 CDN 504"; exit 1
-          }
-          # nsis-3.zip 内部顶层结构"可能"是 nsis-3/ 子目录，也"可能"直接平铺 Bin/Include 等。
-          # 统一：先显式创建 nsis-3/ 再解压到里面，保证 Bin/makensis.exe 始终落在 $nsisRoot/Bin/ 下
-          $nsisRoot = Join-Path $root "nsis-3"
-          New-Item -ItemType Directory -Force -Path $nsisRoot | Out-Null
-          Expand-Archive -LiteralPath $nsisZip -DestinationPath $nsisRoot -Force
-          # 如果 zip 自身多包了一层 nsis-3/，那就会变成 $nsisRoot/nsis-3/Bin/，我们拉平一层
-          $inner = Join-Path $nsisRoot "nsis-3"
-          if ((Test-Path -LiteralPath $inner) -and (Test-Path -LiteralPath (Join-Path $inner "Bin\makensis.exe"))) {
-            Write-Host "zip 自带 nsis-3/ 子包装层，拉平一层：$inner -> $nsisRoot"
-            Move-Item -Force -Path (Join-Path $inner "*") -Destination $nsisRoot
-            Remove-Item -LiteralPath $inner -Force
-          }
-          $makensis = Join-Path $nsisRoot "Bin\makensis.exe"
-          if (-not (Test-Path -LiteralPath $makensis)) {
-            Write-Error "NSIS 解压后未发现 Bin\makensis.exe（期望路径 $makensis）；解压结果："
-            Get-ChildItem -Recurse -LiteralPath $nsisRoot -ErrorAction SilentlyContinue | Select-Object -First 20 FullName
-            exit 1
-          }
-          # TAURI_NSIS_PATH：tauri-bundler 2.x 会读取的变量，指向已解压 NSIS 根目录后，tauri 不再走 CDN
-          "TAURI_NSIS_PATH=$nsisRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          Write-Host "TAURI_NSIS_PATH=$nsisRoot"
-          Write-Host "NSIS files:"
-          Get-ChildItem $nsisRoot | Select-Object -First 8 Name
-
-          # 同时打印 WiX 位置，确认 runner 自带 WiX 可用
-          $candle = (Get-Command candle.exe -ErrorAction SilentlyContinue).Source
-          if ($candle) { Write-Host "WiX candle.exe: $candle（使用 runner 自带 WiX Toolset）" }
-          else       { Write-Host "WiX candle.exe 不在 PATH，将使用 tauri 的 fallback 路径" }
+      # ---------- 注：不做 NSIS / WiX 预缓存 ----------
+      # 之前 4 轮连续失败（504→404→解压结构错误×2）都因为手写预缓存步骤的 PowerShell 逻辑出错；
+      # 而最早 3 次成功构建（run 33257989389 / 33258549388 / 33258928837）
+      # 都是让 tauri-bundler 自己下载 NSIS/WiX，没有任何预缓存步骤。
+      # 因此回归 tauri-bundler 内置下载逻辑，只在外层对「整个 tauri build」做 3 次指数退避重试，
+      # 把 GitHub CDN 偶发 504 当作偶发网络抖动处理（tauri-cli 内部也有自己的重试）。
+      # windows-latest runner 自带 WiX Toolset v3.14（candle.exe 在 PATH），tauri-bundler 会直接用。
 
       - name: 安装 tauri-cli
         shell: pwsh
