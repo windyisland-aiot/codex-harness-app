@@ -139,12 +139,22 @@ jobs:
           if (-not (Download-WithRetry "https://github.com/tauri-apps/binary-releases/releases/download/nsis-3/nsis-3.zip" $nsisZip)) {
             Write-Error "NSIS 下载失败（已重试 6 次），tauri build 可能 CDN 504"; exit 1
           }
-          # NSIS zip 顶层是 nsis-3/ 子目录；Expand-Archive 直接展开到 $root 就会形成 nsis-3/ 目录
-          Expand-Archive -LiteralPath $nsisZip -DestinationPath $root -Force
+          # nsis-3.zip 内部顶层结构"可能"是 nsis-3/ 子目录，也"可能"直接平铺 Bin/Include 等。
+          # 统一：先显式创建 nsis-3/ 再解压到里面，保证 Bin/makensis.exe 始终落在 $nsisRoot/Bin/ 下
           $nsisRoot = Join-Path $root "nsis-3"
-          if (-not (Test-Path -LiteralPath $nsisRoot)) {
-            Write-Error "NSIS 解压后未发现 $nsisRoot，目录结构异常："
-            Get-ChildItem $root -Name
+          New-Item -ItemType Directory -Force -Path $nsisRoot | Out-Null
+          Expand-Archive -LiteralPath $nsisZip -DestinationPath $nsisRoot -Force
+          # 如果 zip 自身多包了一层 nsis-3/，那就会变成 $nsisRoot/nsis-3/Bin/，我们拉平一层
+          $inner = Join-Path $nsisRoot "nsis-3"
+          if ((Test-Path -LiteralPath $inner) -and (Test-Path -LiteralPath (Join-Path $inner "Bin\makensis.exe"))) {
+            Write-Host "zip 自带 nsis-3/ 子包装层，拉平一层：$inner -> $nsisRoot"
+            Move-Item -Force -Path (Join-Path $inner "*") -Destination $nsisRoot
+            Remove-Item -LiteralPath $inner -Force
+          }
+          $makensis = Join-Path $nsisRoot "Bin\makensis.exe"
+          if (-not (Test-Path -LiteralPath $makensis)) {
+            Write-Error "NSIS 解压后未发现 Bin\makensis.exe（期望路径 $makensis）；解压结果："
+            Get-ChildItem -Recurse -LiteralPath $nsisRoot -ErrorAction SilentlyContinue | Select-Object -First 20 FullName
             exit 1
           }
           # TAURI_NSIS_PATH：tauri-bundler 2.x 会读取的变量，指向已解压 NSIS 根目录后，tauri 不再走 CDN
