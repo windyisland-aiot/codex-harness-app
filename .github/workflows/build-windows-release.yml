@@ -100,13 +100,84 @@ jobs:
           # Windows 会因下载标记 Zone.Identifier 触发 Mark-of-the-Web；去掉，避免执行被拦截
           Unblock-File -Path $out -ErrorAction SilentlyContinue
 
+      # ---------- 预缓存 Tauri Bundler 工具 ----------
+      # 背景：tauri-cli 在 bundling 阶段会从 github.com/tauri-apps/binary-releases 拉 nsis-3.zip /
+      # wix3-bin.zip；GitHub CDN 偶发 504 Gateway Timeout（上一次 run 失败根因）。
+      # 修复：
+      #   1) curl --retry 6 指数退避提前预下载；
+      #   2) 解压到 D:\tauri-bundler-tools 下的 nsis-3 / wix3 目录；
+      #   3) 通过 TAURI_NSIS_PATH、TAURI_WIX_PATH 指向解压目录（这是 tauri-bundler 真正会读取的变量），
+      #      让 tauri build 直接使用本地二进制，跳过 CDN 下载。
+      - name: 预缓存 Tauri Bundler 工具（NSIS / WiX，带 6 次退避重试 + 解压）
+        shell: pwsh
+        run: |
+          $ProgressPreference = 'SilentlyContinue'
+          $root = "D:\tauri-bundler-tools"
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          function Download-WithRetry($url, $out) {
+            $maxRetries = 6
+            $delaySec = 5
+            for ($i = 1; $i -le $maxRetries; $i++) {
+              try {
+                curl.exe --proto '=https' --tlsv1.2 --location --fail `
+                         --retry 3 --retry-connrefused --retry-delay $delaySec `
+                         --connect-timeout 30 --max-time 300 `
+                         -o "$out" "$url"
+                if ($LASTEXITCODE -eq 0 -and (Test-Path $out)) {
+                  $sz = [Math]::Round(((Get-Item $out).Length / 1MB), 2)
+                  Write-Host "OK ($i/$maxRetries): $url -> $out ($sz MB)"
+                  return $true
+                }
+              } catch {
+                Write-Host "attempt $i/$maxRetries failed for $url : $_"
+              }
+              $wait = $delaySec * [Math]::Pow(2, ($i - 1))
+              Write-Host "retry $i/$maxRetries wait ${wait}s ..."
+              Start-Sleep -Seconds $wait
+            }
+            return $false
+          }
+          $nsisZip = Join-Path $root "nsis-3.zip"
+          $wixZip  = Join-Path $root "wix3-bin.zip"
+          $ok = $true
+          if (-not (Download-WithRetry "https://github.com/tauri-apps/binary-releases/releases/download/nsis-3/nsis-3.zip" $nsisZip)) { $ok = $false }
+          if (-not (Download-WithRetry "https://github.com/tauri-apps/binary-releases/releases/download/wix3-bin/wix3-bin.zip" $wixZip))  { $ok = $false }
+          if (-not $ok) { Write-Error "预下载 Tauri Bundler 资源失败，已重试 6 次"; exit 1 }
+
+          # 解压：NSIS 包内顶层通常是 nsis-3/ 子目录；WiX 包顶层是 wix3/ 子目录
+          Expand-Archive -LiteralPath $nsisZip -DestinationPath $root -Force
+          Expand-Archive -LiteralPath $wixZip  -DestinationPath $root -Force
+
+          $nsisRoot = Join-Path $root "nsis-3"
+          $wixRoot  = Join-Path $root "wix3"
+          if (-not (Test-Path $nsisRoot)) { Write-Error "NSIS 解压后未发现 $nsisRoot"; exit 1 }
+          if (-not (Test-Path $wixRoot))  { Write-Error "WiX  解压后未发现 $wixRoot";  exit 1 }
+
+          # TAURI_NSIS_PATH / TAURI_WIX_PATH 是 tauri-bundler 2.x 真正会读取的环境变量
+          # 直接指向各自已解压根目录即可，tauri-bundler 不会再尝试拉取 zip
+          "TAURI_NSIS_PATH=$nsisRoot" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "TAURI_WIX_PATH=$wixRoot"   | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          Write-Host "TAURI_NSIS_PATH=$nsisRoot"
+          Write-Host "TAURI_WIX_PATH=$wixRoot"
+          Get-ChildItem $nsisRoot | Select-Object -First 5 Name
+          Get-ChildItem $wixRoot  | Select-Object -First 5 Name
+
       - name: 安装 tauri-cli
         shell: pwsh
         run: |
           if (-not (Test-Path package.json)) {
             '{"name":"harness-root","private":true}' | Out-File -FilePath package.json -Encoding utf8
           }
-          npm install -D @tauri-apps/cli@^2.0 2>&1 | Select-Object -Last 15
+          $maxRetries = 4
+          $delay = 5
+          for ($i = 1; $i -le $maxRetries; $i++) {
+            npm install -D @tauri-apps/cli@^2.0 2>&1 | Select-Object -Last 10
+            if ($LASTEXITCODE -eq 0) { break }
+            Write-Host "npm i tauri-cli attempt $i/$maxRetries failed, sleep ${delay}s ..."
+            Start-Sleep -Seconds $delay
+            $delay *= 2
+          }
+          if ($LASTEXITCODE -ne 0) { Write-Error "安装 tauri-cli 多次重试失败"; exit 1 }
 
       - name: 检查 WiX（windows-latest 已预装）
         shell: pwsh
@@ -115,14 +186,33 @@ jobs:
           if ($candle) {
             Write-Host "WiX candle.exe: $candle"
           } else {
-            Write-Host "WiX 未在 PATH 中，Tauri 将自行下载"
+            Write-Host "WiX 未在 PATH 中，Tauri 将从预缓存读取 wix3-bin.zip"
           }
 
-      - name: 构建 Tauri 安装包（MSI + NSIS）
+      - name: 构建 Tauri 安装包（MSI + NSIS，3 次指数退避重试，抵抗偶发 CDN 504）
         shell: pwsh
         run: |
           # 不注入空 HTTP_PROXY/HTTPS_PROXY：空值会让 ureq 误走不存在的代理
-          npx tauri build --verbose 2>&1 | Select-Object -Last 400
+          # 预缓存变量：TAURI_NSIS_PATH / TAURI_WIX_PATH 已在上一步写入 GITHUB_ENV
+          Write-Host "TAURI_NSIS_PATH = $env:TAURI_NSIS_PATH"
+          Write-Host "TAURI_WIX_PATH  = $env:TAURI_WIX_PATH"
+          $maxRetries = 3
+          $delaySec = 15
+          for ($i = 1; $i -le $maxRetries; $i++) {
+            Write-Host "==== tauri build attempt $i/$maxRetries ===="
+            & npx tauri build --verbose 2>&1 | Select-Object -Last 200
+            if ($LASTEXITCODE -eq 0) {
+              Write-Host "tauri build OK on attempt $i"
+              exit 0
+            }
+            if ($i -lt $maxRetries) {
+              $wait = $delaySec * [Math]::Pow(2, ($i - 1))
+              Write-Host "tauri build attempt $i failed (exit=$LASTEXITCODE); wait ${wait}s before retry ..."
+              Start-Sleep -Seconds $wait
+            }
+          }
+          Write-Error "tauri build failed after $maxRetries attempts"
+          exit 1
 
       - name: 枚举产物
         id: artifacts
