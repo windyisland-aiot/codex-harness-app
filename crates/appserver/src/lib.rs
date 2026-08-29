@@ -19,6 +19,9 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
 use serde_json::{Map, Value};
 
 /// JSON-RPC 通信错误。
@@ -100,7 +103,7 @@ impl AppServerClient {
         cmd.arg("app-server").arg("--listen").arg("stdio://");
         cmd.stdin(Stdio::piped())
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit());
+            .stderr(Stdio::null()); // 生产环境 codex 不需要控制台 stderr 挂黑窗；drop
         if let Some(env) = &cfg.env {
             for (k, v) in env {
                 cmd.env(k, v);
@@ -109,6 +112,10 @@ impl AppServerClient {
         if let Some(cwd) = &cfg.cwd {
             cmd.current_dir(cwd);
         }
+        // Windows：隐藏 codex.exe 的黑色命令行窗口（CREATE_NO_WINDOW = 0x08000000）。
+        // codex 默认是 console subsystem，但主界面是 Tauri GUI，用户不希望多看到一个 cmd 黑框。
+        #[cfg(windows)]
+        cmd.creation_flags(0x0800_0000);
         let mut child = cmd
             .spawn()
             .map_err(|e| AppServerError::Spawn(format!("{e}")))?;

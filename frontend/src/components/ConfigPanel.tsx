@@ -79,7 +79,7 @@ export default function ConfigPanel({
       ...c,
       modelProviders: [
         ...c.modelProviders,
-        { id: `provider-${Date.now()}`, name: "", baseUrl: "", envKey: "", wireApi: "responses" },
+        { id: `provider-${Date.now()}`, name: "", type: "Custom", baseUrl: "", envKey: "", wireApi: "responses" },
       ],
     }));
     setDirty(true);

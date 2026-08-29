@@ -51,6 +51,7 @@ args = ["-y", "@modelcontextprotocol/server-filesystem"]
     edited.model_providers.push(ProviderConfig {
         id: "deepseek".into(),
         name: "DeepSeek".into(),
+        provider_type: "Custom".into(),
         base_url: "https://api.deepseek.com/v1".into(),
         env_key: "DEEPSEEK_API_KEY".into(),
         wire_api: "chat".into(),
@@ -72,6 +73,9 @@ args = ["-y", "@modelcontextprotocol/server-filesystem"]
     assert!(raw.contains("model = \"gpt-4.1\""));
     assert!(raw.contains("model_provider = \"deepseek\""));
     assert!(raw.contains("DEEPSEEK_API_KEY"));
+    // codex 要求：每个自定义 provider 子表必须含 type = "Custom"，否则 codex
+    // 按内置 provider id 查找，报 "Model provider 'deepseek' not found"
+    assert!(raw.contains("type = \"Custom\""), "provider type (Custom) 缺失: {raw}");
     assert!(raw.contains("[mcp_servers.feishu]"));
     assert!(raw.contains("FEISHU_APP_ID"), "feishu env entry lost: {raw}");
     assert!(raw.contains("LARK_TOKEN"), "feishu env_vars lost: {raw}");

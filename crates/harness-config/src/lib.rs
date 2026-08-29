@@ -120,6 +120,11 @@ pub fn read(codex_home: &str) -> Result<AppConfig> {
                 cfg.model_providers.push(ProviderConfig {
                     id: safe_id.clone(),
                     name: conv::get_str(p, "name", "model_providers")?.unwrap_or(&safe_id).to_string(),
+                    // codex 约定：自定义 provider 必须显式 `type = "Custom"`；
+                    // 读不到 type 时回退 "Custom"，保证老配置（type 缺失）也能合规加载。
+                    provider_type: conv::get_str(p, "type", "model_providers")?
+                        .unwrap_or("Custom")
+                        .to_string(),
                     base_url: conv::get_str(p, "base_url", "model_providers")?
                         .unwrap_or("")
                         .to_string(),
@@ -325,6 +330,7 @@ pub fn default_ark_config() -> AppConfig {
         model_providers: vec![ProviderConfig {
             id: "volcengine-ark".to_string(),
             name: "火山方舟 Ark Code".to_string(),
+            provider_type: "Custom".to_string(),
             base_url: "https://ark.cn-beijing.volces.com/api/v3".to_string(),
             env_key: "VOLCENGINE_ARK_API_KEY".to_string(),
             wire_api: "responses".to_string(),
@@ -367,6 +373,12 @@ pub fn write(codex_home: &str, cfg: &AppConfig) -> Result<()> {
         // 防止写入 codex 保留的内置 ID（"openai"）导致加载失败
         let safe_id = if p.id == "openai" { "openai-custom" } else { &p.id };
         let mut t = toml::map::Map::new();
+        // 🔑 codex 要求显式声明 provider type，缺失 type 时 codex 会当作内置 id 去查，
+        //    对于 "deepseek" / "volcengine-ark" 这类非 built-in id 就会报：
+        //      `Model provider 'xxx' not found`
+        //    这里总是先写入 type，缺省 Custom。
+        let typ = if p.provider_type.is_empty() { "Custom" } else { p.provider_type.as_str() };
+        conv::put_str(&mut t, "type", Some(typ));
         conv::put_str(&mut t, "name", Some(if p.name.is_empty() { safe_id } else { &p.name }));
         conv::put_str(&mut t, "base_url", Some(p.base_url.as_str()));
         conv::put_str(&mut t, "env_key", Some(p.env_key.as_str()));

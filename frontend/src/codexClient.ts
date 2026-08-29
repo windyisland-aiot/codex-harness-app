@@ -122,6 +122,8 @@ export function route(
 export interface ProviderConfig {
   id: string;
   name: string;
+  /** codex 要求每个自定义 provider 显式声明 type="Custom"；缺省由后端回退。 */
+  type?: string;
   baseUrl: string;
   envKey: string;
   wireApi: string;

@@ -29,16 +29,18 @@ import { MODEL_PRESETS, presetFor } from "./models";
 import type { ModelPreset } from "./models";
 import ModelSwitcher from "./components/ModelSwitcher";
 
-// 窗口控制：Tauri 2.x 下优先用 @tauri-apps/api/window（@tauri-apps/plugin-window 未安装时的替代）。
+// 窗口控制：Tauri 2.x 下优先用 @tauri-apps/api/window 的 getCurrentWindow() 实例方法。
+// 如果 `toggleMaximize` 在个别运行时不存在，退化为 maximize/unmaximize；
 // 非 Tauri 环境（Web dev / 沙箱）失败则降级为占位状态消息。
 async function withWindow<T>(
-  cb: (w: typeof import("@tauri-apps/api/window")) => Promise<T>,
+  cb: (w: typeof import("@tauri-apps/api/window"), win: any) => Promise<T>,
   fallback: T,
   onErr?: (e: unknown) => void,
 ): Promise<T> {
   try {
     const w = await import("@tauri-apps/api/window");
-    return await cb(w);
+    const win = w.getCurrentWindow();
+    return await cb(w, win);
   } catch (e) {
     onErr?.(e);
     return fallback;
@@ -46,23 +48,31 @@ async function withWindow<T>(
 }
 async function doMinimize(setStatus: (s: string) => void) {
   await withWindow(
-    async (w) => { await w.getCurrentWindow().minimize(); },
+    async (_w, win) => { await win.minimize(); },
     undefined,
-    () => setStatus("最小化：非 Tauri 环境或 API 不可用"),
+    (e) => setStatus(`最小化失败：${e}`),
   );
 }
 async function doToggleMaximize(setStatus: (s: string) => void) {
   await withWindow(
-    async (w) => { await w.getCurrentWindow().toggleMaximize(); },
+    async (_w, win) => {
+      // 兼容：部分 tauri-api 打包里没有 toggleMaximize，退化为手动 isMaximized+maximize/unmaximize
+      if (typeof (win as any).toggleMaximize === "function") {
+        await (win as any).toggleMaximize();
+      } else {
+        const maximized = await win.isMaximized();
+        if (maximized) await win.unmaximize(); else await win.maximize();
+      }
+    },
     undefined,
-    () => setStatus("最大化：非 Tauri 环境或 API 不可用"),
+    (e) => setStatus(`最大化失败：${e}`),
   );
 }
 async function doClose(setStatus: (s: string) => void) {
   await withWindow(
-    async (w) => { await w.getCurrentWindow().close(); },
+    async (_w, win) => { await win.close(); },
     undefined,
-    () => setStatus("关闭：非 Tauri 环境或 API 不可用"),
+    (e) => setStatus(`关闭失败：${e}`),
   );
 }
 
@@ -548,8 +558,8 @@ export default function App() {
       const cfg = await codex.configRead(codexHome);
       const idx = cfg.modelProviders.findIndex((p) => p.id === preset.id);
       const prov: ProviderConfig = {
-        id: preset.id, name: preset.name, baseUrl: preset.base_url,
-        envKey: preset.env_key, wireApi: preset.wire_api,
+        id: preset.id, name: preset.name, type: "Custom",
+        baseUrl: preset.base_url, envKey: preset.env_key, wireApi: preset.wire_api,
       };
       if (idx >= 0) cfg.modelProviders[idx] = prov; else cfg.modelProviders.push(prov);
       cfg.model = nextModel; cfg.modelProvider = preset.id;

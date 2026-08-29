@@ -1274,7 +1274,7 @@ dependencies = [
 
 [[package]]
 name = "harness-app"
-version = "0.1.0"
+version = "0.2.1"
 dependencies = [
  "harness-appserver",
  "harness-auth",

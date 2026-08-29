@@ -34,6 +34,14 @@ pub struct ProviderConfig {
     pub id: String,
     /// 展示名。
     pub name: String,
+    /// codex 要求的 provider 类型：
+    /// - 自定义 OpenAI 兼容服务（火山方舟、DeepSeek 等）= `"Custom"`
+    /// - codex 内置 OpenAI = `"OpenAI"`（但 id 不能写 "openai"，否则冲突）
+    ///
+    /// 缺省 `"Custom"`，即 Harness 单 Ark 默认走 Custom 提供程序。
+    /// 写入 config.toml 时对应字段名 `type`（不是 camelCase，codex 约定如此）。
+    #[serde(rename = "type", default = "default_provider_type")]
+    pub provider_type: String,
     /// OpenAI 兼容 base_url（含 `/v1`）。
     pub base_url: String,
     /// 读取 API key 的环境变量名。
@@ -41,6 +49,8 @@ pub struct ProviderConfig {
     /// wire_api：responses / chat。
     pub wire_api: String,
 }
+
+fn default_provider_type() -> String { "Custom".to_string() }
 
 /// 一个 MCP server。
 #[derive(Debug, Default, Clone, Serialize, Deserialize)]

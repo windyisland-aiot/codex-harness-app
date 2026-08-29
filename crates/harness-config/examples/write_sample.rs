@@ -15,6 +15,7 @@ fn main() {
         model_providers: vec![ProviderConfig {
             id: "mock".into(),
             name: "mock".into(),
+            provider_type: "Custom".into(),
             base_url: "http://127.0.0.1:8791/v1".into(),
             env_key: "MOCK_KEY".into(),
             wire_api: "responses".into(),

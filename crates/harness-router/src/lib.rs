@@ -92,18 +92,17 @@ pub struct RouteCatalog {
     pub sensitive_default: Option<(String, String)>,
 }
 
-/// 内置路由目录（企业常规模型）：与前端多模型预设一致。
-/// 成本为每 1K 输入 token 美元，越低越便宜。
+/// 内置路由目录：当前版本仅启用「火山方舟 Ark」单模型（企业精简版）。
+/// codex 自定义 Provider 的 type="Custom"（见 harness-config model_providers）。
+/// 成本为每 1K 输入 token 美元，估值用于任务+成本排序（同 Provider 内多模型之间的相对排序）。
 pub fn default_catalog() -> RouteCatalog {
     RouteCatalog {
         models: vec![
-            ModelOption { provider: "openai".into(), model: "gpt-4.1".into(), context_window: 200_000, cost: 0.50, tasks: vec![TaskType::Coding, TaskType::DataAnalysis, TaskType::CodeReview, TaskType::General] },
-            ModelOption { provider: "openai".into(), model: "gpt-4.1-mini".into(), context_window: 128_000, cost: 0.10, tasks: vec![TaskType::Chat, TaskType::General] },
-            ModelOption { provider: "deepseek".into(), model: "deepseek-reasoner".into(), context_window: 64_000, cost: 0.014, tasks: vec![TaskType::CodeReview, TaskType::DataAnalysis] },
-            ModelOption { provider: "deepseek".into(), model: "deepseek-chat".into(), context_window: 64_000, cost: 0.002, tasks: vec![TaskType::Chat, TaskType::Documentation, TaskType::General] },
-            ModelOption { provider: "glm".into(), model: "glm-4-plus".into(), context_window: 128_000, cost: 0.05, tasks: vec![TaskType::Documentation, TaskType::General] },
+            ModelOption { provider: "volcengine-ark".into(), model: "ark-code-latest".into(), context_window: 128_000, cost: 0.004, tasks: vec![TaskType::Coding, TaskType::CodeReview, TaskType::DataAnalysis, TaskType::General] },
+            ModelOption { provider: "volcengine-ark".into(), model: "ark-contextual-latest".into(), context_window: 1_000_000, cost: 0.010, tasks: vec![TaskType::Documentation, TaskType::General, TaskType::DataAnalysis] },
+            ModelOption { provider: "volcengine-ark".into(), model: "ark-chat-latest".into(), context_window: 64_000, cost: 0.002, tasks: vec![TaskType::Chat, TaskType::General, TaskType::Documentation] },
         ],
-        sensitive_default: Some(("deepseek".into(), "deepseek-reasoner".into())),
+        sensitive_default: Some(("volcengine-ark".into(), "ark-code-latest".into())),
     }
 }
 
@@ -189,25 +188,27 @@ mod tests {
     #[test]
     fn routes_by_task_type_coding() {
         let d = resolve(&default_catalog(), &req("请实现一个登录模块"));
-        assert_eq!(d.provider, "openai");
-        assert_eq!(d.model, "gpt-4.1");
+        // Coding 任务唯一命中 ark-code-latest（cost 0.004）
+        assert_eq!(d.provider, "volcengine-ark");
+        assert_eq!(d.model, "ark-code-latest");
         assert!(d.reason.contains("Coding"));
     }
 
     #[test]
-    fn routes_documentation_to_cheap_deepseek() {
+    fn routes_documentation_to_cheap_ark_chat() {
         let d = resolve(&default_catalog(), &req("帮我写一份 README 文档"));
-        // Documentation 最便宜且窗口够的是 deepseek-chat
-        assert_eq!(d.provider, "deepseek");
-        assert_eq!(d.model, "deepseek-chat");
+        // Documentation：匹配的有 ark-code-latest / ark-contextual / ark-chat；
+        // 按成本升序 → ark-chat-latest(0.002) 最便宜。
+        assert_eq!(d.provider, "volcengine-ark");
+        assert_eq!(d.model, "ark-chat-latest");
     }
 
     #[test]
     fn routes_by_cost_ceiling() {
         let mut r = req("随便聊聊今天天气");
-        r.max_cost = Some(0.01); // 仅 deepseek-chat(0.002) 满足
+        r.max_cost = Some(0.003); // 仅 ark-chat-latest(0.002) 满足
         let d = resolve(&default_catalog(), &r);
-        assert_eq!(d.model, "deepseek-chat");
+        assert_eq!(d.model, "ark-chat-latest");
         assert!(d.reason.contains("成本"));
     }
 
@@ -215,9 +216,10 @@ mod tests {
     fn routes_by_context_length_length_window() {
         let mut r = req("整理这份超长报告");
         r.task_type = Some(TaskType::DataAnalysis);
-        r.estimated_context_tokens = 200_000; // 只有 gpt-4.1 窗口够
+        r.estimated_context_tokens = 200_000; // ark-code-latest(128k) 不够，回退 1M 窗口 ark-contextual-latest
         let d = resolve(&default_catalog(), &r);
-        assert_eq!(d.model, "gpt-4.1");
+        assert_eq!(d.provider, "volcengine-ark");
+        assert_eq!(d.model, "ark-contextual-latest");
     }
 
     #[test]
@@ -225,8 +227,8 @@ mod tests {
         let mut r = req("处理财务机密数据");
         r.sensitive = true;
         let d = resolve(&default_catalog(), &r);
-        assert_eq!(d.provider, "deepseek");
-        assert_eq!(d.model, "deepseek-reasoner");
+        assert_eq!(d.provider, "volcengine-ark");
+        assert_eq!(d.model, "ark-code-latest");
         assert!(d.reason.contains("敏感"));
     }
 
