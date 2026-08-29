@@ -193,7 +193,8 @@ export default function App() {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [running, setRunning] = useState(false);
-  const [mode, setMode] = useState<"ask" | "code">("code");
+  // 用户明确：Work/Code 无意义（需求 #2）。visualMode 仅作为左侧 Pill / 占位文案的视觉状态，
+  // 不在 prompt 中插入前缀，也不影响模型行为。
   const [visualMode, setVisualModeState] = useState<"work" | "code" | "design">("code");
   const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
   const [sideSearch, setSideSearch] = useState("");
@@ -248,12 +249,6 @@ export default function App() {
     if (theme === "dark") document.body.classList.add("theme-dark");
     else document.body.classList.remove("theme-dark");
   }, [theme]);
-
-  useEffect(() => {
-    if (mode === "ask") setVisualModeState("work");
-    else if (visualMode === "work") setVisualModeState("code");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode]);
 
   // 新消息自动滚到底
   useEffect(() => {
@@ -445,14 +440,12 @@ export default function App() {
     ].slice(-500));
 
     try {
-      const promptWithMode = mode === "ask"
-        ? `[Ask 模式：只回答问题，不要执行命令或修改文件]\n${text}`
-        : text;
-      const curSensitive = mode === "ask" ? false : sensitive;
+      // Work/Code/Design Pill 仅视觉（需求 #2：用户声明 work 和 code 无意义）
+      const promptText = text;
       let routeModel = model; let routeProvider = provider;
       if (autoRoute) {
         try {
-          const d = await codex.route(promptWithMode, { sensitive: curSensitive });
+          const d = await codex.route(promptText, { sensitive });
           routeModel = d.model; routeProvider = d.provider;
         } catch (e) { setStatus(`路由失败，回退当前模型: ${e}`); }
       }
@@ -475,7 +468,7 @@ export default function App() {
         setModel(routeModel); setProvider(routeProvider);
       }
       const tid = threadId as string;
-      await codex.turnStart({ threadId: tid, cwd, text: promptWithMode });
+      await codex.turnStart({ threadId: tid, cwd, text: promptText });
       setRunning(true);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -568,9 +561,8 @@ export default function App() {
   }
 
   function setVisualMode(vm: "work" | "code" | "design") {
+    // 用户明确 Work/Code 仅视觉 Pill（需求 #2），只更新 UI 状态，不改 prompt 语义。
     setVisualModeState(vm);
-    if (vm === "work") setMode("ask");
-    else setMode("code");
   }
 
   // ------- 未使用但保留（确保 import 不丢） -------
@@ -827,7 +819,7 @@ export default function App() {
                     <div
                       key={c.title}
                       className="chip"
-                      onClick={() => { setInput(c.text); setMode("code"); }}
+                      onClick={() => { setInput(c.text); }}
                     >
                       <div style={{ fontWeight: 600, marginBottom: 4 }}>{c.title}</div>
                       <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>{c.text}</div>

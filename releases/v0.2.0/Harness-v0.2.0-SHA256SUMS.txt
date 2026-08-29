@@ -1,0 +1,4 @@
+b9aa7c0a6287abf135fa70ea9fa9db3a03fadf2a0beb6c518f891356cdfe93ec  index.html
+953a5f6e235aaee2ac01bd8aadfb29bd08d9821ff7f6e1626d87502b4e4f6893  assets/index-_6LDSo4m.css
+c355b5305c6bc5fb50f3d4378decc49e1737d6bde3403fb123f10e68688399ae  assets/index-Cf49djpu.js
+f3574c124ac15543393f27cac881423ce5e23f25ba6a53514509d690d2adb689  ../../releases/v0.2.0/Harness-v0.2.0-frontend-dist.tar.gz
