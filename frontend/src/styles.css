@@ -157,17 +157,17 @@ code {
 }
 .mode-btn:hover { color: var(--text); }
 .mode-btn.active {
-  background: linear-gradient(135deg, var(--brand-start) 0%, var(--brand-end) 100%);
+  background: var(--brand);           /* 紫蓝纯色，非渐变（贴合 Trae 极简「去装饰化」） */
   color: #fff;
-  box-shadow: 0 2px 6px rgba(106, 100, 220, .25);
+  box-shadow: 0 1px 2px rgba(106, 100, 220, .18);
+  font-weight: 500;
 }
-
-/* 新建按钮 (Trae风：紫色渐变 + 圆角 + 阴影) */
+/* 新建按钮 (Trae风：紫蓝纯色 + 圆角 + 极简阴影，无渐变) */
 .new-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: linear-gradient(135deg, var(--brand-start) 0%, var(--brand-end) 100%);
+  background: var(--brand);
   color: #fff;
   border: none;
   padding: 7px 14px;
@@ -175,12 +175,11 @@ code {
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  box-shadow: 0 2px 8px rgba(106, 100, 220, .25);
-  transition: transform .1s ease, box-shadow .15s ease;
+  box-shadow: 0 1px 2px rgba(106, 100, 220, .22);
+  transition: transform .1s ease, background .15s ease;
 }
 .new-btn:hover {
-  box-shadow: 0 4px 14px rgba(106, 100, 220, .35);
-  transform: translateY(-1px);
+  background: var(--brand-600);
 }
 .new-btn:active { transform: translateY(0); }
 .new-btn .kbd {
@@ -295,7 +294,7 @@ code {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  background: linear-gradient(135deg, var(--brand-start) 0%, var(--brand-end) 100%);
+  background: var(--brand);            /* 纯色，无渐变 */
   color: #fff;
   border: none;
   padding: 9px 14px;
@@ -303,10 +302,10 @@ code {
   font-size: 13.5px;
   font-weight: 600;
   cursor: pointer;
-  box-shadow: 0 3px 10px rgba(106, 100, 220, .25);
-  transition: all .15s ease;
+  box-shadow: 0 1px 2px rgba(106, 100, 220, .22);
+  transition: background .15s ease;
 }
-.new-chat-btn:hover { box-shadow: 0 6px 16px rgba(106, 100, 220, .35); }
+.new-chat-btn:hover { background: var(--brand-600); }
 .side-search {
   width: 100%;
   padding: 8px 12px 8px 32px;
@@ -563,11 +562,11 @@ code {
   border-top-left-radius: 4px;
 }
 .msg.user .bubble {
-  background: linear-gradient(135deg, var(--brand-start) 0%, var(--brand-end) 100%);
+  background: var(--brand);             /* 紫蓝纯色，无渐变（极简 Trae 风） */
   color: #fff;
   border-top-right-radius: 4px;
   border: none;
-  box-shadow: 0 3px 12px rgba(106,100,220,.3);
+  box-shadow: 0 1px 2px rgba(16,24,40,.08);
 }
 .bubble.md :first-child { margin-top: 0; }
 .bubble.md :last-child { margin-bottom: 0; }

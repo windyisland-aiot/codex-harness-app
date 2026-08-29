@@ -601,28 +601,28 @@ export default function App() {
           <span>Harness</span>
         </div>
 
-        {/* 三模式分段切换（Work / Code / Design pill 渐变） */}
+        {/* 三模式分段切换（Work / Code / Design — 纯文本 pill，贴合 Trae Work 官方形态） */}
         <div className="mode-switch" role="tablist" aria-label="工作模式">
           <button
             className={`mode-btn ${visualMode === "work" ? "active" : ""}`}
             onClick={() => setVisualMode("work")}
             title="Work 模式：文档 / 数据 / 办公型任务（不执行命令 / 不改文件）"
           >
-            💼 Work
+            Work
           </button>
           <button
             className={`mode-btn ${visualMode === "code" ? "active" : ""}`}
             onClick={() => setVisualMode("code")}
             title="Code 模式：Agent 编程（执行命令 / 修改代码 / 调用工具）"
           >
-            💻 Code
+            Code
           </button>
           <button
             className={`mode-btn ${visualMode === "design" ? "active" : ""}`}
             onClick={() => setVisualMode("design")}
             title="Design 模式：AI 设计（视觉/原型/设计系统）"
           >
-            🎨 Design
+            Design
           </button>
         </div>
 
