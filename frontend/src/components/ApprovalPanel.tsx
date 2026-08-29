@@ -79,7 +79,7 @@ export default function ApprovalPanel({
             return (
               <div key={a.id} className="approval-card">
                 <h4>
-                  ⚠ {s.kind}
+                  请求 · {s.kind}
                   <span className="kbd">{s.badge}</span>
                   <span className="kbd">#{a.id}</span>
                 </h4>

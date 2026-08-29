@@ -241,7 +241,7 @@ export default function ConfigPanel({
               ＋ 新增
             </button>
             <button className="cfg-btn" onClick={addFeishu}>
-              ✈ 加飞书 MCP
+              加飞书 MCP
             </button>
           </div>
           {cfg.mcpServers.length === 0 && <p className="cfg-empty">暂无</p>}
@@ -315,7 +315,7 @@ export default function ConfigPanel({
 
         <footer className="cfg-footer">
           <span>
-            {dirty ? "⚠️ 有未保存的修改" : "✅ 配置已同步"}（保存后需重启 app-server 生效）
+            {dirty ? "[待保存] 有未保存的修改" : "[已同步] 配置已同步"}（保存后需重启 app-server 生效）
           </span>
           <button
             className="cfg-btn primary"
@@ -326,7 +326,7 @@ export default function ConfigPanel({
                 await codex.configWrite(codexHome, cfg);
                 onSaved(cfg);
                 setDirty(false);
-                onStatus("✅ 配置已写入 config.toml，重启 app-server 生效");
+                onStatus("[成功] 配置已写入 config.toml，重启 app-server 生效");
               } catch (e) {
                 onStatus(`保存配置失败: ${e}`);
               } finally {

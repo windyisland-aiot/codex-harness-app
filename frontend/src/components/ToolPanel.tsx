@@ -20,9 +20,9 @@ export interface SessionInfo {
 }
 
 const TABS = [
-  { id: "approvals", icon: "⚠", label: "审批" },
-  { id: "session", icon: "▤", label: "会话" },
-  { id: "shortcuts", icon: "⌘", label: "快捷键" },
+  { id: "approvals", label: "审批" },
+  { id: "session", label: "会话" },
+  { id: "shortcuts", label: "快捷键" },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
@@ -102,7 +102,6 @@ export default function ToolPanel({
             className={`tool-tab ${tab === t.id ? "active" : ""}`}
             onClick={() => setTab(t.id)}
           >
-            <span>{t.icon}</span>
             <span>{t.label}</span>
             {t.id === "approvals" && approvalCount > 0 && (
               <span className="tool-tab-count">{approvalCount}</span>

@@ -1,6 +1,6 @@
 //! codex app-server 的 Tauri IPC 客户端封装（T05/T06 前端侧）。
 //!
-//! ⚠️  IPC 参数命名约定：Tauri 2.x 默认按 `rename_all = "camelCase"` 反序列化。
+//! 注意：IPC 参数命名约定：Tauri 2.x 默认按 `rename_all = "camelCase"` 反序列化。
 //! 因此 Rust 端 `fn xxx(codex_home: String, thread_id: String, …)` 对应的 JS key 必须是
 //! `codexHome` / `threadId` / ……（驼峰），不要写 snake_case，否则会 `missing required key`。
 

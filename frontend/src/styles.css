@@ -32,12 +32,18 @@
   --text-muted: #9CA3AF;      /* 辅助文本 */
   --text-invert: #FFFFFF;     /* 按钮上的反白 */
 
-  /* --- 品牌强调色（紫蓝纯色 Trae 风，无多余渐变） --- */
-  --brand-start: #7A5AF8;     /* 紫（品牌 LOGO 小方块用） */
-  --brand-end: #5B8DEF;       /* 蓝（品牌 LOGO 小方块用） */
-  --brand: #6C71E4;           /* 按钮强调色：紫蓝纯色 */
-  --brand-soft: #EEF0FF;      /* 浅紫底（选中行/提示） */
-  --brand-600: #5E54D6;       /* 悬停态深紫蓝 */
+  /* --- 品牌色（仅用于 LOGO 小方块 / 选中行点缀；不再用于 CTA 按钮 ---
+       主按钮全部改用中性对比色，符合用户需求：「不需要紫蓝色按钮」 */
+  --brand-start: #7A5AF8;
+  --brand-end: #5B8DEF;
+  --brand: #6C71E4;            /* 仅 Logo/行选中调，不再做按钮 */
+  --brand-soft: #EEF0FF;       /* 浅色：选中行底（不做按钮） */
+  --brand-600: #5E54D6;        /* 保留变量供历史兼容 */
+
+  /* --- 主按钮 / CTA 按钮：中性对比色（无紫蓝）--- */
+  --btn-primary: #111827;      /* 浅色主题：近纯黑背景 */
+  --btn-primary-text: #FFFFFF; /* 浅色主题：按钮上白字 */
+  --btn-primary-hover: #1F2937;
 
   /* --- 语义色 --- */
   --success: #10B981;
@@ -82,8 +88,13 @@ body.theme-dark {
   --text-muted: #6B7280;      /* 辅助文本：暗灰 */
   --text-invert: #0B0C10;     /* 按钮上的反色（暗色时用深炭反衬品牌字，极少用） */
 
-  /* 品牌色在暗色下保持紫蓝基调不变（本身已够亮），--brand-soft 换成深紫 */
+  /* 品牌色在暗色下保持紫蓝基调不变（仅 LOGO / 选中行使用 — 按钮不使用） */
   --brand-soft: #2B2A44;
+
+  /* --- 主按钮 / CTA：暗色主题下反色（近白底 + 近黑字，依然中性，无紫蓝）--- */
+  --btn-primary: #E5E7EB;      /* 暗色主题：近纯白背景 */
+  --btn-primary-text: #0B0C10; /* 暗色主题：按钮上近黑字 */
+  --btn-primary-hover: #F3F4F6;
 
   /* 暗色阴影换成更柔和的纯黑（rgba 黑），避免浅色阴影突兀 */
   --shadow-sm: 0 1px 2px rgba(0,0,0,.35), 0 1px 3px rgba(0,0,0,.4);
@@ -190,30 +201,28 @@ code {
 }
 .mode-btn:hover { color: var(--text); }
 .mode-btn.active {
-  background: var(--brand);           /* 紫蓝纯色，非渐变（贴合 Trae 极简「去装饰化」） */
-  color: #fff;
-  box-shadow: 0 1px 2px rgba(106, 100, 220, .18);
-  font-weight: 500;
+  background: var(--btn-primary);       /* 中性对比色（近纯黑/近白，不含紫蓝） */
+  color: var(--btn-primary-text);
+  box-shadow: var(--shadow-sm);
+  font-weight: 600;
 }
-/* 新建按钮 (Trae风：紫蓝纯色 + 圆角 + 极简阴影，无渐变) */
+/* 新建按钮（中性对比色 + 圆角 + 极简阴影，无紫蓝） */
 .new-btn {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  background: var(--brand);
-  color: #fff;
+  background: var(--btn-primary);
+  color: var(--btn-primary-text);
   border: none;
   padding: 7px 14px;
   border-radius: var(--radius-md);
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
-  box-shadow: 0 1px 2px rgba(106, 100, 220, .22);
-  transition: transform .1s ease, background .15s ease;
+  box-shadow: var(--shadow-sm);
+  transition: background .15s ease;
 }
-.new-btn:hover {
-  background: var(--brand-600);
-}
+.new-btn:hover { background: var(--btn-primary-hover); }
 .new-btn:active { transform: translateY(0); }
 .new-btn .kbd {
   margin-left: 4px;
@@ -234,15 +243,20 @@ code {
 .topbar .spacer { flex: 1; }
 
 /* 工具按钮（线性风格，白底/透明，hover 浅灰底）*/
+/* 顶栏/面板 工具按钮（文字标签 pill 形态；之前 emoji 图标已移除） */
 .icon-btn {
-  width: 34px; height: 34px;
-  display: grid; place-items: center;
+  min-height: 32px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: var(--radius-md);
   border: 1px solid transparent;
   background: transparent;
   cursor: pointer;
   color: var(--text-secondary);
-  font-size: 15px;
+  font-size: 12.5px;
+  font-weight: 500;
   transition: all .12s ease;
   position: relative;
 }
@@ -327,18 +341,18 @@ code {
   align-items: center;
   justify-content: center;
   gap: 6px;
-  background: var(--brand);            /* 纯色，无渐变 */
-  color: #fff;
+  background: var(--btn-primary);     /* 中性对比色，无紫蓝 */
+  color: var(--btn-primary-text);
   border: none;
   padding: 9px 14px;
   border-radius: var(--radius-md);
   font-size: 13.5px;
   font-weight: 600;
   cursor: pointer;
-  box-shadow: 0 1px 2px rgba(106, 100, 220, .22);
+  box-shadow: var(--shadow-sm);
   transition: background .15s ease;
 }
-.new-chat-btn:hover { background: var(--brand-600); }
+.new-chat-btn:hover { background: var(--btn-primary-hover); }
 .side-search {
   width: 100%;
   padding: 8px 12px 8px 32px;
@@ -595,11 +609,11 @@ code {
   border-top-left-radius: 4px;
 }
 .msg.user .bubble {
-  background: var(--brand);             /* 紫蓝纯色，无渐变（极简 Trae 风） */
-  color: #fff;
+  background: var(--btn-primary);       /* 中性对比色，无紫蓝（浅色=黑 / 深色=白） */
+  color: var(--btn-primary-text);
   border-top-right-radius: 4px;
   border: none;
-  box-shadow: 0 1px 2px rgba(16,24,40,.08);
+  box-shadow: var(--shadow-sm);
 }
 .bubble.md :first-child { margin-top: 0; }
 .bubble.md :last-child { margin-bottom: 0; }
@@ -613,7 +627,10 @@ code {
   border: 1px solid var(--border);
 }
 .bubble.md code { background: var(--bg-sunken); color: #4338CA; }
-.msg.user .bubble code { background: rgba(255,255,255,.15); color: #fff; }
+.msg.user .bubble code {
+  background: color-mix(in srgb, currentColor 18%, transparent);
+  color: inherit;
+}
 
 .bubble.typing {
   display: inline-flex;

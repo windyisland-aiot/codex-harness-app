@@ -1,6 +1,6 @@
 //! T06 基础对话 UI：三栏布局（侧栏会话列表 / 中心对话 / 右栏审批详情）
 //! + 顶部工具条 + 首次启动向导 + Ask / Code 双模式按钮
-//! ⚠️  运行时路径：由 `codex.resolvePaths()` 向 Tauri 后端请求跨平台的
+//! 注意：运行时路径：由 `codex.resolvePaths()` 向 Tauri 后端请求跨平台的
 //! codexHome / codexBin / defaultCwd。禁止写死 Linux `/workspace/...`。
 import { useEffect, useRef, useState } from "react";
 import Markdown from "./components/Markdown";
@@ -67,22 +67,18 @@ const BADGE_LABEL: Record<SessionStatus, string> = {
 
 const STARTER_CHIPS = [
   {
-    icon: "⌨",
     title: "解释代码库",
     text: "帮我分析当前工作目录的代码结构并生成一个 README 摘要",
   },
   {
-    icon: "🧪",
     title: "写测试",
     text: "为最近修改过的文件生成单元测试并运行",
   },
   {
-    icon: "🐞",
     title: "调试修复",
     text: "运行项目测试套件，若有失败请定位原因并修复",
   },
   {
-    icon: "📦",
     title: "构建发布",
     text: "执行打包构建，生成产物并说明部署步骤",
   },
@@ -678,52 +674,52 @@ export default function App() {
           onRouted={handleRouted}
         />
 
-        {/* 右对齐图标按钮（线性 style，Trae 风） */}
+        {/* 右对齐图标按钮（文字标签，无 emoji —— 极简 Trae 风） */}
         <button
           className={`icon-btn ${cfgOpen ? "active" : ""}`}
           onClick={() => setCfgOpen(true)}
           title="模型与 MCP 配置"
         >
-          ⚙
+          设置
         </button>
         <button
           className="icon-btn"
           onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
           title={theme === "dark" ? "切换到浅色主题" : "切换到深色主题"}
         >
-          {theme === "dark" ? "☀️" : "🌙"}
+          {theme === "dark" ? "浅色" : "深色"}
         </button>
         <button
           className={`icon-btn ${searchOpen ? "active" : ""}`}
           onClick={() => setSearchOpen(true)}
           title="联网搜索（Tavily / Serper）"
         >
-          🔍
+          搜索
         </button>
         <button
           className={`icon-btn ${pluginsOpen ? "active" : ""}`}
           onClick={() => setPluginsOpen(true)}
           title="技能 / 插件管理"
         >
-          🧩
+          插件
         </button>
         <button
           className={`icon-btn ${feishuOpen ? "active" : ""}`}
           onClick={() => setFeishuOpen(true)}
           title="飞书授权 / 飞书 MCP"
         >
-          ✈️
+          飞书
         </button>
         <button
           className="icon-btn"
           onClick={() => setSessionsOpen(true)}
           title="全局搜索任务 / 历史会话"
         >
-          ⌕
+          会话
         </button>
 
         <div className="model-chip" title={`${presetName} · ${model}`}>
-          ▣ {model}
+          {model}
         </div>
         <div className="status-pill" title={connText}>
           <span className={`dot ${connDot}`} />
@@ -739,7 +735,7 @@ export default function App() {
             }
             title={`${approvalCount} 条审批待处理`}
           >
-            ⚠
+            审批
             <span className="badge-dot" />
           </button>
         )}
@@ -873,7 +869,7 @@ export default function App() {
                       }}
                     >
                       <div style={{ fontWeight: 600, marginBottom: 4 }}>
-                        {c.icon} {c.title}
+                        {c.title}
                       </div>
                       <div
                         style={{
@@ -983,7 +979,7 @@ export default function App() {
                   }}
                   title="Work 模式：只回答 / 不执行命令"
                 >
-                  💼 Work
+                  Work
                 </button>
                 <button
                   className="btn-code"
@@ -1000,7 +996,7 @@ export default function App() {
                       : "Code 模式：Agent 执行命令 / 改代码 / 调用工具"
                   }
                 >
-                  {visualMode === "design" ? "🎨 Design" : "💻 Code"}
+                  {visualMode === "design" ? "Design" : "Code"}
                 </button>
               </div>
             </div>
@@ -1152,7 +1148,7 @@ export default function App() {
 
             {onboardingStep === 2 && (
               <div className="onboarding-card">
-                <h3>🚀 开始你的第一个任务</h3>
+                <h3>开始你的第一个任务</h3>
                 <p>
                   点击下方完成即可进入工作台。你可以直接尝试：
                 </p>

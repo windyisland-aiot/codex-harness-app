@@ -36,9 +36,9 @@ export default function FeishuOAuthPanel({
     setBusy(true);
     try {
       const r = await codex.feishuAppToken(params());
-      onStatus(`✅ app_access_token 有效 · 有效期 ${r.expire}s`);
+      onStatus(`[成功] app_access_token 有效 · 有效期 ${r.expire}s`);
     } catch (e) {
-      onStatus(`❌ 凭据校验失败: ${e}`);
+      onStatus(`[失败] 凭据校验失败: ${e}`);
     } finally {
       setBusy(false);
     }
@@ -51,7 +51,7 @@ export default function FeishuOAuthPanel({
       setAuthorizeUrl(url);
       onStatus("授权链接已生成，请在浏览器打开并完成授权");
     } catch (e) {
-      onStatus(`❌ 生成授权链接失败: ${e}`);
+      onStatus(`[失败] 生成授权链接失败: ${e}`);
     }
   }
 
@@ -61,9 +61,9 @@ export default function FeishuOAuthPanel({
       // 业务上校验回调报文携带的 state 是否一致，防止 CSRF。
       const b = await codex.feishuExchange(params(), code.trim());
       setBundle(b);
-      onStatus("✅ 已换取 user_access_token（授权成功）");
+      onStatus("[成功] 已换取 user_access_token（授权成功）");
     } catch (e) {
-      onStatus(`❌ 授权码换取失败: ${e}`);
+      onStatus(`[失败] 授权码换取失败: ${e}`);
     } finally {
       setBusy(false);
     }
@@ -79,9 +79,9 @@ export default function FeishuOAuthPanel({
       const b = await codex.feishuRefresh(params(), bundle.refreshToken);
       setBundle(b);
       const exp = new Date(b.expTs * 1000).toLocaleString();
-      onStatus(`✅ 已刷新 token · 新过期时间 ${exp}（token 滚动更新）`);
+      onStatus(`[成功] 已刷新 token · 新过期时间 ${exp}（token 滚动更新）`);
     } catch (e) {
-      onStatus(`❌ 刷新失败: ${e}`);
+      onStatus(`[失败] 刷新失败: ${e}`);
     } finally {
       setBusy(false);
     }
