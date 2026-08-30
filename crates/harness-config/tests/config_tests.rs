@@ -313,3 +313,83 @@ fn skills_and_plugins_roundtrip() {
     assert!(back.plugins[1].enabled);
     let _ = fs::remove_dir_all(&dir);
 }
+
+// ================ T19 + T18 · MCP register 幂等（retain + push 语义） ================
+
+fn push_server(home: &str, server: McpServerConfig) {
+    let mut cfg = harness_config::read(home).unwrap();
+    cfg.mcp_servers.retain(|m| m.id != server.id);
+    cfg.mcp_servers.push(server);
+    harness_config::write(home, &cfg).unwrap();
+}
+
+fn base_server() -> McpServerConfig {
+    McpServerConfig {
+        id: "base".into(),
+        command: "lark-openapi-mcp".into(),
+        args: vec!["--mode=stdio".into(), "--enable-bitable".into()],
+        env: Vec::new(),
+        env_vars: vec![
+            "FEISHU_USER_ACCESS_TOKEN".into(),
+            "FEISHU_APP_ID".into(),
+            "FEISHU_APP_SECRET".into(),
+        ],
+        enabled: true,
+    }
+}
+fn rag_server() -> McpServerConfig {
+    McpServerConfig {
+        id: "rag".into(),
+        command: "./harness-rag-mcp".into(),
+        args: vec![
+            "--base-url".into(),
+            "http://127.0.0.1:18763".into(),
+            "--default-collection".into(),
+            "harness_default".into(),
+        ],
+        env: Vec::new(),
+        env_vars: vec![
+            "CHROMA_SERVER_AUTHN_CREDENTIALS".into(),
+            "CHROMA_SERVER_AUTHN_PROVIDER".into(),
+        ],
+        enabled: true,
+    }
+}
+
+#[test]
+fn base_register_mcp_is_idempotent_no_duplicates() {
+    let dir = std::env::temp_dir().join(format!("harness-cfg-base-idem-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    let home = dir.to_str().unwrap();
+
+    // 先预置一条 rag 再连续 3 次 push base，保证只产生 rag/base 各 1 条。
+    push_server(home, rag_server());
+    for _ in 0..3 {
+        push_server(home, base_server());
+    }
+    let cfg = harness_config::read(home).unwrap();
+    let count_rag = cfg.mcp_servers.iter().filter(|m| m.id == "rag").count();
+    let count_base = cfg.mcp_servers.iter().filter(|m| m.id == "base").count();
+    assert_eq!(count_rag, 1, "rag 重复: total={}", cfg.mcp_servers.len());
+    assert_eq!(count_base, 1, "base 重复: total={}", cfg.mcp_servers.len());
+    assert_eq!(cfg.mcp_servers.len(), 2);
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn rag_register_mcp_is_idempotent_no_duplicates() {
+    let dir = std::env::temp_dir().join(format!("harness-cfg-rag-idem-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    let home = dir.to_str().unwrap();
+
+    push_server(home, base_server());
+    for _ in 0..3 {
+        push_server(home, rag_server());
+    }
+    let cfg = harness_config::read(home).unwrap();
+    assert_eq!(cfg.mcp_servers.iter().filter(|m| m.id == "rag").count(), 1);
+    assert_eq!(cfg.mcp_servers.iter().filter(|m| m.id == "base").count(), 1);
+    let _ = fs::remove_dir_all(&dir);
+}

@@ -2001,6 +2001,126 @@ body.theme-dark .log-line.is-err {
   transform: translateX(2px);
 }
 
+/* T22 飞书审批按钮/状态 */
+.tw-a-feishu-row {
+  margin-top: 16px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #F9FAFB;
+  border: 1px dashed #D1D5DB;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 44px;
+}
+.tw-a-feishu-btn {
+  appearance: none;
+  border: 1px solid #111827;
+  background: #111827;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 7px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background .15s ease, transform .08s ease;
+}
+.tw-a-feishu-btn:hover { background: #000; transform: translateY(-1px); }
+.tw-a-feishu-btn:active { transform: translateY(0); }
+.tw-a-feishu-state {
+  font-size: 13px;
+  color: #111827;
+  line-height: 1.55;
+  word-break: break-word;
+}
+.tw-a-feishu-state.loading { color: #2563EB; }
+.tw-a-feishu-state.ok { color: #065F46; }
+.tw-a-feishu-state.bad { color: #B91C1C; }
+.tw-a-feishu-link {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 10px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: #EEF2FF;
+  color: #4338CA;
+  font-size: 12px;
+  font-weight: 600;
+  text-decoration: none;
+  border: 1px solid #C7D2FE;
+}
+.tw-a-feishu-link:hover { background: #E0E7FF; color: #3730A3; }
+
+/* ============================================================
+   T6 模板库面板
+   ============================================================ */
+.tpl-panel {
+  background: #fff;
+  border-radius: 14px;
+  width: min(920px, 92vw);
+  max-height: 80vh;
+  overflow: auto;
+  padding: 20px 24px 24px;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.14);
+  border: 1px solid #E5E7EB;
+}
+.tpl-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.tpl-head h2 { margin: 0; font-size: 18px; font-weight: 700; color: #111827; }
+.tpl-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 14px;
+  margin-top: 14px;
+}
+@media (min-width: 760px) {
+  .tpl-grid { grid-template-columns: 1fr 1fr; }
+}
+.tpl-card {
+  background: #FAFAFA;
+  border: 1px solid #E5E7EB;
+  border-radius: 12px;
+  padding: 14px 16px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.tpl-card-title { display: flex; gap: 10px; align-items: flex-start; }
+.tpl-icon {
+  width: 34px; height: 34px;
+  border-radius: 9px;
+  background: #EEF2FF;
+  color: #4F46E5;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+.tpl-tag {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #FEF3C7;
+  color: #92400E;
+  border: 1px solid #FDE68A;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.tpl-preview {
+  margin: 0;
+  padding: 10px 12px;
+  background: #fff;
+  border: 1px solid #E5E7EB;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #374151;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 170px;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+}
+.tpl-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
 /* ===========================================================
    T33.2 设置面板 · 模型 tab（Trae Work 图三风格列表 + 编辑弹窗）
    =========================================================== */

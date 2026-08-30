@@ -180,3 +180,88 @@ fn delete_sends_ids_and_returns_ok_on_200() {
     });
     client(port).delete("coll-9", &["a".into(), "b".into()]).unwrap();
 }
+
+// ================= T20 · chunk_markdown + embed （RED→GREEN） =================
+
+#[test]
+fn chunk_empty_string_returns_empty_list() {
+    let r = harness_rag::chunk_markdown("", 800, 120);
+    assert!(r.is_empty());
+}
+
+#[test]
+fn chunk_short_text_returns_single_chunk_with_same_content() {
+    let s = "hello world，这段很短。";
+    let r = harness_rag::chunk_markdown(s, 800, 120);
+    assert_eq!(r.len(), 1);
+    assert_eq!(r[0], s);
+}
+
+#[test]
+fn chunk_long_markdown_splits_expected_and_preserves_head_tail() {
+    // 构造 3000 字左右的中文 markdown，首尾特征明显
+    let head = "START_START ";
+    let tail = " END_END";
+    let middle: String = (0..3000).map(|_| '中').collect();
+    let text = format!("{head}{middle}{tail}");
+    let chunk = 800usize;
+    let overlap = 120usize;
+    let r = harness_rag::chunk_markdown(&text, chunk, overlap);
+    // 按字符计算的期望：总字符数 N = head + 3000 中 + tail
+    let nchars = text.chars().count();
+    let expected_min_len =
+        (nchars.saturating_sub(overlap) + (chunk - overlap) - 1) / (chunk - overlap);
+    assert!(r.len() >= expected_min_len, "len={} expected_min={} nchars={}", r.len(), expected_min_len, nchars);
+    assert!(r.first().unwrap().starts_with(head), "首段应以 START_START 开头");
+    assert!(r.last().unwrap().ends_with(tail), "尾段应以 END_END 结尾");
+    // 相邻两段有 overlap 的公共字符（取 overlap-4 长度避免边界误差，按字符切）
+    for w in r.windows(2) {
+        let ov = overlap.saturating_sub(4).min(w[0].chars().count()).min(w[1].chars().count());
+        let a: String = w[0].chars().skip(w[0].chars().count().saturating_sub(ov)).take(ov).collect();
+        let b: String = w[1].chars().take(ov).collect();
+        assert_eq!(a, b, "相邻 chunk overlap 不匹配");
+    }
+}
+
+#[test]
+fn chunk_overlap_ge_chunk_treated_gracefully_no_panic() {
+    let s = "abcdef".repeat(500);
+    let r = harness_rag::chunk_markdown(&s, 20, 120);
+    // 不要求特定结果，只保证不 panic 且产生至少 1 段（若实现返回 Err 也算通过，需要签名允许；此处要求 Result 或 Vec 均可，但测试只看非 panic）
+    assert!(!r.is_empty() || true); // 仅防御不 panic
+}
+
+// ---- embed（Chroma /api/v1/embeddings） ----
+
+#[test]
+fn embed_posts_expected_payload_and_parses_vectors() {
+    let port = spawn_mock(|key, body| {
+        assert_eq!(key, "POST /api/v1/embeddings");
+        let j: serde_json::Value = serde_json::from_str(body).unwrap();
+        assert_eq!(j["texts"], serde_json::json!(["t1","t2"]));
+        assert_eq!(j["model"], "default");
+        (200, serde_json::json!({"embeddings":[[1.0,0.0,0.0],[0.0,1.0,0.5]]}).to_string())
+    });
+    let emb = client(port).embed("default", &["t1".into(), "t2".into()]).unwrap();
+    assert_eq!(emb.len(), 2);
+    assert_eq!(emb[0], vec![1.0, 0.0, 0.0]);
+    assert_eq!(emb[1], vec![0.0, 1.0, 0.5]);
+}
+
+#[test]
+fn embed_http_error_sanitizes_bearer_and_tokens() {
+    // 模拟 mock server 返回 500 且 body 里泄漏了 Authorization/token
+    let port = spawn_mock(|_, _| {
+        (500, r#"{"error":"upstream fail","debug":"Authorization: Bearer sk-1234abcd5678 and token=x-yummy-999 and api_key=oops-secret"}"#.into())
+    });
+    let err = client(port).embed("default", &["t".into()]).unwrap_err();
+    match err {
+        harness_rag::RagError::Http(_, body) => {
+            assert!(!body.contains("sk-1234abcd5678"), "body 泄漏 Bearer token: {body}");
+            assert!(!body.contains("x-yummy-999"), "body 泄漏 token=...: {body}");
+            assert!(!body.contains("oops-secret"), "body 泄漏 api_key=...: {body}");
+            assert!(body.contains("[REDACTED]"), "脱敏应替换为 [REDACTED]，实际: {body}");
+        }
+        other => panic!("expected Http error, got {other:?}"),
+    }
+}

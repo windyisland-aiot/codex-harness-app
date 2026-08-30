@@ -1,12 +1,34 @@
 # Harness 企业内部 Agent — 部署文档
 
-> 版本：v0.2.0（P1 阶段 · Trae Work 风格 UI 重构）
+> 版本：v0.5.0（P2 阶段 · RAG + Bitable + 广告脚本多 Agent + 飞书审批直连）
 > 目标平台：Windows 10 / Windows 11 x64
 > 源码仓库：`windyisland-aiot/codex-harness-app`（私有）
 
 ---
 
-## 〇、v0.2.0 版更新要点（What's New）
+## 〇、v0.5.0 版更新要点（What's New）
+
+本版本是**企业内多 Agent 协同（广告脚本生成）能力落地**的里程碑版本，同时把知识库 RAG、飞书多维表格（Base/Bitable）、飞书审批直连 3 条关键数据链路从后端贯通到前端 UI。
+
+| 分类 | 变更内容 | 对应计划项 |
+|------|----------|------------|
+| 📚 知识库 RAG | 新增 `crates/harness-rag`：Chroma HTTP 客户端、`chunk_markdown`、`embed`、`RagMcpConfig`；14 条 RED→GREEN 集成测试 | T18 / P2-T1 |
+| 📚 知识库 RAG | Tauri 命令：`rag_register` / `rag_status` / `rag_health` / `rag_search`；脱敏 + 幂等写入 config.toml | T18 / P2-T3 |
+| 📚 知识库 RAG | 设置面板 MCP tab：+ 启用 RAG 按钮、Chroma 健康卡、入库分块预览 + 检索测试框（top-k / query / 结果列表） | T20 / P2-T5 |
+| 🗂️ 飞书多维表格 | Tauri 命令：`base_register_mcp` / `base_status` / `base_health`；默认命令 `lark-openapi-mcp --mode=stdio --enable-bitable` | T19 / P2-T3 |
+| 🗂️ 飞书多维表格 | 设置面板 MCP tab：+ 启用 Base 按钮、健康卡（校验 `FEISHU_*` 3 个 env 存在） | T19 / P2-T4 |
+| 🎬 广告脚本多 Agent | 新增 `harness-plugins::ad_script::AdScriptWorkflow`：5 步编排 `RagSearch → LlmGenerate(×2) → BaseInsert → FeishuApprovalSubmit`，4 条用例含关键词断言 | T21 / P2-T2 |
+| 🎬 广告脚本多 Agent | 左栏模板库：点「模板库」弹出广告脚本 5 步模板，一键填入输入框；同时附带周报模板 | T21 / P2-T6 |
+| 📨 飞书审批直连 | Tauri 命令：`approval_send_to_feishu`；HTTP 返回脱敏不泄漏 token；instance_code + applink 生成 | T22 / P2-T3 |
+| 📨 飞书审批直连 | 审批面板每张卡片加「提交至飞书审批」按钮 → 提单 loading/ok/error 状态 + 飞书打开链接 | T22 / P2-T4 |
+| 📦 打包 & CI | 版本号统一升到 0.5.0（Cargo.toml / tauri.conf.json / 设置面板头部 & 关于页） | P2-T7 |
+| 📦 打包 & CI | workflow 新增：`actions/cache@v4` 缓存 `%LOCALAPPDATA%\tauri-bundler`（NSIS/WiX 二次下载抗 504）；Tee-Object 记录每次 attempt 日志 | P2-T7 |
+| 📦 打包 & CI | workflow 新增：构建结束 always() 收集 attempt 日志 + target/*.log + bundler-cache.txt，上传独立 artifact `Harness-BuildLogs-<ver>` | P2-T7 |
+| 🧪 测试 | `cargo test --workspace --exclude harness-app` 全通过；tsc + vite build 全通过；glib 失败仅影响非目标 Linux | P2-T8 |
+
+---
+
+## 〇-1、v0.2.0 版更新要点（历史 What's New · Trae Work 风格 UI 重构）
 
 本版本是**界面与交互重构的里程碑版本**，整体风格向 Trae Work 对齐，同时修复 P0 级的 LLM 调用故障。
 
@@ -43,8 +65,8 @@
 
 | 格式 | 下载链接 | 体积 | 适用场景 |
 |------|----------|------|----------|
-| MSI | [Harness_0.2.0_x64_en-US.msi](https://github.com/windyisland-aiot/codex-harness-app/releases/download/v0.2.0/Harness_0.2.0_x64_en-US.msi) | ≈ 6 MB | 企业 IT 批量部署、组策略管理 |
-| NSIS (EXE) | [Harness_0.2.0_x64-setup.exe](https://github.com/windyisland-aiot/codex-harness-app/releases/download/v0.2.0/Harness_0.2.0_x64-setup.exe) | ≈ 4.5 MB | 个人开发者本地双击安装 |
+| MSI | [Harness_0.5.0_x64_en-US.msi](https://github.com/windyisland-aiot/codex-harness-app/releases/download/v0.5.0/Harness_0.5.0_x64_en-US.msi) | ≈ 6 MB | 企业 IT 批量部署、组策略管理 |
+| NSIS (EXE) | [Harness_0.5.0_x64-setup.exe](https://github.com/windyisland-aiot/codex-harness-app/releases/download/v0.5.0/Harness_0.5.0_x64-setup.exe) | ≈ 4.5 MB | 个人开发者本地双击安装 |
 
 安装步骤：
 1. 双击安装包（如被 SmartScreen 拦截，点「更多信息」→「仍要运行」）。
@@ -387,7 +409,7 @@ cargo test -p appserver     # JSON-RPC 客户端
 
 ## 八、参考链接
 
-- GitHub Release: https://github.com/windyisland-aiot/codex-harness-app/releases/tag/v0.2.0
+- GitHub Release: https://github.com/windyisland-aiot/codex-harness-app/releases/tag/v0.5.0
 - CI Workflow: `.github/workflows/build-windows-release.yml`
 - 任务清单: [TASKS.md](TASKS.md)
 - Tauri 2.x 文档: https://v2.tauri.app/

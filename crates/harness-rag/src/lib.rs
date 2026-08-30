@@ -167,11 +167,12 @@ impl RagClient {
     }
 
     /// 把 (code, body) 映射为 RagError：非 2xx 走 Http(code,body)，否则返回 body。
+    /// 非 2xx 时 body 会做一次**脱敏**：替换 Bearer xxx / token=xxx / api_key=xxx 为 [REDACTED]。
     fn check_ok(&self, code: u16, body: String) -> Result<String, RagError> {
         if (200..300).contains(&code) {
             Ok(body)
         } else {
-            Err(RagError::Http(code, body))
+            Err(RagError::Http(code, sanitize_body(body)))
         }
     }
 
@@ -290,6 +291,108 @@ impl RagClient {
         self.check_ok(code, body)?;
         Ok(())
     }
+
+    /// 调用 Chroma `/api/v1/embeddings` 对 texts 做向量（服务端默认嵌入函数）。
+    /// 返回顺序与 texts 一致。空 texts 直接返回空 Vec。
+    pub fn embed(&self, model: &str, texts: &[String]) -> Result<Vec<Vec<f32>>, RagError> {
+        if self.base_url.is_empty() {
+            return Err(RagError::MissingBaseUrl);
+        }
+        if texts.is_empty() {
+            return Ok(Vec::new());
+        }
+        let payload = serde_json::json!({
+            "model": model,
+            "texts": texts,
+        });
+        let (code, body) = self.do_req(
+            self.agent.post(&self.url("/api/v1/embeddings")),
+            Some(payload),
+        )?;
+        let body = self.check_ok(code, body)?;
+        #[derive(Deserialize)]
+        struct EmbedResp {
+            embeddings: Vec<Vec<f32>>,
+        }
+        let r: EmbedResp =
+            serde_json::from_str(&body).map_err(|e| RagError::Parse(format!("embeddings: {e}")))?;
+        Ok(r.embeddings)
+    }
+}
+
+// ================= 文档切片（纯函数） =================
+
+/// 按字符数（`char` 计数）做滑窗切片，返回若干 String chunk。
+/// 规则：
+/// - `chunk_chars == 0`：视为异常输入，返回空（避免除零）。
+/// - 总字符数 ≤ chunk_chars：单 chunk。
+/// - overlap ≥ chunk_chars：退化为 overlap = chunk_chars-1（取最大重叠，仍做非空移动），
+///   保证不会死循环；实际步长 step = max(1, chunk-overlap)。
+///
+/// 切片以「Unicode 标量值」（Rust `char`）计数，对中英文都按"字"而不是字节，
+/// 避免中文文本被按字节切开。
+pub fn chunk_markdown(src: &str, chunk_chars: usize, overlap: usize) -> Vec<String> {
+    if src.is_empty() {
+        return Vec::new();
+    }
+    if chunk_chars == 0 {
+        return Vec::new();
+    }
+    let chars: Vec<char> = src.chars().collect();
+    let n = chars.len();
+    if n <= chunk_chars {
+        return vec![chars.into_iter().collect()];
+    }
+    // 保证 step ≥ 1，即便 overlap ≥ chunk_chars
+    let overlap = overlap.min(chunk_chars.saturating_sub(1));
+    let step = chunk_chars.saturating_sub(overlap).max(1);
+    let mut out = Vec::new();
+    let mut start = 0usize;
+    loop {
+        let end = (start + chunk_chars).min(n);
+        out.push(chars[start..end].iter().collect());
+        if end >= n {
+            break;
+        }
+        start += step;
+    }
+    out
+}
+
+// ================= 脱敏辅助 =================
+
+/// 错误体脱敏：
+/// - Bearer <value> → Bearer [REDACTED]
+/// - Basic <value>  → Basic [REDACTED]
+/// - token=<non-space> → token=[REDACTED]（兼容 &token=...、JSON "token":"..." 用更通用的正则）
+/// - api_key=<non-space> → api_key=[REDACTED]
+/// - "authorization":"Bearer <value>" 这类 JSON 字符串：用更泛的正则统一匹配值（长度≥4 的令牌样子段）
+fn sanitize_body(body: String) -> String {
+    use std::sync::LazyLock;
+    use regex::Regex;
+
+    macro_rules! re {
+        ($pat:expr) => {{
+            static C: LazyLock<Regex> = LazyLock::new(|| Regex::new($pat).unwrap());
+            &C
+        }};
+    }
+
+    // Authorization header value
+    let r1 = re!(r"(?i)(Bearer|Basic)\s+[A-Za-z0-9\-._~+/=]+");
+    let mut s = r1.replace_all(&body, "${1} [REDACTED]").into_owned();
+
+    // KEY=<value> 形式（&分隔、空格、JSON 尾部 ,/} 都允许）。
+    // 用 ASCII 34/39 避免 raw string 内转义歧义。
+    let q34: char = 34u8 as char;
+    let q39: char = 39u8 as char;
+    let pattern = format!(
+        r"(?i)(token|api[_-]?key|secret|access[_-]?token|refresh[_-]?token)\s*[:=]\s*[{q34}{q39}]?[A-Za-z0-9\-._~+/]+[{q34}{q39}]?"
+    );
+    let r2 = Regex::new(&pattern).expect("sanitize r2 regex");
+    s = r2.replace_all(&s, "${1}=[REDACTED]").into_owned();
+
+    s
 }
 
 // ================= RagMcpConfig =================

@@ -8,6 +8,8 @@
 //! 也可通过环境变量 `HARNESS_DATA_DIR=<path>` 覆盖，便于便携部署和避免权限冲突。
 
 mod appserver;
+mod approval_feishu;
+mod base;
 mod config;
 mod feishu;
 mod fs;
@@ -160,6 +162,11 @@ pub fn run() {
             rag::rag_register,
             rag::rag_status,
             rag::rag_health,
+            rag::rag_search,
+            base::base_register_mcp,
+            base::base_status,
+            base::base_health,
+            approval_feishu::approval_send_to_feishu,
             sessions::session_save,
             sessions::session_list,
             sessions::session_search,

@@ -138,7 +138,18 @@ jobs:
             Write-Host "WiX 未在 PATH 中（runner 可能版本变更），tauri-bundler 将 fallback 下载"
           }
 
+      - name: 缓存 tauri-bundler 下载的 NSIS / WiX 二进制（抗 CDN 504）
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~\AppData\Local\tauri-bundler
+            ${{ env.LOCALAPPDATA }}\tauri-bundler
+          key: tauri-bundler-v1-${{ runner.os }}-${{ hashFiles('.github/workflows/build-windows-release.yml') }}
+          restore-keys: |
+            tauri-bundler-v1-${{ runner.os }}-
+
       - name: 构建 Tauri 安装包（MSI + NSIS，3 次指数退避重试，抵抗偶发 CDN 504）
+        id: tauri_build
         shell: pwsh
         run: |
           # 不注入空 HTTP_PROXY/HTTPS_PROXY：空值会让 ureq 误走不存在的代理
@@ -150,9 +161,11 @@ jobs:
           $delaySec = 15
           for ($i = 1; $i -le $maxRetries; $i++) {
             Write-Host "==== tauri build attempt $i/$maxRetries ===="
-            & npx tauri build --verbose 2>&1 | Select-Object -Last 200
+            & npx tauri build --verbose 2>&1 | Tee-Object -FilePath tauri-build-attempt-$i.log | Select-Object -Last 200
             if ($LASTEXITCODE -eq 0) {
               Write-Host "tauri build OK on attempt $i"
+              "build_ok=true" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+              "attempts=$i" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
               exit 0
             }
             if ($i -lt $maxRetries) {
@@ -161,8 +174,56 @@ jobs:
               Start-Sleep -Seconds $wait
             }
           }
+          "build_ok=false" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          "attempts=$maxRetries" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           Write-Error "tauri build failed after $maxRetries attempts"
           exit 1
+
+      - name: 构建失败日志收集（tauri build 各 attempt 日志 + target 错误日志）
+        if: always() && steps.tauri_build.outcome != 'skipped'
+        id: collect_logs
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          $dir = Join-Path $PWD "_build_logs"
+          New-Item -ItemType Directory -Force -Path $dir | Out-Null
+          # 1) 我们自己产生的 attempt 日志
+          Get-ChildItem -LiteralPath $PWD -Filter "tauri-build-attempt-*.log" -ErrorAction SilentlyContinue |
+            Copy-Item -Destination $dir -Force -ErrorAction SilentlyContinue
+          # 2) cargo 配置输出（target/*/stderr/stdout，如果 tauri 有）
+          foreach ($t in @("$PWD\src-tauri\target", "$PWD\target")) {
+            if (-not (Test-Path -LiteralPath $t)) { continue }
+            $matches = Get-ChildItem -Recurse -LiteralPath $t -Include *.log,*.stderr,*.stdout -ErrorAction SilentlyContinue |
+              Select-Object -First 80
+            foreach ($m in $matches) {
+              $rel = $m.FullName.Replace($PWD, "").Replace("\", "_").TrimStart("_")
+              Copy-Item -LiteralPath $m.FullName -Destination (Join-Path $dir $rel) -Force -ErrorAction SilentlyContinue
+            }
+          }
+          # 3) tauri-bundler 本地 NSIS/WiX 目录状态（便于排查"解压结构错误"）
+          $bd = Join-Path $env:LOCALAPPDATA "tauri-bundler"
+          if (Test-Path -LiteralPath $bd) {
+            Get-ChildItem -Recurse -LiteralPath $bd -ErrorAction SilentlyContinue |
+              Select-Object -First 160 FullName, Length |
+              Out-File -FilePath (Join-Path $dir "tauri-bundler-cache.txt") -Encoding utf8
+          }
+          $n = (Get-ChildItem -LiteralPath $dir -File -ErrorAction SilentlyContinue | Measure-Object).Count
+          Write-Host "collected $n build log files into $dir"
+          if ($n -gt 0) {
+            "logs_path=$dir" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+            "logs_count=$n" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          }
+
+      - name: 上传失败日志 artifact（仅 tauri build 非成功时有效，其它事件也传便于比对）
+        if: always() && steps.collect_logs.outputs.logs_count && steps.collect_logs.outcome != 'skipped'
+        uses: actions/upload-artifact@v4
+        with:
+          name: Harness-BuildLogs-${{ steps.version.outputs.version }}
+          path: ${{ steps.collect_logs.outputs.logs_path }}
+          compression-level: 7
+          if-no-files-found: ignore
+          retention-days: 30
+          include-hidden-files: true
 
       - name: 枚举产物
         id: artifacts

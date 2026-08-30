@@ -9,7 +9,8 @@
 //!   ④ 拒绝执行      → decline           (不执行，codex 走 fallback 或失败提示)
 
 import { useState } from "react";
-import type { ApprovalRequest } from "../codexClient";
+import type { ApprovalRequest, ApprovalFeishuResult } from "../codexClient";
+import * as codex from "../codexClient";
 
 interface Dec {
   value: "accept" | "acceptForSession" | "decline";
@@ -104,14 +105,44 @@ export default function ApprovalPanel({
   // hideHeader 为占位 prop：ToolPanel 传 true 以便后续扩展（外层已有 Tab 头部），
   // 当前版本卡片形态在外层弹窗/抽屉均无额外差异，保留接口以避免类型报错。
   hideHeader: _hideHeader,
+  codexHome,
 }: {
   approvals: ApprovalRequest[];
   onRespond: (id: number, decision: string) => void;
   /** 内嵌在 ToolPanel 抽屉时为 true（外层已有 Tab 标题），审批弹窗里不传。 */
   hideHeader?: boolean;
+  /** 若提供，则每张审批卡片上会出现「提交至飞书审批」按钮。 */
+  codexHome?: string;
 }) {
   void _hideHeader;
   const [hoveredIdx, setHoveredIdx] = useState<Record<string, number | null>>({});
+  const [feishu, setFeishu] = useState<Record<string, ApprovalFeishuResult | { loading: true } | undefined>>({});
+
+  const sendToFeishu = async (a: ApprovalRequest) => {
+    const key = String(a.id);
+    setFeishu((m) => ({ ...m, [key]: { loading: true } }));
+    try {
+      const s = summarize(a);
+      const r = await codex.approvalSendToFeishu({
+        codexHome,
+        requestId: a.id,
+        description: `${s.title}\n\n${s.scopeLabel}: ${s.scopeValue || "-"}\n\n${s.codeBlock}`,
+        fields: {
+          scope: s.scopeLabel,
+          scope_value: s.scopeValue || "",
+          approval_type: s.codeBlock.startsWith("@@ ") ? "file_change" : "command",
+        },
+      });
+      setFeishu((m) => ({ ...m, [key]: r }));
+    } catch (e) {
+      setFeishu((m) => ({
+        ...m,
+        [key]: {
+          ok: false, instanceCode: "", message: `提交失败：${e}`,
+        },
+      }));
+    }
+  };
 
   if (approvals.length === 0) {
     return (
@@ -169,6 +200,44 @@ export default function ApprovalPanel({
                 </li>
               ))}
             </ul>
+
+            {codexHome && (
+              <div className="tw-a-feishu-row">
+                {(() => {
+                  const state = feishu[String(a.id)];
+                  if (state && "loading" in state) {
+                    return <span className="tw-a-feishu-state loading">提交到飞书审批中…</span>;
+                  }
+                  const result = state as ApprovalFeishuResult | undefined;
+                  if (result) {
+                    return (
+                      <span className={`tw-a-feishu-state ${result.ok ? "ok" : "bad"}`}>
+                        {result.ok ? "✓ 已提单 " : "✗ 提交失败："}
+                        <strong style={{ marginLeft: 4 }}>{result.instanceCode || result.message}</strong>
+                        {result.link && (
+                          <a
+                            className="tw-a-feishu-link"
+                            href={result.link}
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                          >→ 在飞书打开</a>
+                        )}
+                        {!result.ok && <span style={{ marginLeft: 8, color: "#6B7280" }}>{result.message}</span>}
+                      </span>
+                    );
+                  }
+                  return (
+                    <button
+                      className="tw-a-feishu-btn"
+                      onClick={(e) => { e.stopPropagation(); sendToFeishu(a); }}
+                    >
+                      📨 提交至飞书审批（T22）
+                    </button>
+                  );
+                })()}
+              </div>
+            )}
           </div>
         );
       })}

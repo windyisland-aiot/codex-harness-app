@@ -10,6 +10,11 @@
 //!   的目录；用户通过 `[plugins.<id>] enabled` 开关。
 //!
 //! 该 crate 输出发现结果与解析后的元数据，配置的写入由 harness-config 负责。
+//!
+//! ## T21 广告脚本工作流
+//! 新增 `ad_script` 模块：纯数据 5 步工作流定义，不做真实 IO。
+
+pub mod ad_script;
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

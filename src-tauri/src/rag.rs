@@ -146,3 +146,97 @@ pub async fn rag_health(base_url: Option<String>) -> Result<RagHealth, String> {
     .await
     .map_err(|e| e.to_string())?
 }
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RagSearchResult {
+    pub collection: String,
+    pub query: String,
+    pub hits: Vec<RagSearchHit>,
+}
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RagSearchHit {
+    pub id: String,
+    pub document: String,
+    pub distance: Option<f64>,
+    pub metadata: Option<serde_json::Value>,
+}
+
+/// 对某个 collection 做检索（前端「检索测试」框使用）。
+///
+/// - base_url / collection 未传时：先尝试从 codex_home 下已注册的 rag server
+///   参数中取，再缺省 fallback 到默认值。
+#[tauri::command]
+pub async fn rag_search(
+    codex_home: Option<String>,
+    base_url: Option<String>,
+    collection: Option<String>,
+    query: String,
+    top_k: Option<u32>,
+) -> Result<RagSearchResult, String> {
+    let top_k = top_k.unwrap_or(5);
+    let (resolved_base, resolved_collection) =
+        resolve_base_and_collection(codex_home.as_deref(), base_url.as_deref(), collection.as_deref());
+    let query_for_err = query.clone();
+    let coll = resolved_collection.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let client = RagClient::new(&resolved_base);
+        let collection_obj = client
+            .get_or_create_collection(&resolved_collection)
+            .map_err(|e| format!("解析集合 {resolved_collection} 失败：{e}"))?;
+        let resp = client
+            .search(&collection_obj.id, &query, top_k as usize, None)
+            .map_err(|e| format!("RAG 检索失败：{e}"))?;
+        Ok(RagSearchResult {
+            collection: coll,
+            query: query_for_err,
+            hits: resp
+                .hits
+                .into_iter()
+                .map(|h| RagSearchHit {
+                    id: h.id,
+                    document: h.document,
+                    distance: h.distance,
+                    metadata: Some(serde_json::to_value(&h.metadata).unwrap_or(serde_json::Value::Null)),
+                })
+                .collect(),
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+fn resolve_base_and_collection(
+    codex_home: Option<&str>,
+    base_url: Option<&str>,
+    collection: Option<&str>,
+) -> (String, String) {
+    let mut b = base_url.map(|s| s.to_string());
+    let mut c = collection.map(|s| s.to_string());
+    if (b.is_none() || c.is_none()) && codex_home.is_some() {
+        if let Ok(cfg) = harness_config::read(codex_home.unwrap()) {
+            if let Some(s) = cfg.mcp_servers.iter().find(|m| m.id == "rag") {
+                if b.is_none() {
+                    if let Some(v) = s.args.windows(2).find(|w| w[0] == "--base-url").map(|w| w[1].clone()) {
+                        b = Some(v);
+                    }
+                }
+                if c.is_none() {
+                    if let Some(v) = s
+                        .args
+                        .windows(2)
+                        .find(|w| w[0] == "--default-collection")
+                        .map(|w| w[1].clone())
+                    {
+                        c = Some(v);
+                    }
+                }
+            }
+        }
+    }
+    (
+        b.unwrap_or_else(|| harness_rag::DEFAULT_BASE_URL.to_string()),
+        c.unwrap_or_else(|| harness_rag::DEFAULT_COLLECTION.to_string()),
+    )
+}

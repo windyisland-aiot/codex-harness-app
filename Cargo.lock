@@ -1370,7 +1370,7 @@ dependencies = [
 
 [[package]]
 name = "harness-app"
-version = "0.4.0"
+version = "0.5.0"
 dependencies = [
  "harness-appserver",
  "harness-auth",
@@ -1381,6 +1381,7 @@ dependencies = [
  "harness-router",
  "harness-search",
  "harness-sessions",
+ "regex",
  "serde",
  "serde_json",
  "tauri",
@@ -1417,11 +1418,13 @@ dependencies = [
 name = "harness-config"
 version = "0.1.0"
 dependencies = [
+ "regex",
  "serde",
  "serde_json",
  "tempfile",
  "thiserror 1.0.69",
  "toml 0.8.2",
+ "ureq",
 ]
 
 [[package]]
@@ -1448,6 +1451,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "regex",
  "serde",
  "serde_json",
  "ureq",

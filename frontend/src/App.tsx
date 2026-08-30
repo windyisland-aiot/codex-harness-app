@@ -242,6 +242,62 @@ export default function App() {
   const [oboUsername, setOboUsername] = useState("");
   const [oboKey, setOboKey] = useState("");
 
+  // ------- T6 模板库抽屉（广告脚本 5 步模板） -------
+  const [templateOpen, setTemplateOpen] = useState(false);
+  type TemplateId = "ad_script" | "manual_summarize_weekly";
+  const TEMPLATES: Array<{
+    id: TemplateId;
+    icon: string;
+    title: string;
+    subtitle: string;
+    prompt: string;
+    tag?: string;
+  }> = [
+    {
+      id: "ad_script",
+      icon: "🎬",
+      title: "广告脚本生成（RAG → LLM × 2 → Bitable → 飞书审批）",
+      subtitle: "5 步协同工作流：品牌话术检索 → 初稿 → 润色 → 写 Bitable → 提单审批",
+      tag: "T21 · AdScriptWorkflow",
+      prompt: [
+        "【广告脚本生成工作流 · 5 步】",
+        "",
+        "【第 1 步 · 检索知识库】请调用 RAG 检索：品牌话术、竞品分析、历史脚本案例，关键词提取自 brief（品牌 / 品类 / 卖点）。",
+        "",
+        "【第 2 步 · 生成初稿】基于 brief + 第 1 步检索到的参考片段，输出 3 套广告脚本（每条 <= 180 字，包含：Hook、卖点、CTA）。",
+        "",
+        "【第 3 步 · 润色定稿】挑出最佳的 1 条，按品牌语气进行润色；输出「脚本标题 / 最终稿 / 可选 B 版 / 拍摄建议」四段结构。",
+        "",
+        "【第 4 步 · 写入飞书多维表格】把第 3 步结果写入多维表格：字段 = {品牌、品类、脚本标题、脚本正文、拍摄建议、创建时间、状态=draft}。",
+        "",
+        "【第 5 步 · 飞书审批提单】对上述脚本执行「提交飞书审批」：审批说明包含脚本标题与正文预览；审批通过后状态置 approved。",
+        "",
+        "请开始执行工作流。",
+      ].join("\n"),
+    },
+    {
+      id: "manual_summarize_weekly",
+      icon: "📊",
+      title: "周报/总结助手",
+      subtitle: "通用工作周报模板，按：本周产出 / 风险与阻塞 / 下周计划 三段输出",
+      prompt: [
+        "请帮我生成一份本周工作周报，按三段结构整理：",
+        "1. 本周产出（3-8 条，动宾开头）",
+        "2. 风险与阻塞（如无则写「无」）",
+        "3. 下周计划（3-5 条）",
+        "以下是我的本周零散记录（可补充具体条目）：",
+        "……",
+      ].join("\n"),
+    },
+  ];
+  const applyTemplate = (id: TemplateId) => {
+    const t = TEMPLATES.find((x) => x.id === id);
+    if (!t) return;
+    setInput((prev) => (prev.trim() ? `${prev}\n\n${t.prompt}` : t.prompt));
+    setTemplateOpen(false);
+    setStatus(`已应用模板：${t.title}`);
+  };
+
   // ------- Trae Work v5：左栏 collapsed、终端输出、浏览器 URL -------
   const [collapsed, setCollapsed] = useState(false);
   const [terminalLines, setTerminalLines] = useState<
@@ -669,7 +725,7 @@ export default function App() {
               </span>
               <span>插件市场</span>
             </button>
-            <button className="sb-menu-item" onClick={() => setStatus("模板库：敬请期待（v0.2）")}>
+            <button className="sb-menu-item" onClick={() => setTemplateOpen(true)}>
               <span className="ic-wrap bl">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>
               </span>
@@ -968,7 +1024,11 @@ export default function App() {
               title="稍后处理（保留 toast 通知）"
               aria-label="close"
             >×</button>
-            <ApprovalPanel approvals={approvals} onRespond={(id, dec) => respondApproval(id, dec)} />
+            <ApprovalPanel
+              approvals={approvals}
+              codexHome={paths?.codexHome}
+              onRespond={(id, dec) => respondApproval(id, dec)}
+            />
           </div>
         </div>
       )}
@@ -978,6 +1038,47 @@ export default function App() {
 
 
 
+
+      {/* ============ T6 模板库抽屉 ============ */}
+      {templateOpen && (
+        <div className="modal-backdrop" onClick={() => setTemplateOpen(false)}>
+          <div className="tpl-panel" onClick={(e) => e.stopPropagation()}>
+            <div className="tpl-head">
+              <h2>模板库</h2>
+              <button className="sp-close" onClick={() => setTemplateOpen(false)}>×</button>
+            </div>
+            <p className="sp-desc" style={{ marginTop: 0 }}>
+              选一个模板填入输入框，直接开始任务。
+            </p>
+            <div className="tpl-grid">
+              {TEMPLATES.map((t) => (
+                <div key={t.id} className="tpl-card">
+                  <div className="tpl-card-title">
+                    <span className="tpl-icon">{t.icon}</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: "#111827" }}>{t.title}</div>
+                      <div style={{ fontSize: 12, color: "#6B7280", marginTop: 4 }}>{t.subtitle}</div>
+                    </div>
+                    {t.tag && <span className="tpl-tag">{t.tag}</span>}
+                  </div>
+                  <pre className="tpl-preview">
+                    {t.prompt.length > 280 ? `${t.prompt.slice(0, 280)}…` : t.prompt}
+                  </pre>
+                  <div className="tpl-actions">
+                    <button className="sp-btn sp-btn-ghost" onClick={() => {
+                      navigator.clipboard?.writeText(t.prompt).catch(() => {});
+                      setStatus(`已复制「${t.title}」到剪贴板`);
+                    }}>复制</button>
+                    <button className="sp-btn sp-btn-primary" onClick={() => applyTemplate(t.id)}>
+                      填入输入框
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ============ 首次启动向导 ============ */}
       {onboardingOpen && (

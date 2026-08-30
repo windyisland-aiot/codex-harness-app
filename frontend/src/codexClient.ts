@@ -519,3 +519,100 @@ export function ragStatus(codexHome: string): Promise<RagStatus> {
 export function ragHealth(baseUrl?: string): Promise<RagHealth> {
   return invoke<RagHealth>("rag_health", { baseUrl: baseUrl ?? null });
 }
+
+export interface RagSearchHit {
+  id: string;
+  document: string;
+  distance: number;
+  metadata?: unknown;
+}
+export interface RagSearchResult {
+  collection: string;
+  query: string;
+  hits: RagSearchHit[];
+}
+/** 直接调用 Chroma 相似度检索（用于前端做检索预嗅/入库校验）。 */
+export function ragSearch(opts: {
+  codexHome?: string;
+  baseUrl?: string;
+  collection?: string;
+  query: string;
+  topK?: number;
+}): Promise<RagSearchResult> {
+  return invoke<RagSearchResult>("rag_search", {
+    codexHome: opts.codexHome ?? null,
+    baseUrl: opts.baseUrl ?? null,
+    collection: opts.collection ?? null,
+    query: opts.query,
+    topK: opts.topK ?? null,
+  });
+}
+
+// --- T19 飞书多维表格 Base MCP ---
+
+export interface BaseStatus {
+  registered: boolean;
+  enabled: boolean;
+  command?: string;
+}
+export interface BaseHealth {
+  ok: boolean;
+  message: string;
+  hint?: string;
+}
+/** 一键注册 `[mcp_servers.base]`；默认启用 lark-openapi-mcp + bitable。 */
+export function baseRegisterMcp(opts: {
+  codexHome: string;
+  command?: string;
+  args?: string[];
+  envVars?: string[];
+}): Promise<BaseStatus> {
+  return invoke<BaseStatus>("base_register_mcp", {
+    codexHome: opts.codexHome,
+    command: opts.command ?? null,
+    args: opts.args ?? null,
+    envVars: opts.envVars ?? null,
+  });
+}
+export function baseStatus(codexHome: string): Promise<BaseStatus> {
+  return invoke<BaseStatus>("base_status", { codexHome });
+}
+export function baseHealth(): Promise<BaseHealth> {
+  return invoke<BaseHealth>("base_health");
+}
+
+// --- T22 审批 → 飞书审批直连 ---
+
+export interface ApprovalFeishuResult {
+  ok: boolean;
+  instanceCode: string;
+  link?: string;
+  /** 若飞书侧返回错误代码，这里透传。 */
+  code?: number;
+  message: string;
+}
+/**
+ * 把一条等待审批的 codex 内部审批请求，直接走飞书「提交审批实例」API 提单，
+ * 便于审批人在飞书统一处理。返回审批实例 instance_code 和 applink 链接。
+ */
+export function approvalSendToFeishu(opts: {
+  codexHome?: string;
+  requestId: number;
+  /** 审批定义 code；空串时走默认 "HarnessApproval"（后端兜底）。 */
+  approvalCode?: string;
+  /** 审批说明（Markdown 纯文本）。 */
+  description: string;
+  /** 审批单据关键字段（用于飞书审批表单/列表筛选）。 */
+  fields?: Record<string, string>;
+  /** 审批 UUID（幂等键）；不传后端用 requestId 兜底。 */
+  uuid?: string;
+}): Promise<ApprovalFeishuResult> {
+  return invoke<ApprovalFeishuResult>("approval_send_to_feishu", {
+    codexHome: opts.codexHome ?? null,
+    requestId: opts.requestId,
+    approvalCode: opts.approvalCode ?? null,
+    description: opts.description,
+    fields: opts.fields ?? null,
+    uuid: opts.uuid ?? null,
+  });
+}
