@@ -723,7 +723,7 @@ export default function App() {
               <span className="ic-wrap gr">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8.11 2.79a3 3 0 0 1 4.24 4.24 3 3 0 0 1 4.24 4.24 3 3 0 0 1 4.62 4.62z"/></svg>
               </span>
-              <span>插件市场</span>
+              <span>插件管理</span>
             </button>
             <button className="sb-menu-item" onClick={() => setTemplateOpen(true)}>
               <span className="ic-wrap bl">
@@ -794,6 +794,25 @@ export default function App() {
                   <div className="s-meta">
                     <span className={`badge ${st}`}>{BADGE_LABEL[st]}</span>
                     <span style={{ marginLeft: "auto" }}>{dayLabel}</span>
+                    <button
+                      className="s-del-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (!confirm(`删除任务「${s.title}」？`)) return;
+                        codex.sessionDelete(codexHome, s.id).then(() => {
+                          setSessions((prev) => prev.filter((x) => x.id !== s.id));
+                          if (isActive) {
+                            setActiveThread("");
+                            setMessages([]);
+                          }
+                          setStatus("已删除");
+                        }).catch((err) => setStatus(`删除失败：${err}`));
+                      }}
+                      title="删除此任务"
+                      aria-label="删除任务"
+                    >
+                      ×
+                    </button>
                   </div>
                 </li>
               );

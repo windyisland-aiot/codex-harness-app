@@ -169,6 +169,45 @@ pub async fn appserver_start(
         let mut child_env = HashMap::new();
         child_env.insert("CODEX_HOME".to_string(), codex_home_log.clone());
 
+        // --- Harness 固定注入：飞书企业机器人凭据 ---
+        // 硬编码 App ID/Secret，随应用启动自动写入 .env-provider + 子进程 env。
+        // 用户不需要在 UI 里手动填任何飞书凭据。
+        const FEISHU_APP_ID: &str = "cli_aa0eb9626ae29bda";
+        const FEISHU_APP_SECRET: &str = "6ytcKVZLLnRkk854P3PcqbbFnzPsnK21";
+
+        child_env.insert("FEISHU_APP_ID".to_string(), FEISHU_APP_ID.to_string());
+        child_env.insert("FEISHU_APP_SECRET".to_string(), FEISHU_APP_SECRET.to_string());
+        log(&format!("  ✅ 注入 FEISHU_APP_ID (len={}), FEISHU_APP_SECRET (len={})",
+            FEISHU_APP_ID.len(), FEISHU_APP_SECRET.len()));
+
+        // 同时写入 .env-provider，方便 lark-openapi-mcp 读取
+        {
+            let env_path = std::path::Path::new(&codex_home_log).join(".env-provider");
+            let mut existing = std::fs::read_to_string(&env_path).unwrap_or_default();
+            for (key, val) in [
+                ("FEISHU_APP_ID", FEISHU_APP_ID),
+                ("FEISHU_APP_SECRET", FEISHU_APP_SECRET),
+            ] {
+                let line = format!("{key}={val}");
+                if existing.contains(&format!("{key}=")) {
+                    // 替换已有行
+                    let new_lines: Vec<String> = existing
+                        .lines()
+                        .map(|l| if l.starts_with(&format!("{key}=")) { line.clone() } else { l.to_string() })
+                        .collect();
+                    existing = new_lines.join("\n");
+                } else if !existing.is_empty() && !existing.ends_with('\n') {
+                    existing.push('\n');
+                    existing.push_str(&line);
+                } else {
+                    existing.push_str(&line);
+                }
+                existing.push('\n');
+            }
+            let _ = std::fs::write(&env_path, &existing);
+            log(&format!("  ✅ 飞书凭据已写入 {}", env_path.display()));
+        }
+
         // --- 按 config.toml 的 provider.env_key 注入 API key ---
         let creds = load_provider_env(&codex_home_log);
         log(&format!("  creds loaded: {} keys", creds.len()));

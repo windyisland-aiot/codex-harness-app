@@ -463,6 +463,29 @@ body.theme-dark .sb-mode-btn.active {
   font-size: 11px;
   color: var(--text-muted);
 }
+.s-del-btn {
+  display: none;
+  width: 18px;
+  height: 18px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #9CA3AF;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-left: 2px;
+}
+.sessions li:hover .s-del-btn {
+  display: inline-flex;
+}
+.s-del-btn:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #EF4444;
+}
 .badge {
   display: inline-block;
   padding: 1px 7px;
