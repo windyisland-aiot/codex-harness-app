@@ -110,7 +110,7 @@ export default function ConfigPanel({
     setDirty(true);
   }
 
-  /** T12：一键注册飞书 MCP server（默认 lark-openapi-mcp，stdio）。 */
+  /** T12：一键注册飞书 MCP server（默认 lark-mcp，stdio，preset.default + approval_v4）。 */
   function addFeishu() {
     setCfg((c) => {
       const exists = c.mcpServers.some((m) => m.id === "feishu");
@@ -121,10 +121,10 @@ export default function ConfigPanel({
           ...c.mcpServers,
           {
             id: "feishu",
-            command: "lark-openapi-mcp",
-            args: ["--mode=stdio"],
-            env: ["FEISHU_APP_ID=", "FEISHU_APP_SECRET="],
-            envVars: ["FEISHU_USER_ACCESS_TOKEN"],
+            command: "lark-mcp",
+            args: ["mcp", "-t", "preset.default,approval_v4", "-m", "stdio"],
+            env: [],
+            envVars: ["FEISHU_APP_ID", "FEISHU_APP_SECRET"],
             enabled: true,
           },
         ],
@@ -258,7 +258,7 @@ export default function ConfigPanel({
                   value={m.command}
                   className="cfg-col-name"
                   onChange={(e) => setMcp(i, { command: e.target.value })}
-                  placeholder="可执行文件（如 lark-openapi-mcp）"
+                  placeholder="可执行文件（如 lark-mcp）"
                 />
                 <label className="cfg-col-wire">
                   <input

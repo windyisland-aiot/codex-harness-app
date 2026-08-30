@@ -1,11 +1,11 @@
-//! T19 · 飞书多维表格（Bitable）MCP：把 `lark-openapi-mcp --enable-bitable`
-//! 注册为 `[mcp_servers.base]`，并提供轻量健康检查（调用飞书开放平台 token 端点）。
+//! T19 · 飞书多维表格（Bitable）MCP：注册 `lark-mcp`（官方 npm 包）
+//! 为 `[mcp_servers.base]`，内置 preset.default + approval_v4 工具集。
 //!
 //! 设计点：
-//! - id 固定为 `"base"`，与 `[mcp_servers.feishu]` 并存，保证 IM 与 Bitable 互不干扰。
+//! - id 固定为 `"base"`，同时覆盖 bitable / im / approval / calendar / task 全链路。
+//! - 命令从 `env_vars` 读 FEISHU_APP_ID / FEISHU_APP_SECRET（Harness 启动时自动注入）。
 //! - 幂等：重复调用 `base_register_mcp` 只会 retain+push，不会产生重复条目。
-//! - 健康检查 `base_health` 不做真实凭据获取，只打一次 HTTP 请求判定网络可达 +
-//!   返回体脱敏。失败时给出中文字面 + 安装/授权兜底命令 hint。
+//! - 健康检查 `base_health` 直接调飞书开放平台 auth 端点，失败时给安装 hint。
 
 use std::time::Duration;
 
@@ -34,7 +34,13 @@ pub async fn base_register_mcp(
     tauri::async_runtime::spawn_blocking(move || {
         let mut cfg = harness_config::read(&codex_home).map_err(|e| e.to_string())?;
 
-        let mut args = vec!["--mode=stdio".into(), "--enable-bitable".into()];
+        let mut args: Vec<String> = vec![
+            "mcp".into(),
+            "-t".into(),
+            "preset.default,approval_v4".into(),
+            "-m".into(),
+            "stdio".into(),
+        ];
         if let Some(t) = app_token.as_deref() {
             if !t.trim().is_empty() {
                 args.push("--app-token".into());
@@ -57,7 +63,7 @@ pub async fn base_register_mcp(
 
         let server = McpServerConfig {
             id: "base".into(),
-            command: "lark-openapi-mcp".into(),
+            command: "lark-mcp".into(),
             args,
             env: Vec::new(),
             env_vars: env_vars_actual,
@@ -182,7 +188,7 @@ pub async fn base_health(app_token: Option<String>) -> Result<BaseHealth, String
                     ok: false,
                     message: format!("网络不可达：{msg}"),
                     hint: Some(
-                        "安装与授权命令（Windows PowerShell）：\n  pip install lark-openapi-mcp\n  lark-cli auth login\n  lark-openapi-mcp --enable-bitable --mode=stdio --help".into()
+                        "安装命令（Windows PowerShell）：\n  npm install -g @larksuiteoapi/lark-mcp\n验证：\n  lark-mcp mcp -h\nHarness 已内置 FEISHU_APP_ID/SECRET，启动时自动注入。".into()
                     ),
                 })
             }

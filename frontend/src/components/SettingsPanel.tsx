@@ -183,8 +183,9 @@ export default function SettingsPanel({
       return {
         ...cur,
         mcpServers: [...cur.mcpServers, {
-          id: "feishu", command: "lark-openapi-mcp",
-          args: ["--mode=stdio"], env: [], envVars: ["FEISHU_USER_ACCESS_TOKEN"], enabled: true,
+          id: "feishu", command: "lark-mcp",
+          args: ["mcp", "-t", "preset.default,approval_v4", "-m", "stdio"],
+          env: [], envVars: ["FEISHU_APP_ID", "FEISHU_APP_SECRET"], enabled: true,
         }],
       };
     });
@@ -230,7 +231,7 @@ export default function SettingsPanel({
       const fresh = await codex.configRead(codexHome);
       setCfg(fresh);
       setDirty(false);
-      onStatus(`飞书多维表格 MCP 已注册：${s.registered ? "已启用" : "未启用"} command=${s.command || "lark-openapi-mcp"}`);
+      onStatus(`飞书多维表格 MCP 已注册：${s.registered ? "已启用" : "未启用"} command=${s.command || "lark-mcp"}`);
     } catch (e) {
       onStatus(`启用 Base MCP 失败：${e}`);
     }
@@ -670,7 +671,7 @@ function SectionMcp({
       <h2 className="sp-h">MCP Server</h2>
       <p className="sp-desc">Codex 启动时会自动拉起已启用的 MCP server（stdio 模式）。</p>
       <div className="sp-actions">
-        <button className="sp-btn sp-btn-ghost" onClick={addFeishu}>+ 注册飞书 MCP（lark-openapi-mcp）</button>
+        <button className="sp-btn sp-btn-ghost" onClick={addFeishu}>+ 注册飞书 MCP（lark-mcp）</button>
         <button className="sp-btn sp-btn-primary" onClick={async () => { await addBaseViaTauri(); checkBaseHealth(); }}>
           ✓ 启用飞书多维表格 Base（推荐）
         </button>
@@ -687,7 +688,7 @@ function SectionMcp({
           <div className="sp-h-label">
             <strong>飞书多维表格 Base 健康</strong>
             <span style={{ color: "#6B7280", fontSize: 12, marginLeft: 10 }}>
-              command = {base.command || "lark-openapi-mcp"}
+              command = {base.command || "lark-mcp"}
             </span>
           </div>
           <div className="sp-mcp-health-line">
