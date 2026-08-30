@@ -182,7 +182,7 @@ pub async fn appserver_start(
                     log(&format!("  ✅ 注入 env {ek}=***({})", v.len()));
                 }
                 None => {
-                    log(&format!("  ⚠️ provider {p} 的 env_key={ek} 未配置 API key → 该 provider 调用会 401"));
+                    log(&format!("  ⚠️ provider {} 的 env_key={ek} 未配置 API key → 该 provider 调用会 401", p.id));
                 }
             }
         }
@@ -365,13 +365,13 @@ pub async fn appserver_stop(state: State<'_, CodexHandle>) -> Result<(), String>
 // ---------- 凭据读写：<codex_home>/.env-provider ----------
 
 #[tauri::command]
-fn harness_creds_read(codex_home: String) -> HashMap<String, String> {
+pub fn harness_creds_read(codex_home: String) -> HashMap<String, String> {
     load_provider_env(&codex_home)
 }
 
 /// 写凭据：前端传一组 env_key → api_value。合并进现有文件（保留未列出的其他 key）。
 #[tauri::command]
-fn harness_creds_write(codex_home: String, creds: HashMap<String, String>) -> Result<(), String> {
+pub fn harness_creds_write(codex_home: String, creds: HashMap<String, String>) -> Result<(), String> {
     let path = std::path::PathBuf::from(&codex_home).join(".env-provider");
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;

@@ -1,1 +1,1 @@
-{"default":{"identifier":"default","description":"主窗口默认能力：核心 IPC 命令访问","local":true,"windows":["main"],"permissions":["core:default"]}}
+{"default":{"identifier":"default","description":"主窗口默认能力：Tauri 2.x 标准 core:default + 额外窗口三按钮权限","local":true,"windows":["main"],"permissions":["core:default","shell:default","core:window:allow-minimize","core:window:allow-unminimize","core:window:allow-toggle-maximize","core:window:allow-maximize","core:window:allow-unmaximize","core:window:allow-close","core:window:allow-start-dragging","core:window:allow-is-maximized"]}}
