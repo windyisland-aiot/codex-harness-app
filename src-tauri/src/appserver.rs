@@ -2,32 +2,98 @@
 //!
 //! 全局状态 `CodexState` 保存：
 //! - `client`：可选的 `AppServerClient`；
-//! - `events`：后端从 app-server 收到的全部通知（供前端轮询渲染，如
-//!   `item/agentMessage/delta`、`turn/completed`）；
-//! - `approvals`：后端收到的审批请求（`item/commandExecution/requestApproval`
-//!   / `execCommandApproval`），T08 审批面板消费。
+//! - `events`：后端从 app-server 收到的全部通知（供前端轮询渲染）；
+//! - `approvals`：后端收到的审批请求。
 //!
 //! 命令均经 `spawn_blocking` 执行，避免阻塞主线程/UI。
 
 use std::collections::{HashMap, VecDeque};
+use std::io::Write;
 use std::sync::{Arc, Mutex};
+use std::time::SystemTime;
 
 use harness_appserver::{AppServerClient, AppServerConfig};
 use serde_json::Value;
 use tauri::State;
 
-/// 全局托管的 app-server 状态。
+/// 简易时间戳（YYYY-MM-DD HH:MM:SS.mmm），不依赖 chrono crate。
+fn chrono_like_now() -> String {
+    let dur = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default();
+    let secs = dur.as_secs() as i64;
+    let ms = dur.subsec_millis();
+    let t = libc_time_t_to_tuple(secs);
+    format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}:{:02}.{:03}",
+        t.tm_year, t.tm_mon, t.tm_mday,
+        t.tm_hour, t.tm_min, t.tm_sec,
+        ms
+    )
+}
+
+/// 把 Unix timestamp 转 UTC tm（不依赖 chrono）。
+fn libc_time_t_to_tuple(secs: i64) -> TmCompat {
+    let days = secs.div_euclid(86_400);
+    let rem = secs.rem_euclid(86_400);
+    let tm_sec = (rem % 60) as u32;
+    let rem = rem / 60;
+    let tm_min = (rem % 60) as u32;
+    let tm_hour = (rem / 60) as u32;
+    let (tm_year, tm_mon, tm_mday) = days_to_ymd(days);
+    TmCompat { tm_year, tm_mon, tm_mday, tm_hour, tm_min, tm_sec }
+}
+
+fn days_to_ymd(days: i64) -> (i32, u32, u32) {
+    // 简化算法（UTC，不考虑时区）
+    // 1970-01-01 为 day 0
+    let mut d = days;
+    let mut year: i32 = 1970;
+    loop {
+        let y_days = if is_leap(year) { 366 } else { 365 };
+        if d >= y_days {
+            d -= y_days;
+            year += 1;
+        } else {
+            break;
+        }
+    }
+    let month_days = [31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    let mut mon = 1u32;
+    let leap_extra = if is_leap(year) { 1 } else { 0 };
+    for (i, md) in month_days.iter().enumerate() {
+        let actual = *md + if i == 1 { leap_extra } else { 0 };
+        if d >= actual {
+            d -= actual;
+            mon += 1;
+        } else {
+            break;
+        }
+    }
+    (year, mon, (d + 1) as u32)
+}
+
+fn is_leap(y: i32) -> bool {
+    (y % 4 == 0 && y % 100 != 0) || (y % 400 == 0)
+}
+
+/// 简易 tm 结构（避免依赖 chrono crate；Rust 标准库 Tm 不稳定）。
+#[derive(Default, Clone, Copy)]
+struct TmCompat {
+    tm_year: i32,
+    tm_mon: u32,
+    tm_mday: u32,
+    tm_hour: u32,
+    tm_min: u32,
+    tm_sec: u32,
+}
+
 pub struct CodexState {
     pub client: Mutex<Option<AppServerClient>>,
-    /// 通知事件缓冲：(method, params)。前端调用 [`appserver_poll_events`] 取走。
     pub events: Mutex<VecDeque<(String, Value)>>,
-    /// 审批请求缓冲：(jsonrpc_id, method, params)。T08 消费。
     pub approvals: Mutex<VecDeque<(u64, String, Value)>>,
 }
 
 pub type CodexHandle = Arc<CodexState>;
 
-/// 注册为 Tauri 托管状态。
 pub fn managed_state() -> CodexHandle {
     Arc::new(CodexState {
         client: Mutex::new(None),
@@ -36,10 +102,34 @@ pub fn managed_state() -> CodexHandle {
     })
 }
 
+/// 从 `<codex_home>/.env-provider` 读取 key=value 行，返回 env 名→值映射。
+/// 此文件是凭据存储（纯文本，桌面单机应用可接受），与 codex config.toml 分离，
+/// 避免把 API key 误提交 / 误同步到任何仓库。
+fn load_provider_env(codex_home: &str) -> HashMap<String, String> {
+    let path = std::path::PathBuf::from(codex_home).join(".env-provider");
+    let mut out = HashMap::new();
+    if let Ok(s) = std::fs::read_to_string(&path) {
+        for raw in s.lines() {
+            let line = raw.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            if let Some((k, v)) = line.split_once('=') {
+                out.insert(k.trim().to_string(), v.trim().trim_matches('"').to_string());
+            }
+        }
+    }
+    out
+}
+
 /// 启动 `codex app-server` 子进程并完成 `initialize` 握手。
 ///
-/// `env` 为注入到 codex 子进程的额外环境变量（如 provider 的 API key，
-/// `OPENAI_API_KEY`/自定义 `env_key`），值不写入 config.toml（T07 安全传递）。
+/// 关键改动（v0.2.1→v0.3.0）：
+/// 1. 移除了 ark_gateway 内嵌网关启动——火山方舟 Responses 端点原生可用，
+///    codex 直接向 `https://ark.cn-beijing.volces.com/api/v3` 发 Responses 请求；
+/// 2. **自动注入 API key**：config.toml 的每个 provider 声明 `env_key = "VOLCENGINE_ARK_API_KEY"`
+///    （环境变量名），本函数扫描全部 provider 的 `env_key`，从 `<codex_home>/.env-provider`
+///    取出值，注入 codex 子进程环境。此前这一步缺失 → 401 → 对话完全静默失败。
 #[tauri::command]
 pub async fn appserver_start(
     state: State<'_, CodexHandle>,
@@ -48,62 +138,106 @@ pub async fn appserver_start(
     env: Option<HashMap<String, String>>,
 ) -> Result<String, String> {
     let st = state.inner().clone();
+    let codex_home_log = codex_home.clone();
     tauri::async_runtime::spawn_blocking(move || {
-        // ⚠️ 启动 codex 子进程前先做一次配置读取（会触发自动迁移）：
-        // 把旧版 wire_api="chat"、Ark base_url 直连等问题修正并写回磁盘，
-        // 确保后续 codex app-server 加载到的 config.toml 始终合规。
-        // ——迁移/写入失败直接报错返回，绝不带着 wire_api=chat 启动 codex。
-        harness_config::read(&codex_home)
+        // 初始化日志文件（便于用户在生产环境排查问题）
+        let _ = std::fs::create_dir_all(&codex_home_log);
+        let log_path = std::path::Path::new(&codex_home_log).join("harness.log");
+        let log_f = std::fs::OpenOptions::new()
+            .create(true).append(true).open(&log_path)
+            .ok();
+        let mut log = |msg: &str| {
+            let line = format!("[{}] {msg}\n", chrono_like_now());
+            eprint!("{}", line);
+            if let Some(mut f) = log_f.as_ref() {
+                let _ = std::io::Write::write_all(&mut f, line.as_bytes());
+            }
+        };
+
+        log(&format!("▶ appserver_start: bin={codex_bin}, home={codex_home_log}"));
+
+        // 读 config（会自动迁移 wire_api/base_url/provider_type 等）
+        let cfg = harness_config::read(&codex_home_log)
             .map_err(|e| format!("config 迁移失败: {e}"))?;
 
-        let mut child_env = HashMap::new();
-        child_env.insert("CODEX_HOME".to_string(), codex_home.clone());
-
-        // --- 内嵌 Ark 网关（协议归一化） ---
-        // codex config.toml 的 provider base_url 指向 127.0.0.1:18762/v1，
-        // 网关把 Responses SSE 转发到火山方舟并做归一化（过滤 reasoning、补 content）。
-        // API key 只由网关持有，无需注入 codex 子进程环境。
-        let gw_port = crate::ark_gateway::start_gateway()
-            .map_err(|e| format!("启动 Ark 网关失败: {e}"))?;
-        child_env.insert(
-            "HARNESS_ARK_GW_PORT".to_string(),
-            gw_port.to_string(),
-        );
-
-        if let Some(extra) = env {
-            child_env.extend(extra);
+        log(&format!("  config: model={}, modelProvider={}, providers={}",
+            cfg.model, cfg.model_provider, cfg.model_providers.len()));
+        for p in &cfg.model_providers {
+            log(&format!("    - id={}, env_key={}, base_url={}", p.id, p.env_key, p.base_url));
         }
 
-        // 兼容老测试：透传 MOCK_KEY（若有）。
+        let mut child_env = HashMap::new();
+        child_env.insert("CODEX_HOME".to_string(), codex_home_log.clone());
+
+        // --- 按 config.toml 的 provider.env_key 注入 API key ---
+        let creds = load_provider_env(&codex_home_log);
+        log(&format!("  creds loaded: {} keys", creds.len()));
+
+        for p in &cfg.model_providers {
+            let ek = p.env_key.trim();
+            if ek.is_empty() { continue; }
+            match creds.get(ek).filter(|v| !v.is_empty()) {
+                Some(v) => {
+                    child_env.entry(ek.to_string()).or_insert_with(|| v.clone());
+                    log(&format!("  ✅ 注入 env {ek}=***({})", v.len()));
+                }
+                None => {
+                    log(&format!("  ⚠️ provider {p} 的 env_key={ek} 未配置 API key → 该 provider 调用会 401"));
+                }
+            }
+        }
+
+        // 前端传的额外 env
+        if let Some(extra) = env {
+            for (k, v) in extra {
+                child_env.entry(k).or_insert(v);
+            }
+        }
+
         if let Ok(m) = std::env::var("MOCK_KEY") {
             child_env.entry("MOCK_KEY".to_string()).or_insert(m);
         }
+
+        log(&format!("  最终注入子进程 env: {} 项", child_env.len()));
+
         let st_notif = st.clone();
         let st_req = st.clone();
-        let cfg = AppServerConfig {
+        let app_cfg = AppServerConfig {
             codex_bin,
             env: Some(child_env),
             cwd: None,
-            default_timeout_ms: 90_000,
+            default_timeout_ms: 180_000,
             on_notification: Some(Box::new(move |method, params| {
+                // 只把重要通知写到 harness.log，避免刷屏
+                let is_important = matches!(method, "turn/completed" | "thread/started" | "error" | "warning" | "turn/started");
+                if is_important {
+                    eprintln!("[notif] {method}");
+                }
                 let mut g = st_notif.events.lock().unwrap();
-                if g.len() > 100_000 {
+                if g.len() > 200_000 {
                     g.pop_front();
                 }
                 g.push_back((method.to_string(), Value::Object(params.clone())));
             })),
             on_server_request: Some(Box::new(move |req_id, method, params| {
-                // 审批请求先在缓冲中登记，交由 T08 审批面板决定回包；
-                // 此层不自动回包（返回 None 表示稍后由业务侧回包）。
+                eprintln!("[srv-req] #{req_id} {method}");
                 let mut g = st_req.approvals.lock().unwrap();
                 g.push_back((req_id, method.to_string(), Value::Object(params.clone())));
                 None
             })),
             ..Default::default()
         };
-        let mut client = AppServerClient::new(cfg).map_err(|e| e.to_string())?;
-        let init = client.initialize("harness-app", "0.1.0").map_err(|e| e.to_string())?;
+
+        log("▶ 启动 codex app-server 子进程…");
+        let mut client = AppServerClient::new(app_cfg)
+            .map_err(|e| format!("codex 子进程启动失败: {e}"))?;
+
+        log("▶ 执行 initialize 握手…");
+        let init = client.initialize("harness-app", "0.3.0")
+            .map_err(|e| format!("codex initialize 失败: {e}"))?;
         let user_agent = init["userAgent"].as_str().unwrap_or("harness").to_string();
+        log(&format!("✅ codex app-server 就绪: {user_agent}"));
+
         *st.client.lock().map_err(|e| e.to_string())? = Some(client);
         Ok::<String, String>(user_agent)
     })
@@ -111,10 +245,6 @@ pub async fn appserver_start(
     .map_err(|e| e.to_string())?
 }
 
-/// 创建新会话线程，返回 thread id。
-///
-/// `model`/`model_provider` 为空串时交给 codex 从 `config.toml` 解析
-/// （T07 单模型配置驱动）。
 #[tauri::command]
 pub async fn appserver_thread_start(
     state: State<'_, CodexHandle>,
@@ -134,7 +264,6 @@ pub async fn appserver_thread_start(
     .map_err(|e| e.to_string())?
 }
 
-/// 开启一轮对话，返回 turn/start 响应。
 #[tauri::command]
 pub async fn appserver_turn_start(
     state: State<'_, CodexHandle>,
@@ -152,7 +281,6 @@ pub async fn appserver_turn_start(
     .map_err(|e| e.to_string())?
 }
 
-/// 轮询并取走自上次以来缓冲的通知（`[{method, params}, ...]`）。
 #[tauri::command]
 pub async fn appserver_poll_events(state: State<'_, CodexHandle>) -> Result<Vec<Value>, String> {
     let st = state.inner().clone();
@@ -168,7 +296,6 @@ pub async fn appserver_poll_events(state: State<'_, CodexHandle>) -> Result<Vec<
     .map_err(|e| e.to_string())?
 }
 
-/// 更新现有线程的模型，覆盖随后的 turn（T10 多模型切换）。
 #[tauri::command]
 pub async fn appserver_thread_set_model(
     state: State<'_, CodexHandle>,
@@ -187,7 +314,6 @@ pub async fn appserver_thread_set_model(
     .map_err(|e| e.to_string())?
 }
 
-/// 取走待处理的审批请求（`[{id, method, params}, ...]`）。T08 审批面板消费。
 #[tauri::command]
 pub async fn appserver_poll_approvals(state: State<'_, CodexHandle>) -> Result<Vec<Value>, String> {
     let st = state.inner().clone();
@@ -205,7 +331,6 @@ pub async fn appserver_poll_approvals(state: State<'_, CodexHandle>) -> Result<V
     .map_err(|e| e.to_string())?
 }
 
-/// 回复某个审批请求（`{"decision": "accept"|"acceptForSession"|"decline"|"cancel"}`）。
 #[tauri::command]
 pub async fn appserver_respond_approval(
     state: State<'_, CodexHandle>,
@@ -223,7 +348,6 @@ pub async fn appserver_respond_approval(
     .map_err(|e| e.to_string())?
 }
 
-/// 停止 app-server 子进程。
 #[tauri::command]
 pub async fn appserver_stop(state: State<'_, CodexHandle>) -> Result<(), String> {
     let st = state.inner().clone();
@@ -236,4 +360,49 @@ pub async fn appserver_stop(state: State<'_, CodexHandle>) -> Result<(), String>
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+// ---------- 凭据读写：<codex_home>/.env-provider ----------
+
+#[tauri::command]
+fn harness_creds_read(codex_home: String) -> HashMap<String, String> {
+    load_provider_env(&codex_home)
+}
+
+/// 写凭据：前端传一组 env_key → api_value。合并进现有文件（保留未列出的其他 key）。
+#[tauri::command]
+fn harness_creds_write(codex_home: String, creds: HashMap<String, String>) -> Result<(), String> {
+    let path = std::path::PathBuf::from(&codex_home).join(".env-provider");
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    // 读现有，保留注释
+    let mut lines: Vec<String> = Vec::new();
+    if let Ok(s) = std::fs::read_to_string(&path) {
+        for raw in s.lines() {
+            let line = raw.to_string();
+            let trimmed = line.trim();
+            if trimmed.is_empty() || trimmed.starts_with('#') {
+                lines.push(line);
+                continue;
+            }
+            if let Some((k, _)) = trimmed.split_once('=') {
+                if creds.contains_key(k.trim()) {
+                    // 覆盖稍后做
+                    continue;
+                }
+                lines.push(line);
+            } else {
+                lines.push(line);
+            }
+        }
+    }
+    for (k, v) in &creds {
+        if v.trim().is_empty() {
+            continue;
+        }
+        lines.push(format!("{}={}", k.trim(), v.trim()));
+    }
+    std::fs::write(&path, lines.join("\n") + "\n").map_err(|e| e.to_string())?;
+    Ok(())
 }

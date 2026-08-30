@@ -487,3 +487,24 @@ export function fsWriteFile(
 ): Promise<void> {
   return invoke("fs_write_file", { root, relPath, content });
 }
+
+// ---------- v0.3.0 凭据（API key）读写 ----------
+
+/** 读取 `<codexHome>/.env-provider`：env_key → api_value。 */
+export function credsRead(codexHome: string): Promise<Record<string, string>> {
+  return invoke<Record<string, string>>("harness_creds_read", { codexHome });
+}
+
+/** 写凭据（合并进现有文件，保留未列出的 key；空值等于跳过）。 */
+export function credsWrite(
+  codexHome: string,
+  creds: Record<string, string>
+): Promise<void> {
+  return invoke("harness_creds_write", { codexHome, creds });
+}
+
+/** 重启 app-server：更新 API key / provider 后必须重启才能生效。 */
+export async function restart(opts: { codexBin: string; codexHome: string; env?: Record<string, string> }): Promise<string> {
+  try { await stop(); } catch { /* 初次启动时本来就没跑 */ }
+  return start(opts);
+}

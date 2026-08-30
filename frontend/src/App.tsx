@@ -7,27 +7,14 @@
 //! - 右栏：完全删除；审批改右下角浮层
 import { useEffect, useRef, useState } from "react";
 import Markdown from "./components/Markdown";
-import ConfigPanel from "./components/ConfigPanel";
-import RouterPanel from "./components/RouterPanel";
-import FeishuOAuthPanel from "./components/FeishuOAuthPanel";
-import PluginsPanel from "./components/PluginsPanel";
-import SearchPanel from "./components/SearchPanel";
-import SessionsPanel from "./components/SessionsPanel";
-import ToolPanel from "./components/ToolPanel";
-import FileTree from "./components/FileTree";
+import SettingsPanel from "./components/SettingsPanel";
 import ApprovalPanel from "./components/ApprovalPanel";
 import * as codex from "./codexClient";
 import type {
   ApprovalRequest,
-  AppConfig,
-  ProviderConfig,
-  RouteDecision,
   ResolvedPaths,
   SessionMeta,
 } from "./codexClient";
-import { MODEL_PRESETS, presetFor } from "./models";
-import type { ModelPreset } from "./models";
-import ModelSwitcher from "./components/ModelSwitcher";
 
 // 窗口控制：Tauri 2.x 下优先用 @tauri-apps/api/window 的 getCurrentWindow() 实例方法。
 // 如果 `toggleMaximize` 在个别运行时不存在，退化为 maximize/unmaximize；
@@ -215,12 +202,8 @@ export default function App() {
   const [model, setModel] = useState("ark-code-latest");
   const [provider, setProvider] = useState("volcengine-ark");
 
-  // ------- 各类 modal 开关（保留原 ConfigPanel 等独立组件） -------
-  const [cfgOpen, setCfgOpen] = useState(false);
-  const [feishuOpen, setFeishuOpen] = useState(false);
-  const [pluginsOpen, setPluginsOpen] = useState(false);
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [sessionsOpen, setSessionsOpen] = useState(false);
+  // ------- 设置面板开关（v0.3.0 统一成单个 SettingsPanel） -------
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [approvalOpen, setApprovalOpen] = useState(false);
 
   // ------- 连接 & 状态 -------
@@ -266,7 +249,6 @@ export default function App() {
   const [terminalLines, setTerminalLines] = useState<
     Array<{ ts: number; text: string; stream?: "stdout" | "stderr" | "meta" }>
   >([]);
-  const [browserUrl, setBrowserUrl] = useState("");
 
   // ------- Refs 用于 timer 里拿最新值 -------
   const threadProviderRef = useRef<string | null>(null);
@@ -315,10 +297,6 @@ export default function App() {
           const cfg = await codex.configRead(p.codexHome);
           if (cfg.model) setModel(cfg.model);
           if (cfg.modelProvider) setProvider(cfg.modelProvider);
-          const preset = presetFor(cfg.modelProvider || "");
-          if (preset && cfg.model && !preset.models.includes(cfg.model)) {
-            setModel(preset.default_model);
-          }
         } catch { /* 首次无配置用前端默认 */ }
 
         try {
@@ -452,7 +430,7 @@ export default function App() {
     hasMessages: messages.length > 0, hasError: !!lastError,
   });
 
-  const presetName = MODEL_PRESETS.find((p) => p.id === provider)?.name || provider || "未知";
+  const presetName = provider || model || "未设置";
 
   // ------- 动作回调 -------
   async function respondApproval(id: number, decision: string) {
@@ -482,23 +460,50 @@ export default function App() {
       // Work/Code/Design Pill 仅视觉（需求 #2：用户声明 work 和 code 无意义）
       const promptText = text;
       let routeModel = model; let routeProvider = provider;
+
+      // --- 阶段 1：路由（可选） ---
       if (autoRoute) {
         try {
           const d = await codex.route(promptText, { sensitive });
           routeModel = d.model; routeProvider = d.provider;
-        } catch (e) { setStatus(`路由失败，回退当前模型: ${e}`); }
+          setTerminalLines((prev) => [
+            ...prev, { ts: Date.now(), text: `[route] ${routeProvider} / ${routeModel}`, stream: "meta" as const },
+          ].slice(-500));
+        } catch (e) {
+          setStatus(`路由失败，回退当前模型: ${e}`);
+          setTerminalLines((prev) => [
+            ...prev, { ts: Date.now(), text: `[route] 失败，回退 ${provider}/${model}: ${e}`, stream: "stderr" as const },
+          ].slice(-500));
+        }
       }
+
+      // --- 阶段 2：建线程（如果需要） ---
       let threadId = activeThreadRef.current;
       if (!threadId) {
-        const nid = await codex.threadStart({ model: routeModel, modelProvider: routeProvider, cwd });
-        threadId = nid;
-        threadProviderRef.current = routeProvider;
-        setActiveThread(nid);
-        setSessions((s) => [...s, {
-          id: nid,
-          title: text.slice(0, 24) + (text.length > 24 ? "…" : ""),
-          provider: routeProvider, model: routeModel, status: "running",
-        }]);
+        setStatus("创建会话…");
+        try {
+          const nid = await codex.threadStart({ model: routeModel, modelProvider: routeProvider, cwd });
+          threadId = nid;
+          threadProviderRef.current = routeProvider;
+          setActiveThread(nid);
+          setSessions((s) => [...s, {
+            id: nid,
+            title: text.slice(0, 24) + (text.length > 24 ? "…" : ""),
+            provider: routeProvider, model: routeModel, status: "running",
+          }]);
+          setTerminalLines((prev) => [
+            ...prev, { ts: Date.now(), text: `[thread/start] ok → ${nid}`, stream: "meta" as const },
+          ].slice(-500));
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          setLastError(msg);
+          setStatus(`创建会话失败（可能是 provider/model 配置不正确）：${msg}`);
+          setTerminalLines((prev) => [
+            ...prev, { ts: Date.now(), text: `[thread/start] 失败: ${msg}`, stream: "stderr" as const },
+          ].slice(-500));
+          console.error("[thread/start] failed", e);
+          return;
+        }
       } else if (autoRoute && routeModel !== model) {
         try { await codex.threadSetModel(threadId, routeModel); }
         catch (e) { setStatus(`切换路由模型失败: ${e}`); }
@@ -506,12 +511,30 @@ export default function App() {
       if (routeModel !== model || routeProvider !== provider) {
         setModel(routeModel); setProvider(routeProvider);
       }
+
+      // --- 阶段 3：发消息（turn/start） ---
       const tid = threadId as string;
-      await codex.turnStart({ threadId: tid, cwd, text: promptText });
-      setRunning(true);
+      setStatus("发送中…");
+      try {
+        await codex.turnStart({ threadId: tid, cwd, text: promptText });
+        setTerminalLines((prev) => [
+          ...prev, { ts: Date.now(), text: `[turn/start] ok，等待 LLM 回复…`, stream: "meta" as const },
+        ].slice(-500));
+        setRunning(true);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        setLastError(msg);
+        setStatus(`发送消息失败: ${msg}`);
+        setTerminalLines((prev) => [
+          ...prev, { ts: Date.now(), text: `[turn/start] 失败: ${msg}`, stream: "stderr" as const },
+        ].slice(-500));
+        console.error("[turn/start] failed", e);
+        return;
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setLastError(msg); setStatus(`发送失败: ${msg}`);
+      console.error("[send] unexpected", e);
     } finally { setPending(false); }
   }
 
@@ -532,7 +555,7 @@ export default function App() {
         provider: d.meta.provider, model: d.meta.model, status: "done",
       }]
     );
-    setSessionsOpen(false);
+    setSettingsOpen(false);
   }
 
   async function handleSideSessionClick(id: string) {
@@ -545,66 +568,10 @@ export default function App() {
     }
   }
 
-  function onConfigSaved(c: AppConfig) {
-    if (c.model) setModel(c.model);
-    if (c.modelProvider) setProvider(c.modelProvider);
-  }
-
-  async function applyProvider(preset: ModelPreset) {
-    if (!codexHome) { setStatus("codexHome 尚未就绪"); return; }
-    const nextModel = preset.models.includes(model) ? model : preset.default_model;
-    setProvider(preset.id); setModel(nextModel);
-    try {
-      const cfg = await codex.configRead(codexHome);
-      const idx = cfg.modelProviders.findIndex((p) => p.id === preset.id);
-      const prov: ProviderConfig = {
-        id: preset.id, name: preset.name, type: "Custom",
-        baseUrl: preset.base_url, envKey: preset.env_key, wireApi: preset.wire_api,
-      };
-      if (idx >= 0) cfg.modelProviders[idx] = prov; else cfg.modelProviders.push(prov);
-      cfg.model = nextModel; cfg.modelProvider = preset.id;
-      await codex.configWrite(codexHome, cfg);
-      setStatus(`已切换到 ${preset.name} · ${nextModel}`);
-    } catch (e) { setStatus(`保存提供商失败: ${e}`); }
-    const tid = activeThreadRef.current;
-    if (tid && threadProviderRef.current === preset.id) {
-      try { await codex.threadSetModel(tid, nextModel); }
-      catch (e) { setStatus(`切换线程模型失败: ${e}`); }
-    }
-  }
-
-  async function applyModel(nextModel: string) {
-    setModel(nextModel);
-    const tid = activeThreadRef.current;
-    if (tid && threadProviderRef.current === provider) {
-      try { await codex.threadSetModel(tid, nextModel); setStatus(`本会话模型已切换为 ${nextModel}`); }
-      catch (e) { setStatus(`切换线程模型失败: ${e}`); }
-    }
-  }
-
-  async function handleRouted(d: RouteDecision | null) {
-    if (!d || d.model === model) return;
-    setModel(d.model); setProvider(d.provider);
-    const tid = activeThreadRef.current;
-    if (tid) {
-      try { await codex.threadSetModel(tid, d.model); setStatus(`已按路由应用 ${d.provider}/${d.model}`); }
-      catch (e) { setStatus(`应用路由模型失败: ${e}`); }
-    } else {
-      setStatus(`路由推荐 ${d.provider}/${d.model}（新会话将使用）`);
-    }
-  }
-
   function finishOnboarding() {
     try { window.localStorage.setItem(ONBOARDING_KEY, "1"); } catch {}
     setOnboardingOpen(false);
   }
-
-  // ------- 未使用但保留（确保 import 不丢） -------
-  // RouterPanel / ToolPanel / FileTree / SearchPanel 保留引用以免构建时报 unused import
-  void RouterPanel; void ToolPanel; void FileTree; void SearchPanel;
-  void handleRouted; void oboKey; void browserUrl; void setBrowserUrl;
-  // 2026-08-30 精简：UI 不再暴露 provider/model 下拉，但逻辑保留以防以后复用时需要
-  void applyProvider; void applyModel; void ModelSwitcher;
 
   const filteredSessions = sessions
     .filter((s) => !sideSearch || s.title.toLowerCase().includes(sideSearch.toLowerCase()))
@@ -632,7 +599,7 @@ export default function App() {
         <button
           className="tb-icon-btn"
           data-tauri-drag-region="false"
-          onClick={() => setSessionsOpen(true)}
+          onClick={() => setSettingsOpen(true)}
           title="搜索任务"
         >
           {IconSearch}
@@ -692,7 +659,7 @@ export default function App() {
               <span className="ic-wrap">{IconPlus}</span>
               <span>新建任务</span>
             </button>
-            <button className="sb-menu-item" onClick={() => setPluginsOpen(true)}>
+            <button className="sb-menu-item" onClick={() => setSettingsOpen(true)}>
               <span className="ic-wrap gr">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8.11 2.79a3 3 0 0 1 4.24 4.24 3 3 0 0 1 4.24 4.24 3 3 0 0 1 4.62 4.62z"/></svg>
               </span>
@@ -710,7 +677,7 @@ export default function App() {
               </span>
               <span>自动化</span>
             </button>
-            <button className="sb-menu-item" onClick={() => setFeishuOpen(true)}>
+            <button className="sb-menu-item" onClick={() => setSettingsOpen(true)}>
               <span className="ic-wrap gn">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
               </span>
@@ -724,7 +691,7 @@ export default function App() {
           <div className="sb-section-head">
             <div className="sb-section-label">任务列表</div>
             <div className="sb-section-tools">
-              <button className="tb-icon-btn tiny" onClick={() => setSessionsOpen(true)} title="打开会话面板">
+              <button className="tb-icon-btn tiny" onClick={() => setSettingsOpen(true)} title="打开会话面板">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
               </button>
               <button className="tb-icon-btn tiny" onClick={newChat} title="新建任务">
@@ -786,7 +753,7 @@ export default function App() {
             </div>
             <button
               className="tb-icon-btn tiny"
-              onClick={() => setCfgOpen(true)}
+              onClick={() => setSettingsOpen(true)}
               title="设置"
               aria-label="设置"
             >
@@ -963,11 +930,10 @@ export default function App() {
       )}
 
       {/* ============ Modals（保留全部）============ */}
-      <ConfigPanel open={cfgOpen} onClose={() => setCfgOpen(false)} codexHome={codexHome} onSaved={onConfigSaved} onStatus={setStatus} />
-      <FeishuOAuthPanel open={feishuOpen} onClose={() => setFeishuOpen(false)} onStatus={setStatus} />
-      <PluginsPanel open={pluginsOpen} onClose={() => setPluginsOpen(false)} codexHome={codexHome} onStatus={setStatus} />
-      <SearchPanel open={searchOpen} onClose={() => setSearchOpen(false)} codexHome={codexHome} onStatus={setStatus} />
-      <SessionsPanel open={sessionsOpen} onClose={() => setSessionsOpen(false)} codexHome={codexHome} onLoad={handleLoadSession} onStatus={setStatus} />
+
+
+
+
 
       {/* ============ 首次启动向导 ============ */}
       {onboardingOpen && (
@@ -1039,6 +1005,27 @@ export default function App() {
           </div>
         </div>
       )}
+
+      <SettingsPanel
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        codexHome={codexHome}
+        codexBin={paths?.codexBin ?? ""}
+        onSaved={async () => {
+          // codex 已重启（API key + provider 配置生效），重新读取 config 更新本地状态
+          try {
+            const cfg = await codex.configRead(codexHome);
+            if (cfg.model) setModel(cfg.model);
+            if (cfg.modelProvider) setProvider(cfg.modelProvider);
+          } catch {}
+          // 清理当前线程——codex 重启了 thread 引用失效
+          setActiveThread(null);
+          setMessages([]);
+          setRunning(false);
+          setStatus("设置已保存并生效 ✅ 可以开始对话了");
+        }}
+        onStatus={setStatus}
+      />
     </div>
   );
 }
