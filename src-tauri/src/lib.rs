@@ -13,6 +13,7 @@ mod feishu;
 mod fs;
 mod oauth;
 mod plugins;
+mod rag;
 mod router;
 mod search;
 mod sessions;
@@ -156,6 +157,9 @@ pub fn run() {
             search::search_execute,
             search::search_register_mcp,
             search::search_status,
+            rag::rag_register,
+            rag::rag_status,
+            rag::rag_health,
             sessions::session_save,
             sessions::session_list,
             sessions::session_search,

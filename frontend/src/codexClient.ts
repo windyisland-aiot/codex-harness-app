@@ -478,3 +478,44 @@ export async function restart(opts: { codexBin: string; codexHome: string; env?:
   try { await stop(); } catch { /* 初次启动时本来就没跑 */ }
   return start(opts);
 }
+
+// --- T18 知识库 RAG ---
+
+export interface RagStatus {
+  registered: boolean;
+  enabled: boolean;
+  baseUrl?: string;
+  collection?: string;
+  command?: string;
+}
+export interface RagHealth {
+  ok: boolean;
+  baseUrl: string;
+  message: string;
+  hint?: string;
+}
+
+/** 一键注册 `[mcp_servers.rag]`；默认 base/collection 为空时由后端使用预设。 */
+export function ragRegister(opts: {
+  codexHome: string;
+  baseUrl?: string;
+  defaultCollection?: string;
+  envVars?: string[];
+}): Promise<RagStatus> {
+  return invoke<RagStatus>("rag_register", {
+    codexHome: opts.codexHome,
+    baseUrl: opts.baseUrl ?? null,
+    defaultCollection: opts.defaultCollection ?? null,
+    envVars: opts.envVars ?? null,
+  });
+}
+
+/** 回读 RAG 注册状态。 */
+export function ragStatus(codexHome: string): Promise<RagStatus> {
+  return invoke<RagStatus>("rag_status", { codexHome });
+}
+
+/** 检查 Chroma 服务存活；不传 baseUrl 时回退到默认值。 */
+export function ragHealth(baseUrl?: string): Promise<RagHealth> {
+  return invoke<RagHealth>("rag_health", { baseUrl: baseUrl ?? null });
+}

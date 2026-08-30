@@ -1627,7 +1627,27 @@ body.theme-dark .md :not(pre) > code {
 }
 .sp-switch input { accent-color: #7c5cff; }
 .sp-sub { font-size: 11.5px; color: var(--text-secondary); }
-.sp-actions { margin-bottom: 10px; }
+.sp-actions { margin-bottom: 10px; display: flex; flex-wrap: wrap; gap: 8px; }
+.sp-h-label { display: flex; align-items: baseline; }
+
+/* ---- RAG health card ---- */
+.sp-mcp-health-card {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 8px;
+  border: 1px solid var(--border-default);
+  background: var(--bg-surface);
+}
+.sp-mcp-health-card.ok {
+  border-color: #10B981;
+  background: linear-gradient(180deg, rgba(16,185,129,0.08), transparent);
+}
+.sp-mcp-health-card.bad {
+  border-color: #DC2626;
+  background: linear-gradient(180deg, rgba(220,38,38,0.06), transparent);
+}
+.sp-mcp-health-line { display: flex; gap: 8px; align-items: center; margin-top: 6px; font-size: 13px; }
+.sp-mcp-health-actions { margin-top: 10px; display: flex; justify-content: flex-end; }
 .sp-code {
   font-family: ui-monospace, Menlo, Consolas, monospace;
   font-size: 11.5px; background: var(--bg-surface);

@@ -192,6 +192,39 @@ export default function SettingsPanel({
     setDirty(true);
   };
 
+  const addRag = () => {
+    // 先在内存 cfg 里塞一个默认占位；保存后会走 rag_register 统一写（确保 args 结构与默认值与后端一致）。
+    setCfg((c) => {
+      const cur = c ?? defaultCfg();
+      if (cur.mcpServers.some((m) => m.id === "rag")) return cur;
+      return {
+        ...cur,
+        mcpServers: [...cur.mcpServers, {
+          id: "rag",
+          command: "./harness-rag-mcp",
+          args: ["--base-url", "http://127.0.0.1:18763", "--default-collection", "harness_default", "--log-level", "info"],
+          env: [],
+          envVars: ["CHROMA_SERVER_AUTHN_CREDENTIALS", "CHROMA_SERVER_AUTHN_PROVIDER"],
+          enabled: true,
+        }],
+      };
+    });
+    setDirty(true);
+  };
+
+  const addRagViaTauri = async () => {
+    // 通过 tauri 端写入 config.toml，然后刷新内存 cfg；优点：与 RagMcpConfig 默认值保持一致
+    try {
+      const s = await codex.ragRegister({ codexHome });
+      const fresh = await codex.configRead(codexHome);
+      setCfg(fresh);
+      setDirty(false);
+      onStatus(`知识库 RAG 已注册：${s.baseUrl || "(默认)"} / collection=${s.collection || "harness_default"}`);
+    } catch (e) {
+      onStatus(`启用 RAG 失败：${e}`);
+    }
+  };
+
   return (
     <div className="modal-backdrop" onClick={() => dirty ? null : onClose()}>
       <div className="settings-panel" onClick={(e) => e.stopPropagation()}>
@@ -246,7 +279,12 @@ export default function SettingsPanel({
             />
           )}
           {cfg && nav === "mcp" && (
-            <SectionMcp cfg={cfg} patch={patchCfg} updateMcp={updateMcp} addFeishu={addFeishu} />
+            <SectionMcp
+              cfg={cfg} patch={patchCfg} updateMcp={updateMcp}
+              addFeishu={addFeishu}
+              addRag={addRag}
+              addRagViaTauri={addRagViaTauri}
+            />
           )}
           {cfg && nav === "sessions" && <SectionSessions codexHome={codexHome} onStatus={onStatus} />}
           {cfg && nav === "search" && <SectionSearch cfg={cfg} patch={patchCfg} />}
@@ -574,20 +612,76 @@ function SectionModels({
 }
 
 function SectionMcp({
-  cfg, patch, updateMcp, addFeishu,
+  cfg, patch, updateMcp, addFeishu, addRag, addRagViaTauri,
 }: {
   cfg: AppConfig;
   patch: (p: Partial<AppConfig>) => void;
   updateMcp: (i: number, p: Partial<McpServerConfig>) => void;
   addFeishu: () => void;
+  addRag: () => void;
+  addRagViaTauri: () => void;
 }) {
+  const rag = cfg.mcpServers.find((m) => m.id === "rag");
+  const ragBase = rag
+    ? (rag.args[rag.args.findIndex((a) => a === "--base-url") + 1] || undefined)
+    : undefined;
+
+  const [ragHealth, setRagHealth] = useState<{ ok: boolean; message: string; hint?: string; checking: boolean } | null>(null);
+  const checkRagHealth = async (base?: string) => {
+    setRagHealth({ checking: true, ok: false, message: "检查中…" });
+    try {
+      const r = await codex.ragHealth(base);
+      setRagHealth({ checking: false, ok: r.ok, message: r.message, hint: r.hint });
+    } catch (e) {
+      setRagHealth({ checking: false, ok: false, message: `健康检查调用失败：${e}` });
+    }
+  };
+
   return (
     <div className="sp-section">
       <h2 className="sp-h">MCP Server</h2>
       <p className="sp-desc">Codex 启动时会自动拉起已启用的 MCP server（stdio 模式）。</p>
       <div className="sp-actions">
         <button className="sp-btn sp-btn-ghost" onClick={addFeishu}>+ 注册飞书 MCP（lark-openapi-mcp）</button>
+        <button className="sp-btn sp-btn-ghost" onClick={() => { addRag(); checkRagHealth(ragBase); }}>
+          + 启用知识库 RAG（Chroma 18763，内存配置）
+        </button>
+        <button className="sp-btn sp-btn-primary" onClick={async () => { await addRagViaTauri(); checkRagHealth(); }}>
+          ✓ 立即写入配置并启用 RAG（推荐）
+        </button>
       </div>
+
+      {rag && (
+        <div className={`sp-mcp-health-card ${ragHealth?.ok ? "ok" : ragHealth?.ok === false && !ragHealth?.checking ? "bad" : ""}`}>
+          <div className="sp-h-label">
+            <strong>Chroma 健康</strong>
+            <span style={{ color: "#6B7280", fontSize: 12, marginLeft: 10 }}>
+              base = {ragBase || "http://127.0.0.1:18763"}
+            </span>
+          </div>
+          <div className="sp-mcp-health-line">
+            {!ragHealth || ragHealth.checking ? (
+              <span style={{ color: "#6B7280" }}>未检查 · </span>
+            ) : (
+              <span style={{ color: ragHealth.ok ? "#10B981" : "#DC2626", fontWeight: 600 }}>
+                {ragHealth.ok ? "● Chroma 正常" : "● 未启动"}
+              </span>
+            )}
+            <span>{ragHealth?.message || ""}</span>
+          </div>
+          {ragHealth?.hint && (
+            <pre className="sp-code" style={{ marginTop: 6, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+              {ragHealth.hint}
+            </pre>
+          )}
+          <div className="sp-mcp-health-actions">
+            <button className="sp-btn sp-btn-ghost" onClick={() => checkRagHealth(ragBase)}>
+              {ragHealth?.checking ? "检查中…" : "重新检查"}
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="sp-card">
         {cfg.mcpServers.length === 0 ? (
           <div className="sp-empty">还没有 MCP server。</div>

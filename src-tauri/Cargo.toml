@@ -26,3 +26,4 @@ harness-feishu-oauth = { path = "../crates/feishu-oauth" }
 harness-plugins = { path = "../crates/harness-plugins" }
 harness-search = { path = "../crates/harness-search" }
 harness-sessions = { path = "../crates/harness-sessions" }
+harness-rag = { path = "../crates/harness-rag" }
