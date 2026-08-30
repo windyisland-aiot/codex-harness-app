@@ -260,6 +260,7 @@ export default function App() {
   const approvalsRef = useRef<ApprovalRequest[]>([]);
   const termRef = useRef(terminalLines);
   const msgsListRef = useRef<HTMLDivElement>(null);
+  const lastErrMergeRef = useRef<{ text: string; count: number } | null>(null);
   useEffect(() => { runningRef.current = running; }, [running]);
   useEffect(() => { activeThreadRef.current = activeThread; }, [activeThread]);
   useEffect(() => { msgsRef.current = messages; }, [messages]);
@@ -373,16 +374,43 @@ export default function App() {
         const events = await codex.pollEvents();
         const termAccum: Array<{ ts: number; text: string; stream?: "stdout" | "stderr" | "meta" }> = [];
         for (const e of events) {
-          if (e.method === "turn/completed") { setRunning(false); setLastError(null); continue; }
+          if (e.method === "turn/completed") {
+            setRunning(false); setLastError(null);
+            lastErrMergeRef.current = null;
+            continue;
+          }
           if (e.method === "error") {
-            const d = e.params as Record<string, unknown> | undefined;
-            const msg = d && typeof d.message === "string" ? d.message : String(d ?? "模型调用错误");
+            // 健壮解析错误信息（递归遍历 params 拿可读字段）
+            const msg = extractErrorText(e.params);
             setLastError(msg);
-            termAccum.push({ ts: Date.now(), text: "[ERROR] " + msg, stream: "stderr" });
+            // 合并连续相同错误：上次一样就只累乘不重复打 stderr 行
+            const last = lastErrMergeRef.current;
+            if (last && last.text === msg) {
+              last.count += 1;
+              // 更新已累积的 stderr 行最后一条的 count 文本（原地改 termAccum）
+              const idx = termAccum.length - 1;
+              if (idx >= 0 && termAccum[idx].text.startsWith("[ERROR] ")) {
+                termAccum[idx] = { ts: Date.now(), text: `[ERROR] ${msg}  ×${last.count} 次`, stream: "stderr" };
+              }
+              continue;
+            }
+            lastErrMergeRef.current = { text: msg, count: 1 };
+            termAccum.push({ ts: Date.now(), text: `[ERROR] ${msg}`, stream: "stderr" });
+            // 附一条 JSON dump（meta 流，方便贴到 issue）
+            try {
+              const dump = JSON.stringify(e.params, null, 2);
+              const short = dump.length > 300 ? dump.slice(0, 300) + "…" : dump;
+              termAccum.push({ ts: Date.now(), text: `[ERROR-DUMP] ${short}`, stream: "meta" });
+            } catch {}
+            continue;
           }
           // --- 抓取命令输出（Codex 两种 method 名做双保险）---
           const cmdDelta = extractCmdDelta(e);
-          if (cmdDelta) termAccum.push(cmdDelta);
+          if (cmdDelta) {
+            // 非 error 事件出现 → 打断 error 合并
+            if (lastErrMergeRef.current) lastErrMergeRef.current = null;
+            termAccum.push(cmdDelta);
+          }
 
           const d = codex.textDelta(e);
           if (d === null) continue;
@@ -1069,6 +1097,59 @@ export default function App() {
 }
 
 /* ---------- 工具函数 ---------- */
+
+/** 从任意 JSON-RPC error params 里提取可读错误信息。
+ *  Codex 会把错误包成多种形态：
+ *    1. { message: "...", code: "...", ... }
+ *    2. { error: { message: "...", code: ... }, message?: "..." }
+ *    3. { error: "纯字符串" }
+ *    4. 嵌套到 item/params/error/ 里
+ *    5. Error 对象 JSON 化只剩 {}
+ *  本函数递归搜索，优先返回 message/code 组合；实在找不到返回 JSON dump 截断版。
+ */
+function extractErrorText(p: unknown, depth = 0): string {
+  if (p == null) return "模型调用错误";
+  if (typeof p === "string") return p;
+  if (typeof p === "number" || typeof p === "boolean") return String(p);
+  if (depth > 3) return "";
+  if (Array.isArray(p)) {
+    for (const item of p) {
+      const t = extractErrorText(item, depth + 1);
+      if (t) return t;
+    }
+    return "";
+  }
+  if (typeof p === "object") {
+    const o = p as Record<string, unknown>;
+    // 优先：error.message + code 组合
+    const code = o.code ?? o.errorCode ?? o.status_code ?? o.status ?? o.httpStatus;
+    const codeStr = code != null ? ` (${code})` : "";
+    if (typeof o.message === "string" && o.message.trim()) return o.message.trim() + codeStr;
+    // error 嵌套
+    if (o.error != null) {
+      const nested = extractErrorText(o.error, depth + 1);
+      if (nested) return nested + codeStr;
+    }
+    // detail / reason / description
+    for (const key of ["detail", "reason", "description", "error_description", "err", "statusText"]) {
+      if (typeof o[key] === "string" && (o[key] as string).trim()) {
+        return (o[key] as string).trim() + codeStr;
+      }
+    }
+    // 兜底：第一个 string 值
+    for (const k of Object.keys(o)) {
+      const v = o[k];
+      if (typeof v === "string" && v.trim() && k !== "type") return `${v.trim()}${codeStr}`;
+    }
+  }
+  // 最后兜底：JSON dump（截断）
+  try {
+    const dump = JSON.stringify(p, null, 2);
+    return dump.length > 400 ? dump.slice(0, 400) + "…" : dump;
+  } catch {
+    return String(p);
+  }
+}
 
 function shortPath(p: string): string {
   if (!p) return "—";
