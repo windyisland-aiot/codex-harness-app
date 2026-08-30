@@ -327,86 +327,248 @@ function SectionModels({
 }) {
   const hasProviders = cfg.modelProviders.length > 0;
   const currentProvider = cfg.modelProviders.find((p) => p.id === cfg.modelProvider);
+
+  // ---------- 编辑弹窗：null = 关闭，数字 = 正在编辑的 provider index ----------
+  const [editIdx, setEditIdx] = useState<number | null>(null);
+  const isNew = editIdx === -1;
+
+  // 点击 + 添加模型：先创建一个空 provider 模板，然后打开编辑
+  function handleAddAndEdit() {
+    addProvider(); // 创建并推入 modelProviders
+    // 下一个 tick 时最后一个元素就是新的
+    setTimeout(() => setEditIdx(cfg.modelProviders.length), 0);
+  }
+
+  // ---------- SVG 图标 helpers（inline 无依赖） ----------
+  const IcPencil = (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+    </svg>
+  );
+  const IcTrash = (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/>
+      <path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/>
+    </svg>
+  );
+  const IcCheck = (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="20 6 9 17 4 12"/>
+    </svg>
+  );
+
+  function displayName(p: ProviderConfig) {
+    return p.name && p.name.trim() ? p.name : p.id || "(未命名)";
+  }
+  function avatarLetter(p: ProviderConfig) {
+    const n = displayName(p).trim();
+    return n ? n.charAt(0).toUpperCase() : "?";
+  }
+
+  const editing = (editIdx !== null && editIdx >= 0) ? cfg.modelProviders[editIdx] : null;
+  const editingCredsKey = editing?.envKey ?? "";
+
   return (
     <div className="sp-section">
-      <h2 className="sp-h">模型供应商</h2>
+      <h2 className="sp-h">模型</h2>
       <p className="sp-desc">
-        添加模型供应商后，在下方填入 API key 和默认模型名（默认模型名在"通用"tab 设置）。
-        保存后 codex 会按各 provider 的 <code>env_key</code> 从 <code>.env-provider</code> 读取凭据注入子进程。
+        模型管理 · 配置 API Key 添加更多可用模型，预置模型默认使用稳定版本。
       </p>
 
-      <div className="sp-card sp-current-hint">
-        <div><strong>当前默认：</strong> {currentProvider ? `${currentProvider.name} (${currentProvider.id})` : "未设置"}</div>
-        <div><strong>默认模型名：</strong> <code>{cfg.model || "ark-code-latest"}</code>（在"通用"tab 修改）</div>
+      <div className="sp-current-hint" style={{
+        background: "transparent",
+        padding: "0 0 12px",
+        border: "none",
+        display: "flex",
+        flexDirection: "column",
+        gap: 2,
+      }}>
+        <div style={{ fontSize: 12, color: "#6B7280" }}>
+          当前默认模型：<strong style={{ color: "#111827", fontWeight: 600 }}>{cfg.model || "ark-code-latest"}</strong>
+          <span style={{ margin: "0 6px" }}>·</span>
+          供应商：<strong style={{ color: "#111827", fontWeight: 600 }}>{currentProvider ? `${currentProvider.name} (${currentProvider.id})` : "(未设置)"}</strong>
+        </div>
       </div>
 
-      <button className="sp-btn sp-btn-primary sp-add-btn" onClick={addProvider}>+ 添加模型</button>
+      <button className="sp-btn sp-btn-ghost sp-add-btn" onClick={handleAddAndEdit}>+ 添加模型</button>
 
-      <div className="sp-card">
-        <table className="sp-table">
-          <thead>
-            <tr>
-              <th style={{ width: 34 }}></th>
-              <th>名称</th>
-              <th>Provider ID</th>
-              <th>Base URL</th>
-              <th>env_key</th>
-              <th>wire_api</th>
-              <th>API Key</th>
-              <th style={{ width: 140 }}>操作</th>
+      <table className="tw-model-table">
+        <thead>
+          <tr>
+            <th>模型</th>
+            <th>服务商</th>
+            <th style={{ width: 150, textAlign: "right" }}>操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          {!hasProviders && (
+            <tr className="tw-empty-row">
+              <td colSpan={3}>还没有模型，点上方「+ 添加模型」开始。</td>
             </tr>
-          </thead>
-          <tbody>
-            {cfg.modelProviders.map((p, i) => (
-              <tr key={p.id}>
+          )}
+          {cfg.modelProviders.map((p, i) => {
+            const isDefault = cfg.modelProvider === p.id;
+            return (
+              <tr key={p.id} className={isDefault ? "is-default" : ""}>
                 <td>
-                  <input
-                    type="radio"
-                    name="default-provider"
-                    checked={cfg.modelProvider === p.id}
-                    onChange={() => selectAsDefault(i)}
-                    title="设为默认供应商"
-                  />
-                </td>
-                <td><input className="sp-input sp-input-sm" value={p.name} onChange={(e) => updateProvider(i, { name: e.target.value })} /></td>
-                <td><input className="sp-input sp-input-sm sp-input-code" value={p.id} onChange={(e) => updateProvider(i, { id: e.target.value })} /></td>
-                <td><input className="sp-input sp-input-sm" value={p.baseUrl} onChange={(e) => updateProvider(i, { baseUrl: e.target.value })} placeholder="https://ark.cn-beijing.volces.com/api/coding/v3" /></td>
-                <td><input className="sp-input sp-input-sm sp-input-code" value={p.envKey} onChange={(e) => updateProvider(i, { envKey: e.target.value })} placeholder="ARK_API_KEY" /></td>
-                <td>
-                  <select className="sp-input sp-input-sm" value={p.wireApi} onChange={(e) => updateProvider(i, { wireApi: e.target.value })}>
-                    <option value="responses">responses</option>
-                    <option value="chat">chat</option>
-                  </select>
-                </td>
-                <td>
-                  <div className="sp-key-wrap">
-                    <input
-                      className="sp-input sp-input-sm"
-                      type={showKey[p.envKey] ? "text" : "password"}
-                      placeholder={creds[p.envKey] ? "•••••• 已填" : "未设置"}
-                      value={creds[p.envKey] ?? ""}
-                      onChange={(e) => setCreds({ ...creds, [p.envKey]: e.target.value })}
-                    />
-                    <button
-                      type="button"
-                      className="sp-key-toggle"
-                      onClick={() => setShowKey((s) => ({ ...s, [p.envKey]: !s[p.envKey] }))}
-                    >{showKey[p.envKey] ? "隐藏" : "显示"}</button>
+                  <div className="tw-model-cell">
+                    <div className={`tw-model-icon ${isDefault ? "" : "off"}`} title={isDefault ? "默认供应商" : "非默认"}>
+                      {avatarLetter(p)}
+                    </div>
+                    <div className="tw-model-main">
+                      <span className="tw-model-name">
+                        {isDefault && (
+                          <span title="默认供应商" style={{
+                            display: "inline-block",
+                            marginRight: 6,
+                            color: "#10B981",
+                            verticalAlign: "middle",
+                          }}>{IcCheck}</span>
+                        )}
+                        {cfg.model || "ark-code-latest"}
+                      </span>
+                      <span className="tw-model-id">{p.id} · {p.baseUrl.replace(/^https?:\/\//, "")}</span>
+                    </div>
                   </div>
                 </td>
                 <td>
-                  <button className="sp-link" onClick={() => selectAsDefault(i)} title="设为默认供应商">设为默认</button>
-                  <span className="sp-sep">·</span>
-                  <button className="sp-link sp-link-danger" onClick={() => delProvider(i)}>删除</button>
+                  <span className="tw-provider-name">
+                    {displayName(p)}
+                  </span>
+                </td>
+                <td>
+                  <div className="tw-model-actions">
+                    <button
+                      className="tw-icon-btn"
+                      title="编辑"
+                      onClick={() => setEditIdx(i)}
+                    >{IcPencil}</button>
+                    <button
+                      className="tw-icon-btn danger"
+                      title="删除"
+                      onClick={() => {
+                        if (!confirm(`确认删除供应商「${displayName(p)}」？`)) return;
+                        delProvider(i);
+                      }}
+                    >{IcTrash}</button>
+                    {/* 默认开关：toggle */}
+                    <button
+                      type="button"
+                      className={`tw-toggle ${isDefault ? "on" : ""}`}
+                      title={isDefault ? "当前为默认供应商" : "设为默认供应商"}
+                      onClick={() => !isDefault && selectAsDefault(i)}
+                      aria-label="toggle default"
+                    >
+                      <span className="tw-toggle-track" />
+                      <span className="tw-toggle-thumb" />
+                    </button>
+                  </div>
                 </td>
               </tr>
-            ))}
-            {!hasProviders && (
-              <tr><td colSpan={8} className="sp-empty">还没有模型供应商，点上方「+ 添加模型」开始。</td></tr>
-            )}
-          </tbody>
-        </table>
-      </div>
+            );
+          })}
+        </tbody>
+      </table>
+
+      {/* ---------- 编辑弹窗 ---------- */}
+      {editing && (
+        <div className="modal-backdrop" onClick={() => setEditIdx(null)}>
+          <div
+            className="modal-card modal-dialog edit-model-dialog"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="modal-head">
+              <h3>{isNew ? "添加模型" : `编辑模型 · ${displayName(editing)}`}</h3>
+              <button className="modal-close" onClick={() => setEditIdx(null)}>×</button>
+            </div>
+            <div className="modal-body edit-model-form">
+              <div className="two-col">
+                <div className="form-block">
+                  <label>名称（显示用）</label>
+                  <input
+                    className="sp-input sp-input-sm"
+                    value={editing.name}
+                    onChange={(e) => updateProvider(editIdx!, { name: e.target.value })}
+                    placeholder="火山方舟 Ark Code"
+                  />
+                </div>
+                <div className="form-block">
+                  <label>Provider ID</label>
+                  <input
+                    className="sp-input sp-input-sm sp-input-code"
+                    value={editing.id}
+                    onChange={(e) => updateProvider(editIdx!, { id: e.target.value })}
+                    placeholder="volcengine-ark"
+                  />
+                  <div className="sp-hint">唯一标识，Codex 配置里引用这个 ID。</div>
+                </div>
+              </div>
+
+              <div className="form-block">
+                <label>Base URL</label>
+                <input
+                  className="sp-input sp-input-sm sp-input-code"
+                  value={editing.baseUrl}
+                  onChange={(e) => updateProvider(editIdx!, { baseUrl: e.target.value })}
+                  placeholder="https://ark.cn-beijing.volces.com/api/coding/v3"
+                />
+                <div className="sp-hint">
+                  Coding Plan 企业版 Responses 协议：<code>https://ark.cn-beijing.volces.com/api/coding/v3</code>
+                </div>
+              </div>
+
+              <div className="two-col">
+                <div className="form-block">
+                  <label>wire_api</label>
+                  <select
+                    className="sp-input sp-input-sm"
+                    value={editing.wireApi}
+                    onChange={(e) => updateProvider(editIdx!, { wireApi: e.target.value })}
+                  >
+                    <option value="responses">responses（推荐）</option>
+                    <option value="chat">chat（兼容）</option>
+                  </select>
+                </div>
+                <div className="form-block">
+                  <label>env_key（API Key 变量名）</label>
+                  <input
+                    className="sp-input sp-input-sm sp-input-code"
+                    value={editing.envKey}
+                    onChange={(e) => updateProvider(editIdx!, { envKey: e.target.value })}
+                    placeholder="VOLCENGINE_ARK_API_KEY"
+                  />
+                </div>
+              </div>
+
+              <div className="form-block">
+                <label>API Key</label>
+                <div className="sp-key-wrap" style={{ maxWidth: "none" }}>
+                  <input
+                    className="sp-input sp-input-sm"
+                    type={showKey[editingCredsKey] ? "text" : "password"}
+                    placeholder={creds[editingCredsKey] ? "•••••• 已填" : "粘贴 Coding Plan 控制台生成的专属 API Key"}
+                    value={creds[editingCredsKey] ?? ""}
+                    onChange={(e) => setCreds({ ...creds, [editingCredsKey]: e.target.value })}
+                  />
+                  <button
+                    type="button"
+                    className="sp-key-toggle"
+                    onClick={() => setShowKey((s) => ({ ...s, [editingCredsKey]: !s[editingCredsKey] }))}
+                  >{showKey[editingCredsKey] ? "隐藏" : "显示"}</button>
+                </div>
+              </div>
+
+              <div className="modal-footer">
+                <button className="sp-btn sp-btn-ghost" onClick={() => setEditIdx(null)}>取消</button>
+                <button
+                  className="sp-btn sp-btn-primary"
+                  onClick={() => setEditIdx(null)}
+                >完成</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

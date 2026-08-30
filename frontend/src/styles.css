@@ -1785,3 +1785,437 @@ body.theme-dark .log-line.is-err {
 .log-text {
   min-width: 0;
 }
+
+/* ===========================================================
+   T33.1 审批弹窗（Trae Work 图一风格）
+   =========================================================== */
+
+/* 外壳（替代旧的 modal-card）：白底、圆角 12、阴影、居中 720px 宽 */
+.approval-modal-wrap {
+  position: relative;
+  width: min(720px, 92vw);
+  max-height: 86vh;
+  overflow-y: auto;
+  background: #FFFFFF !important;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 24px 48px rgba(15, 23, 42, .18), 0 4px 12px rgba(15, 23, 42, .06);
+  padding: 28px 28px 20px;
+}
+.approval-modal-close {
+  position: absolute;
+  top: 12px;
+  right: 14px;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  transition: all .12s ease;
+}
+.approval-modal-close:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+/* 多条审批时卡片之间留间距 */
+.tw-approval-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.tw-approval-card {
+  background: #FFFFFF;
+  border-radius: 10px;
+}
+
+/* 标题：⚠️ 图标 + 粗体问句 */
+.tw-a-title {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.tw-a-title h3 {
+  margin: 0;
+  flex: 1;
+  font-size: 18px;
+  font-weight: 700;
+  color: #111827;
+  line-height: 1.4;
+  letter-spacing: -0.01em;
+}
+
+/* scope：授权标签 + 路径 pill */
+.tw-a-scope {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+.tw-a-scope-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: #111827;
+}
+.tw-a-scope-pill {
+  display: inline-block;
+  align-self: flex-start;
+  padding: 5px 10px;
+  background: #F3F4F6;
+  border: 1px solid #E5E7EB;
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: #374151;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 命令代码块：浅灰底 + monospace + 圆角 */
+.tw-a-code {
+  padding: 10px 12px;
+  background: #F3F4F6;
+  border: 1px solid #E5E7EB;
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  color: #111827;
+  white-space: pre-wrap;
+  word-break: break-all;
+  margin-bottom: 16px;
+  line-height: 1.55;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+/* 4 级编号按钮列表（<ul> 整行可点） */
+.tw-a-decisions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid #E5E7EB;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.tw-a-decision {
+  display: grid;
+  grid-template-columns: 24px 120px 1fr 24px;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 14px;
+  cursor: pointer;
+  border-bottom: 1px solid #F3F4F6;
+  transition: background-color .12s ease;
+  user-select: none;
+}
+.tw-a-decision:last-child {
+  border-bottom: none;
+}
+.tw-a-decision:hover,
+.tw-a-decision.is-hover {
+  background: #F3F4F6;
+}
+.tw-a-decision.danger {
+  color: #B91C1C;
+}
+.tw-a-decision.danger:hover,
+.tw-a-decision.danger.is-hover {
+  background: #FEF2F2;
+}
+.tw-a-idx {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: #F3F4F6;
+  color: #374151;
+  font-size: 12px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+}
+.tw-a-decision:hover .tw-a-idx,
+.tw-a-decision.is-hover .tw-a-idx {
+  background: #FFFFFF;
+  box-shadow: 0 0 0 1px #E5E7EB;
+}
+.tw-a-dec-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: inherit;
+}
+.tw-a-hint {
+  font-size: 12px;
+  color: #6B7280;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tw-a-decision:hover .tw-a-hint,
+.tw-a-decision.is-hover .tw-a-hint {
+  color: #374151;
+}
+.tw-a-arrow {
+  width: 16px;
+  height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #6B7280;
+  opacity: 0;
+  transition: opacity .12s ease, transform .12s ease;
+}
+.tw-a-decision:hover .tw-a-arrow,
+.tw-a-decision.is-hover .tw-a-arrow {
+  opacity: 1;
+  transform: translateX(2px);
+}
+
+/* ===========================================================
+   T33.2 设置面板 · 模型 tab（Trae Work 图三风格列表 + 编辑弹窗）
+   =========================================================== */
+
+/* 顶部 description 不变，添加一个浅色按钮的 ghost 类 */
+.sp-btn-ghost {
+  background: #F3F4F6;
+  color: #111827;
+  border: 1px solid #E5E7EB;
+  font-weight: 500;
+}
+.sp-btn-ghost:hover {
+  background: #E5E7EB;
+  border-color: #D1D5DB;
+  color: #111827;
+}
+.sp-add-btn {
+  margin-bottom: 16px;
+}
+
+/* 模型表（图三风格）：三列，干净列表 */
+.tw-model-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: #FFFFFF;
+  border: 1px solid #E5E7EB;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.tw-model-table thead {
+  background: #F3F4F6;
+}
+.tw-model-table th {
+  text-align: left;
+  padding: 10px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+  border-bottom: 1px solid #E5E7EB;
+}
+.tw-model-table td {
+  padding: 12px 14px;
+  border-bottom: 1px solid #F3F4F6;
+  font-size: 13px;
+  color: #111827;
+  vertical-align: middle;
+}
+.tw-model-table tr:last-child td {
+  border-bottom: none;
+}
+.tw-model-table tr.is-default td {
+  background: #F8FAFC;
+}
+
+/* 模型名列：小图标 + 名称 + 子行 providerId */
+.tw-model-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.tw-model-icon {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: linear-gradient(135deg, #6366F1, #8B5CF6);
+  color: #FFFFFF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  font-size: 11px;
+  font-weight: 700;
+}
+.tw-model-icon.off {
+  background: #D1D5DB;
+}
+.tw-model-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.tw-model-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: #111827;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tw-model-id {
+  font-size: 11.5px;
+  color: #6B7280;
+  font-family: var(--mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 服务商列 */
+.tw-provider-name {
+  font-size: 13px;
+  color: #374151;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* 操作列：编辑 / 删除 / 开关 */
+.tw-model-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  justify-content: flex-end;
+}
+.tw-icon-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: #6B7280;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all .12s ease;
+}
+.tw-icon-btn:hover {
+  background: #F3F4F6;
+  color: #111827;
+}
+.tw-icon-btn.danger:hover {
+  background: #FEF2F2;
+  color: #DC2626;
+}
+
+/* 默认开关（Trae Work 绿色 toggle） */
+.tw-toggle {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+  margin-left: 4px;
+  flex: none;
+}
+.tw-toggle-track {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: #D1D5DB;
+  transition: background-color .15s ease;
+}
+.tw-toggle.on .tw-toggle-track {
+  background: #10B981;
+}
+.tw-toggle-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #FFFFFF;
+  box-shadow: 0 1px 3px rgba(0,0,0,.2);
+  transition: transform .15s ease;
+}
+.tw-toggle.on .tw-toggle-thumb {
+  transform: translateX(16px);
+}
+.tw-toggle-label {
+  font-size: 11px;
+  color: #6B7280;
+  margin-left: 6px;
+}
+
+/* 空状态 */
+.tw-empty-row td {
+  text-align: center;
+  padding: 28px 14px !important;
+  color: #6B7280;
+  font-size: 13px;
+}
+
+/* 编辑模型 dialog（居中小弹窗） */
+.modal-dialog.edit-model-dialog {
+  width: min(560px, 94vw);
+}
+.edit-model-form .form-block {
+  margin-bottom: 14px;
+}
+.edit-model-form label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+  margin-bottom: 4px;
+}
+.edit-model-form .sp-hint {
+  margin-top: 4px;
+  font-size: 11.5px;
+  color: #6B7280;
+}
+.edit-model-form .sp-input-sm {
+  width: 100%;
+}
+.edit-model-form .two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+@media (max-width: 520px) {
+  .edit-model-form .two-col { grid-template-columns: 1fr; }
+}
+.edit-model-dialog .modal-footer {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+/* 旧 approval-card / right-head / a-actions 等残留代码已被 ApprovalPanel 新结构替换，
+   这里再覆盖兜底一下避免死样式泄漏 */
+.right-head, .right-body, .a-actions,
+.approval-card h4, .approval-command, .approval-info, .approval-actions {
+  all: unset;
+  display: none;
+}
+.approval-toast .at-card { /* toast 保留为原来的样子即可 */ }
+.at-card .at-title, .at-card .at-actions, .at-card .btn {
+  display: flex; /* 恢复 toast 内部 */
+}
+

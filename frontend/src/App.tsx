@@ -955,17 +955,20 @@ export default function App() {
         </div>
       )}
 
-      {/* ============ ApprovalPanel modal 版 ============ */}
+      {/* ============ 审批弹窗（Trae Work 图一风格，直接嵌入 styled ApprovalPanel） ============ */}
       {approvalOpen && (
         <div className="modal-backdrop" onClick={() => setApprovalOpen(false)}>
-          <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ width: "min(720px, 92vw)" }}>
-            <div className="modal-head">
-              <h3>审批请求</h3>
-              <button className="modal-close" onClick={() => setApprovalOpen(false)}>×</button>
-            </div>
-            <div className="modal-body">
-              <ApprovalPanel approvals={approvals} onRespond={(id, dec) => respondApproval(id, dec)} />
-            </div>
+          <div
+            className="approval-modal-wrap"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              className="approval-modal-close"
+              onClick={() => setApprovalOpen(false)}
+              title="稍后处理（保留 toast 通知）"
+              aria-label="close"
+            >×</button>
+            <ApprovalPanel approvals={approvals} onRespond={(id, dec) => respondApproval(id, dec)} />
           </div>
         </div>
       )}
