@@ -234,9 +234,7 @@ export default function App() {
     if (typeof window !== "undefined") window.localStorage.setItem("harness.theme", t);
   };
 
-  // ------- 路由（保留内部状态机，删除视觉 UI 元素） -------
-  const [autoRoute] = useState(true);
-  const [sensitive] = useState(false);
+  // 注意：已移除"自动路由"概念。用户在设置面板里选默认 provider/model，发送直接用。
 
   // ------- Onboarding -------
   const [onboardingOpen, setOnboardingOpen] = useState(false);
@@ -487,39 +485,21 @@ export default function App() {
     ].slice(-500));
 
     try {
-      // Work/Code/Design Pill 仅视觉（需求 #2：用户声明 work 和 code 无意义）
       const promptText = text;
-      let routeModel = model; let routeProvider = provider;
 
-      // --- 阶段 1：路由（可选） ---
-      if (autoRoute) {
-        try {
-          const d = await codex.route(promptText, { sensitive });
-          routeModel = d.model; routeProvider = d.provider;
-          setTerminalLines((prev) => [
-            ...prev, { ts: Date.now(), text: `[route] ${routeProvider} / ${routeModel}`, stream: "meta" as const },
-          ].slice(-500));
-        } catch (e) {
-          setStatus(`路由失败，回退当前模型: ${e}`);
-          setTerminalLines((prev) => [
-            ...prev, { ts: Date.now(), text: `[route] 失败，回退 ${provider}/${model}: ${e}`, stream: "stderr" as const },
-          ].slice(-500));
-        }
-      }
-
-      // --- 阶段 2：建线程（如果需要） ---
+      // --- 阶段 1：建线程（如果需要） ---
       let threadId = activeThreadRef.current;
       if (!threadId) {
         setStatus("创建会话…");
         try {
-          const nid = await codex.threadStart({ model: routeModel, modelProvider: routeProvider, cwd });
+          const nid = await codex.threadStart({ model, modelProvider: provider, cwd });
           threadId = nid;
-          threadProviderRef.current = routeProvider;
+          threadProviderRef.current = provider;
           setActiveThread(nid);
           setSessions((s) => [...s, {
             id: nid,
             title: text.slice(0, 24) + (text.length > 24 ? "…" : ""),
-            provider: routeProvider, model: routeModel, status: "running",
+            provider, model, status: "running",
           }]);
           setTerminalLines((prev) => [
             ...prev, { ts: Date.now(), text: `[thread/start] ok → ${nid}`, stream: "meta" as const },
@@ -527,22 +507,16 @@ export default function App() {
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           setLastError(msg);
-          setStatus(`创建会话失败（可能是 provider/model 配置不正确）：${msg}`);
+          setStatus(`创建会话失败（provider/model 配置不正确或 API Key 无效）：${msg}`);
           setTerminalLines((prev) => [
             ...prev, { ts: Date.now(), text: `[thread/start] 失败: ${msg}`, stream: "stderr" as const },
           ].slice(-500));
           console.error("[thread/start] failed", e);
           return;
         }
-      } else if (autoRoute && routeModel !== model) {
-        try { await codex.threadSetModel(threadId, routeModel); }
-        catch (e) { setStatus(`切换路由模型失败: ${e}`); }
-      }
-      if (routeModel !== model || routeProvider !== provider) {
-        setModel(routeModel); setProvider(routeProvider);
       }
 
-      // --- 阶段 3：发消息（turn/start） ---
+      // --- 阶段 2：发消息（turn/start） ---
       const tid = threadId as string;
       setStatus("发送中…");
       try {
@@ -907,9 +881,10 @@ export default function App() {
 
             <div className="composer-meta">
               <div className="meta-left">
-                <button className="auto-mode-pill" onClick={() => setStatus(`Auto Mode：路由 ${autoRoute ? "开启" : "关闭"}（占位）`)}>
-                  Auto Mode <span className="caret">▾</span>
-                </button>
+                <span className="auto-mode-pill" title="当前使用的模型（设置 → 通用里修改）">
+                  <span className="pill-label">模型</span>
+                  <span className="pill-val">{provider}/{model}</span>
+                </span>
                 <span className="status-chip" title={status}>{status}</span>
               </div>
               <div className="meta-right">

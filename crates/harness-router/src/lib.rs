@@ -92,15 +92,21 @@ pub struct RouteCatalog {
     pub sensitive_default: Option<(String, String)>,
 }
 
-/// 内置路由目录：当前版本仅启用「火山方舟 Ark」单模型（企业精简版）。
-/// codex 自定义 Provider 的 type="Custom"（见 harness-config model_providers）。
-/// 成本为每 1K 输入 token 美元，估值用于任务+成本排序（同 Provider 内多模型之间的相对排序）。
+/// 内置路由目录：Coding Plan 企业版只暴露一个合法别名 `ark-code-latest`，
+/// 底层真实模型由控制台 Auto 模式（效果+速度双维度算法）分配，代码端无需关心。
+/// 其它 `ark-chat-latest` / `ark-contextual-latest` 等别名**在 Ark 服务器上不存在**，
+/// 使用会直接 404（参见 codex protocol 错误 "model or endpoint does not exist"）。
 pub fn default_catalog() -> RouteCatalog {
+    use TaskType::*;
     RouteCatalog {
         models: vec![
-            ModelOption { provider: "volcengine-ark".into(), model: "ark-code-latest".into(), context_window: 128_000, cost: 0.004, tasks: vec![TaskType::Coding, TaskType::CodeReview, TaskType::DataAnalysis, TaskType::General] },
-            ModelOption { provider: "volcengine-ark".into(), model: "ark-contextual-latest".into(), context_window: 1_000_000, cost: 0.010, tasks: vec![TaskType::Documentation, TaskType::General, TaskType::DataAnalysis] },
-            ModelOption { provider: "volcengine-ark".into(), model: "ark-chat-latest".into(), context_window: 64_000, cost: 0.002, tasks: vec![TaskType::Chat, TaskType::General, TaskType::Documentation] },
+            ModelOption {
+                provider: "volcengine-ark".into(),
+                model: "ark-code-latest".into(),
+                context_window: 1_000_000,
+                cost: 0.004,
+                tasks: vec![Chat, Coding, CodeReview, DataAnalysis, Documentation, General],
+            },
         ],
         sensitive_default: Some(("volcengine-ark".into(), "ark-code-latest".into())),
     }
@@ -195,31 +201,30 @@ mod tests {
     }
 
     #[test]
-    fn routes_documentation_to_cheap_ark_chat() {
+    fn routes_documentation_to_only_model() {
         let d = resolve(&default_catalog(), &req("帮我写一份 README 文档"));
-        // Documentation：匹配的有 ark-code-latest / ark-contextual / ark-chat；
-        // 按成本升序 → ark-chat-latest(0.002) 最便宜。
+        // 只有一个合法别名 ark-code-latest，所有任务类型统一走它（控制台 Auto 模式切底层）
         assert_eq!(d.provider, "volcengine-ark");
-        assert_eq!(d.model, "ark-chat-latest");
+        assert_eq!(d.model, "ark-code-latest");
     }
 
     #[test]
-    fn routes_by_cost_ceiling() {
+    fn routes_by_cost_ceiling_only_model() {
         let mut r = req("随便聊聊今天天气");
-        r.max_cost = Some(0.003); // 仅 ark-chat-latest(0.002) 满足
+        r.max_cost = Some(0.003);
         let d = resolve(&default_catalog(), &r);
-        assert_eq!(d.model, "ark-chat-latest");
-        assert!(d.reason.contains("成本"));
+        // 只有一个候选，成本不匹配也回退它（否则候选空→会最便宜回退同一个）
+        assert_eq!(d.model, "ark-code-latest");
     }
 
     #[test]
-    fn routes_by_context_length_length_window() {
+    fn routes_by_context_length_single_window() {
         let mut r = req("整理这份超长报告");
         r.task_type = Some(TaskType::DataAnalysis);
-        r.estimated_context_tokens = 200_000; // ark-code-latest(128k) 不够，回退 1M 窗口 ark-contextual-latest
+        r.estimated_context_tokens = 200_000; // ark-code-latest 配置为 1M 窗口，足够覆盖
         let d = resolve(&default_catalog(), &r);
         assert_eq!(d.provider, "volcengine-ark");
-        assert_eq!(d.model, "ark-contextual-latest");
+        assert_eq!(d.model, "ark-code-latest");
     }
 
     #[test]

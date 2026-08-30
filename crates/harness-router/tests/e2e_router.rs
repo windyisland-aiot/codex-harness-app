@@ -30,31 +30,30 @@ fn e2e_coding_goes_to_ark_code() {
 }
 
 #[test]
-fn e2e_chat_costs_low() {
-    // 闲聊（Chat）：ark-chat-latest(0.002) 最便宜
+fn e2e_chat_goes_to_only_alias() {
+    // 只有一个合法别名 ark-code-latest，所有任务类型统一走它
     let d = resolve(&default_catalog(), &req("你好，介绍一下你自己"));
-    assert_eq!(d.model, "ark-chat-latest");
+    assert_eq!(d.model, "ark-code-latest");
 }
 
 #[test]
-fn e2e_max_cost_excludes_expensive() {
-    // 编码任务但成本上限极低：编码适配的 ark-code-latest(0.004) 超上限 → 回退最便宜 ark-chat-latest(0.002)
+fn e2e_max_cost_falls_back_to_only() {
+    // 只有一个候选，不管成本上限 → 命中它
     let mut r = req("请重构这个模块");
     r.max_cost = Some(0.003);
     let d = resolve(&default_catalog(), &r);
-    assert_eq!(d.model, "ark-chat-latest");
-    assert!(d.reason.contains("成本") || d.reason.contains("回退"));
+    assert_eq!(d.model, "ark-code-latest");
 }
 
 #[test]
 fn e2e_large_context_uses_max_window() {
-    // 150k 上下文：ark-code-latest(128k) / ark-chat(64k) 都不够 → 选 1M 窗口 ark-contextual-latest
+    // ark-code-latest 配置了 1M 窗口，150k 直接命中
     let mut r = req("整理这份超长报告");
     r.task_type = Some(TaskType::General);
     r.estimated_context_tokens = 150_000;
     let d = resolve(&default_catalog(), &r);
     assert_eq!(d.provider, "volcengine-ark");
-    assert_eq!(d.model, "ark-contextual-latest");
+    assert_eq!(d.model, "ark-code-latest");
 }
 
 #[test]

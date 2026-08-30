@@ -264,12 +264,11 @@ pub fn read(codex_home: &str) -> Result<AppConfig> {
             p.wire_api = "responses".to_string();
             migrated = true;
         }
-        // 2) Ark 提供商：base_url 归一化到火山方舟官方 Responses 端点
-        //    `https://ark.cn-beijing.volces.com/api/v3`。
-        //    触发迁移的情况：空 / 旧本机网关 127.0.0.1 / localhost / 历史遗留的
-        //    `/api/coding/v3`（那是旧编码端点，不支持 responses）等非官方 URL。
+        // 2) Ark 提供商：base_url 归一化到 Coding Plan 企业版 Responses 端点
+        //    `https://ark.cn-beijing.volces.com/api/coding/v3`。
+        //    （普通大模型 /api/v3 不支持 ark-code-latest 别名）
         if p.id == "volcengine-ark" {
-            let official = "https://ark.cn-beijing.volces.com/api/v3";
+            let official = "https://ark.cn-beijing.volces.com/api/coding/v3";
             let url = p.base_url.trim();
             if url != official {
                 p.base_url = official.to_string();
@@ -318,9 +317,9 @@ pub fn read(codex_home: &str) -> Result<AppConfig> {
 
 /// 火山方舟 Ark 编码模型默认配置（首次启动 / 配置文件缺失时使用）。
 ///
-/// 2026-08-30 起：火山方舟原生支持 Responses API（端点 `ark.cn-beijing.volces.com/api/v3`），
-/// 因此不再经过本机 ark_gateway 翻译/路由，codex 直接发 `/responses` 请求即可。
-/// wire_api = "responses"，和原协议一致。
+/// 2026-08-30 起：对接火山方舟 Coding Plan 企业版，
+/// base_url = `https://ark.cn-beijing.volces.com/api/coding/v3`（Responses 协议兼容）
+/// model   = `ark-code-latest`（控制台 Auto 模式下自动挑选底层模型）
 pub fn default_ark_config() -> AppConfig {
     use crate::model::{AppConfig, ProviderConfig};
     AppConfig {
@@ -331,7 +330,7 @@ pub fn default_ark_config() -> AppConfig {
             id: "volcengine-ark".to_string(),
             name: "火山方舟 Ark Code".to_string(),
             provider_type: "Custom".to_string(),
-            base_url: "https://ark.cn-beijing.volces.com/api/v3".to_string(),
+            base_url: "https://ark.cn-beijing.volces.com/api/coding/v3".to_string(),
             env_key: "VOLCENGINE_ARK_API_KEY".to_string(),
             wire_api: "responses".to_string(),
         }],

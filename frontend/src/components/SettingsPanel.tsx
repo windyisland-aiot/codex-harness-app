@@ -122,7 +122,7 @@ export default function SettingsPanel({
         id: `p-${Date.now()}`,
         name: "新模型",
         type: "Custom",
-        baseUrl: "https://ark.cn-beijing.volces.com/api/v3",
+        baseUrl: "https://ark.cn-beijing.volces.com/api/coding/v3",
         envKey,
         wireApi: "responses",
       };
@@ -370,7 +370,7 @@ function SectionModels({
                 </td>
                 <td><input className="sp-input sp-input-sm" value={p.name} onChange={(e) => updateProvider(i, { name: e.target.value })} /></td>
                 <td><input className="sp-input sp-input-sm sp-input-code" value={p.id} onChange={(e) => updateProvider(i, { id: e.target.value })} /></td>
-                <td><input className="sp-input sp-input-sm" value={p.baseUrl} onChange={(e) => updateProvider(i, { baseUrl: e.target.value })} placeholder="https://ark.cn-beijing.volces.com/api/v3" /></td>
+                <td><input className="sp-input sp-input-sm" value={p.baseUrl} onChange={(e) => updateProvider(i, { baseUrl: e.target.value })} placeholder="https://ark.cn-beijing.volces.com/api/coding/v3" /></td>
                 <td><input className="sp-input sp-input-sm sp-input-code" value={p.envKey} onChange={(e) => updateProvider(i, { envKey: e.target.value })} placeholder="ARK_API_KEY" /></td>
                 <td>
                   <select className="sp-input sp-input-sm" value={p.wireApi} onChange={(e) => updateProvider(i, { wireApi: e.target.value })}>

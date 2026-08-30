@@ -180,10 +180,11 @@ fn read_missing_file_returns_defaults() {
     assert_eq!(cfg.model_providers.len(), 1);
     assert_eq!(cfg.model_providers[0].id, "volcengine-ark");
     assert_eq!(cfg.model_providers[0].env_key, "VOLCENGINE_ARK_API_KEY");
-    // base_url 直接指向火山方舟官方 Responses API 端点（2026-08-30 起不再经本机网关）。
+    // base_url 指向 Coding Plan 企业版 Responses 兼容端点（2026-08-30 起只有 /api/coding/v3
+    // 识别 ark-code-latest 别名；普通大模型 /api/v3 会报 "endpoint does not exist 404"）。
     assert_eq!(
         cfg.model_providers[0].base_url,
-        "https://ark.cn-beijing.volces.com/api/v3"
+        "https://ark.cn-beijing.volces.com/api/coding/v3"
     );
     assert_eq!(cfg.model_providers[0].wire_api, "responses");
 
@@ -192,9 +193,8 @@ fn read_missing_file_returns_defaults() {
         .expect("read() 应对缺失文件把 default_ark_config() 写回磁盘");
     assert!(raw.contains("wire_api = \"responses\""), "缺失默认写入: {raw}");
     assert!(raw.contains("ark-code-latest"), "缺失默认模型写入: {raw}");
-    assert!(
-        raw.contains("ark.cn-beijing.volces.com/api/v3"),
-        "缺失官方 Responses 端点写入: {raw}"
+    assert!(raw.contains("ark.cn-beijing.volces.com/api/coding/v3"),
+        "缺失 Coding Plan 企业版 Responses 端点写入: {raw}"
     );
     let _ = fs::remove_dir_all(&dir);
 }
@@ -227,8 +227,8 @@ wire_api = "chat"
     let cfg = harness_config::read(home).unwrap();
     // 内存结构必须已修正。
     assert_eq!(cfg.model_providers[0].wire_api, "responses");
-    // 2026-08-30 起：base_url 归一化到火山方舟官方 Responses 端点（绕过本机网关）
-    assert_eq!(cfg.model_providers[0].base_url, "https://ark.cn-beijing.volces.com/api/v3");
+    // 2026-08-30 起：base_url 归一化到 Coding Plan 企业版 Responses 端点 /api/coding/v3
+    assert_eq!(cfg.model_providers[0].base_url, "https://ark.cn-beijing.volces.com/api/coding/v3");
     assert_eq!(cfg.model_providers[0].env_key, "VOLCENGINE_ARK_API_KEY");
 
     // 磁盘上的真实文件必须同步修改（此条才是让 codex 正常的关键）。
@@ -239,8 +239,8 @@ wire_api = "chat"
     );
     assert!(raw.contains("wire_api = \"responses\""), "磁盘缺 responses: {raw}");
     assert!(
-        raw.contains("ark.cn-beijing.volces.com/api/v3"),
-        "磁盘缺官方 Responses 端点 base_url: {raw}"
+        raw.contains("ark.cn-beijing.volces.com/api/coding/v3"),
+        "磁盘缺 Coding Plan 企业版端点 base_url: {raw}"
     );
     assert!(raw.contains("VOLCENGINE_ARK_API_KEY"), "磁盘缺 env_key: {raw}");
     let _ = fs::remove_dir_all(&dir);

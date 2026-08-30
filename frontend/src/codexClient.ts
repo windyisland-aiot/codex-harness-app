@@ -87,36 +87,6 @@ export function stop(): Promise<void> {
   return invoke("appserver_stop");
 }
 
-// --- T11 模型路由 ---
-
-export interface RouteDecision {
-  provider: string;
-  model: string;
-  reason: string;
-}
-
-/**
- * 调用模型路由：按任务类型 / 上下文长度 / 成本 / 敏感度推荐模型。
- * `taskType` 为空时由后端自动识别；`maxCost` 为空表示不设成本上限。
- */
-export function route(
-  prompt: string,
-  opt?: {
-    taskType?: string;
-    ctxTokens?: number;
-    sensitive?: boolean;
-    maxCost?: number;
-  }
-): Promise<RouteDecision> {
-  return invoke<RouteDecision>("router_resolve", {
-    prompt,
-    taskType: opt?.taskType ?? "",
-    estimatedContextTokens: opt?.ctxTokens ?? 0,
-    sensitive: opt?.sensitive ?? false,
-    maxCost: opt?.maxCost ?? null,
-  });
-}
-
 // --- T09 配置面板 ---
 
 export interface ProviderConfig {
