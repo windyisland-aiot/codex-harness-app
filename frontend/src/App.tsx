@@ -249,6 +249,7 @@ export default function App() {
   const [terminalLines, setTerminalLines] = useState<
     Array<{ ts: number; text: string; stream?: "stdout" | "stderr" | "meta" }>
   >([]);
+  const [logOpen, setLogOpen] = useState(false);
 
   // ------- Refs 用于 timer 里拿最新值 -------
   const threadProviderRef = useRef<string | null>(null);
@@ -429,6 +430,7 @@ export default function App() {
     running, approvalCount: approvals.length,
     hasMessages: messages.length > 0, hasError: !!lastError,
   });
+  const errCount = terminalLines.filter((l) => l.stream === "stderr").length;
 
   const presetName = provider || model || "未设置";
 
@@ -880,13 +882,49 @@ export default function App() {
                 <button className="auto-mode-pill" onClick={() => setStatus(`Auto Mode：路由 ${autoRoute ? "开启" : "关闭"}（占位）`)}>
                   Auto Mode <span className="caret">▾</span>
                 </button>
+                <span className="status-chip" title={status}>{status}</span>
               </div>
               <div className="meta-right">
+                <button className={`log-toggle ${errCount > 0 ? "has-err" : ""}`} onClick={() => setLogOpen((v) => !v)}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 17l6-6-6-6M12 19h8"/></svg>
+                  <span>日志</span>
+                  {errCount > 0 && <span className="log-badge">{errCount}</span>}
+                </button>
                 <button className="tb-icon-btn tiny" title="语音输入（v0.2 占位）" onClick={() => setStatus("语音：敬请期待（v0.2）")}>
                   {IconMic}
                 </button>
               </div>
             </div>
+
+            {/* 可折叠错误/日志面板（stderr 高亮） */}
+            {logOpen && (
+              <div className="log-pane">
+                <div className="log-pane-head">
+                  <span className="log-pane-title">对话运行日志</span>
+                  <div className="log-pane-actions">
+                    <span className="log-pane-count">共 {terminalLines.length} 条 {errCount > 0 && <span className="log-pane-err">· {errCount} 错误</span>}</span>
+                    <button className="log-clear" onClick={() => setTerminalLines([])}>清空</button>
+                    <button className="log-close" onClick={() => setLogOpen(false)}>收起</button>
+                  </div>
+                </div>
+                <div className="log-pane-body">
+                  {terminalLines.length === 0 ? (
+                    <div className="log-empty">暂无日志。发送消息后会在此显示运行轨迹、API key 注入、provider 调用结果等。</div>
+                  ) : terminalLines.map((l, i) => {
+                    const isErr = l.stream === "stderr";
+                    const isMeta = l.stream === "meta";
+                    const time = new Date(l.ts).toLocaleTimeString();
+                    return (
+                      <div key={i} className={`log-line ${l.stream ?? "stdout"} ${isErr ? "is-err" : isMeta ? "is-meta" : ""}`}>
+                        <span className="log-time">{time}</span>
+                        <span className="log-tag">{(l.stream ?? "stdout").toUpperCase()}</span>
+                        <span className="log-text">{l.text}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </footer>
         </main>
 
