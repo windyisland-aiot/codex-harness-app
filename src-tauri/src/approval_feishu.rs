@@ -81,7 +81,7 @@ pub async fn approval_send_to_feishu(
             }
         }
         let resp = req.send_json(payload).map_err(|e| {
-            let s = sanitize(&e.to_string());
+            let s = sanitize(e.to_string());
             format!("approval_send_to_feishu 调用失败：{s}")
         })?;
 
