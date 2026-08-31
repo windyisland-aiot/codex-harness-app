@@ -1,9 +1,47 @@
 # Harness 企业内部 Agent — 部署文档
 
-> 版本：v0.5.4（P2 阶段 · RAG + Bitable + 广告脚本多 Agent + 飞书审批直连 + 插件/Skill 面板）（测试发布）
-> 发布类型：v0.5.4 测试发布
-> 目标平台：Windows 10 / Windows 11 x64
+> 版本：v0.6.0（选项 C 迁移 · 云端 harness-service + 本地瘦壳）
+> 发布类型：架构迁移
+> 目标平台：Windows 10 / Windows 11 x64（本地前端壳）+ 云端 harness-service
 > 源码仓库：`windyisland-aiot/codex-harness-app`（私有）
+
+---
+
+## 〇、v0.6.0 架构迁移（选项 C：云 agent + 本地瘦壳）
+
+把 bibike-script-platform 改造扩展为云端 harness-service，本地 Harness 退化为前端壳。
+
+### 决策（已确认）
+- **用户信息继承**：账号/凭据数据从旧库迁移到云端
+- **会话不保留**：旧会话历史/消息/脚本版本表清空，只迁账号
+- **Agent 重写为 Skill**：bibike 的 Python Agent prompt → `talk-script/SKILL.md`，由云端 codex 执行
+- **RAG 保留**：bibike 的 Chroma 六模块 + 金句库作为脚本 skill 专属知识库
+- **其余 bibike 模块不复用**：前端、Celery、禁用词、视频等移除
+
+### 目标架构
+```
+本地 Harness（瘦壳）                     云端 harness-service
+─────────────────                      ─────────────────────
+前端 UI（对话/设置/插件/模板库）    HTTP  ─▶ FastAPI（bibike 改造）
+skill 触发词（本地 SKILL.md）   /SSE  ◀─     · RAG（Chroma 知识库）
+网络层调云端，不起本地 codex                  · codex app-server 执行引擎
+                                             · 账号/认证 · 会话 · 审批
+```
+
+### Agent → Skill 提示词重写对照
+| bibike Python Agent | 重写位置 | 内容 |
+|---|---|---|
+| BriefIntakeAgent（需求补充） | `talk-script` 🅰 | 追问规则、最多 5 轮、促销区分 |
+| KnowledgeRetriever（检索） | `talk-script` 🅱 + 云端 /retrieve | 6 模块检索、mode 过滤 |
+| 主生成/润色 Agent | `talk-script` 🅲 C1-C4 | 编导/去AI味/转化/促销组合令 |
+| ProductFactGuard + 风险审查 | `talk-script` 🅳 | 稳定规则表（block/warn），不阻断交付 |
+
+### 分阶段
+- **A 云端 harness-service 骨架**：保留 RAG + /retrieve + 认证（先 API key 后 OAuth2）
+- **B 云端接 codex**：搬 skills + app-server 执行 + SSE 进度
+- **C 本地瘦身**：codexClient 改调云端，不起本地 codex
+- **D 数据迁移**：账号继承、会话清空
+- **E 联调收尾**：飞书联动（Base 写入/审批）是否保留待确认
 
 ---
 
