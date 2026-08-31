@@ -1,13 +1,27 @@
 # Harness 企业内部 Agent — 部署文档
 
-> 版本：v0.5.2（P2 阶段 · RAG + Bitable + 广告脚本多 Agent + 飞书审批直连 + 插件/Skill 面板）（测试发布）
-> 发布类型：v0.5.2 测试发布
+> 版本：v0.5.3（P2 阶段 · RAG + Bitable + 广告脚本多 Agent + 飞书审批直连 + 插件/Skill 面板）（测试发布）
+> 发布类型：v0.5.3 测试发布
 > 目标平台：Windows 10 / Windows 11 x64
 > 源码仓库：`windyisland-aiot/codex-harness-app`（私有）
 
 ---
 
-## 〇、What's New v0.5.2 版更新要点
+## 〇、What's New v0.5.3 版更新要点
+
+本版本集中修复用户反馈的 4 个 UI 问题：插件管理独立页面、按钮悬浮消失、蓝紫主色改黑白、飞书 SKILL 检测不到。
+
+| 分类 | 变更内容 | 对应计划项 |
+|------|----------|------------|
+| 🧩 插件管理独立页面 | 「插件管理」按钮改为打开独立 PluginsPanel 模态（App.tsx `pluginsOpen` state），设置面板移除「插件/Skill」tab；补齐此前完全缺失的 `cfg-*` 面板样式（面板此前无样式裸渲染） | P2-T10 |
+| 🎨 按钮悬浮消失修复 | 移除所有 `filter: brightness()` hover（WebView2 在 backdrop-filter 祖先内的渲染 bug 元凶），改用 background 变更 | P2-T8 |
+| 🎨 黑白主色 | 品牌色从蓝紫（#6366F1→#8B5CF6）全面改为黑白（#1F2328→#111827），覆盖 CSS 全部硬编码蓝紫残留（按钮/头像/导航/气泡/图标） | P2-T8 |
+| 📐 弹窗拉伸修复 | 模型编辑弹窗用 `createPortal` 渲染到 `document.body`，脱离设置面板 transform/filter 祖先（固定定位失效根因） | P2-T8 |
+| 🧠 飞书 SKILL 检测 | 内置 skills 打进安装包（`src-tauri/resources/skills/` + tauri.conf.json bundle.resources + .gitignore 放行）；Rust `plugins_list` 自动附加默认扫描根（resource_dir/skills + codex_home/skills + 开发兜底），前端去掉硬编码 `/workspace/...` 沙箱路径；skill 清单新增 `source` 字段分组展示 | P2-T10 |
+| 🧪 测试 | 修复 `backend_backend_integration.rs` 缺 `use std::time::Duration` 编译错误；UI 修复结构断言 22 项全 GREEN；tsc + vite build + cargo test 全通过 | P2-T10 |
+| 📦 打包 & CI | 版本号统一升到 0.5.3（Cargo.toml / tauri.conf.json / approval_feishu.rs / SettingsPanel 顶部 & 关于页 & DEPLOY.md） | P2-T10 |
+
+## 〇-1、v0.5.2 版更新要点（What's New）
 
 在 v0.5.1 基础上补上 **UI 可用性缺口**：解决用户反馈"模型配置对话框拉伸错误"和"没有 Skill 使用界面"两个问题，并把飞书 Skill 默认启用加入插件管理界面，让终端用户开箱即可在对话里调用 feishu-bot。
 

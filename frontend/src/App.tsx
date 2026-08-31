@@ -8,6 +8,7 @@
 import { useEffect, useRef, useState } from "react";
 import Markdown from "./components/Markdown";
 import SettingsPanel from "./components/SettingsPanel";
+import PluginsPanel from "./components/PluginsPanel";
 import ApprovalPanel from "./components/ApprovalPanel";
 import * as codex from "./codexClient";
 import type {
@@ -204,6 +205,8 @@ export default function App() {
 
   // ------- 设置面板开关（v0.3.0 统一成单个 SettingsPanel） -------
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // ------- 插件管理：独立页面（v0.5.3 起不再挂在设置面板里） -------
+  const [pluginsOpen, setPluginsOpen] = useState(false);
   const [approvalOpen, setApprovalOpen] = useState(false);
 
   // ------- 连接 & 状态 -------
@@ -719,7 +722,7 @@ export default function App() {
               <span className="ic-wrap">{IconPlus}</span>
               <span>新建任务</span>
             </button>
-            <button className="sb-menu-item" onClick={() => setSettingsOpen(true)}>
+            <button className="sb-menu-item" onClick={() => setPluginsOpen(true)}>
               <span className="ic-wrap gr">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8.11 2.79a3 3 0 0 1 4.24 4.24 3 3 0 0 1 4.24 4.24 3 3 0 0 1 4.62 4.62z"/></svg>
               </span>
@@ -1188,6 +1191,14 @@ export default function App() {
           setRunning(false);
           setStatus("设置已保存并生效 ✅ 可以开始对话了");
         }}
+        onStatus={setStatus}
+      />
+
+      {/* 插件管理：独立模态页面（v0.5.3 起与设置面板解耦） */}
+      <PluginsPanel
+        open={pluginsOpen}
+        onClose={() => setPluginsOpen(false)}
+        codexHome={codexHome}
         onStatus={setStatus}
       />
     </div>

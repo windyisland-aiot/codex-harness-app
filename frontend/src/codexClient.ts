@@ -206,6 +206,8 @@ export interface SkillInfo {
   description: string;
   dir: string;
   enabled: boolean;
+  /** 来源：bundled（随安装包分发）/ codex-home / custom（v0.5.3） */
+  source?: "bundled" | "codex-home" | "custom" | string;
 }
 export interface PluginInfo {
   id: string;

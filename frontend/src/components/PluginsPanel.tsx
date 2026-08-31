@@ -1,6 +1,8 @@
-//! T14 插件与 Skill 管理面板：扫描展示 skills/插件，编辑开关并写回 config.toml。
+//! T14 插件与 Skill 管理面板（v0.5.3 独立页面）：扫描展示 skills/插件，编辑开关并写回 config.toml。
+//! 扫描根由后端注入默认值（打包资源 skills/ + codex_home/skills），前端只传额外自定义根，
+//! 不再硬编码开发机路径（修复「飞书 SKILL 检测不到」）。
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import * as codex from "../codexClient";
 
 export default function PluginsPanel({
@@ -21,35 +23,31 @@ export default function PluginsPanel({
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
-  if (!open) return null;
-
-  // 默认扫描 codex 工作区内置 skill（与 fork 仓库 .codex/skills 对齐）。
-  if (!loaded) {
-    const roots = [
-      "/workspace/codex/codex-rs/skills",
-      "/workspace/codex/.codex/skills",
-      "/workspace/codex-harness-app/.codex-test/skills",
-    ];
+  // 打开面板时加载：skillRoots/pluginRoots 留空，由后端附加默认扫描根。
+  useEffect(() => {
+    if (!open || loaded) return;
+    let cancelled = false;
     codex
-      .pluginsList({
-        codexHome,
-        skillRoots: roots,
-        pluginRoots: ["/workspace/codex-harness-app/.codex-test/plugins"],
-      })
+      .pluginsList({ codexHome, skillRoots: [], pluginRoots: [] })
       .then((l) => {
-        setList(l);
+        if (!cancelled) setList(l);
       })
       .catch((e) => {
-        onStatus(`加载技能/插件失败: ${e}（已切换到本地占位展示）`);
-        // 浏览器无 Tauri 或 远端未响应时，给空结构保证面板可渲染。
-        setList({ skills: [], plugins: [], bundledSkillsEnabled: true, skillsIncludeInstructions: null });
+        onStatus(`加载技能/插件失败: ${e}`);
+        // 浏览器无 Tauri 或远端未响应时，给空结构保证面板可渲染。
+        if (!cancelled) setList({ skills: [], plugins: [], bundledSkillsEnabled: true, skillsIncludeInstructions: null });
       })
       .finally(() => {
-        setLoaded(true);
+        if (!cancelled) setLoaded(true);
       });
-    return null;
-  }
-  if (!list) return null;
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, codexHome]);
+
+  if (!open) return null;
+  if (!loaded || !list) return null;
 
   const parseRoots = (s: string) => s.split("\n").map((x) => x.trim()).filter(Boolean);
 
@@ -120,9 +118,15 @@ export default function PluginsPanel({
     }
   }
 
+  // 分组：按后端返回的 source 字段（bundled / codex-home / custom）。
+  const SOURCE_LABEL: Record<string, string> = {
+    bundled: "内置 skills（随应用分发）",
+    "codex-home": "codex_home skills（~/.codex/skills）",
+    custom: "自定义 skills",
+  };
   const grouped: Record<string, codex.SkillInfo[]> = {};
   for (const s of list.skills) {
-    const key = s.dir.includes("codex-rs/skills") ? "内置 skills" : s.dir.includes(".codex/") ? "工作区 skills" : "自定义 skills";
+    const key = SOURCE_LABEL[s.source ?? "custom"] ?? SOURCE_LABEL.custom;
     (grouped[key] ||= []).push(s);
   }
 

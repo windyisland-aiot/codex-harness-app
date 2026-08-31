@@ -92,6 +92,7 @@ mod sanitize_tests {
 
 mod approval_response_parsing {
     use serde::Deserialize;
+    use std::time::Duration;
     #[derive(Deserialize)]
     struct ApprovalResp {
         code: Option<i64>,

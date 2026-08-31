@@ -16,4 +16,7 @@ ok.txt
 __pycache__/
 *.pyc
 # codex 二进制随包资源：占位不进仓，CI 下载真实文件
-src-tauri/resources/
+src-tauri/resources/*
+# 内置 skills（如 feishu-bot）随仓库分发，打进安装包（v0.5.3）
+!src-tauri/resources/skills/
+!src-tauri/resources/skills/**

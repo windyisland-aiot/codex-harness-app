@@ -9,10 +9,32 @@ use std::path::PathBuf;
 
 use harness_config::{AppConfig, PluginRule, SkillRule};
 use harness_plugins::{discover_plugins, discover_skills};
+use tauri::Manager;
 
-/// 扫描一个 skill/插件清单。
+/// 计算默认扫描根目录（v0.5.3：飞书等内置 skill 随安装包分发）。
+///
+/// 依次包含三类，`discover_*` 自带按 canonicalize 去重，重叠无副作用：
+/// 1. 打包资源目录 `<resource_dir>/skills|plugins`（tauri.conf.json bundle.resources）
+/// 2. `<codex_home>/skills|plugins`（如 `~/.codex/skills`，用户放置的自定义 skill）
+/// 3. 开发模式兜底 `src-tauri/resources/skills|plugins`（未打包时 resource_dir 不指向源码）
+fn default_roots(app: &tauri::AppHandle, codex_home: &str, kind: &str) -> Vec<(PathBuf, &'static str)> {
+    let mut roots = Vec::new();
+    if let Ok(rd) = app.path().resource_dir() {
+        roots.push((rd.join(kind), "bundled"));
+    }
+    roots.push((PathBuf::from(codex_home).join(kind), "codex-home"));
+    roots.push((
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources").join(kind),
+        "bundled",
+    ));
+    roots
+}
+
+/// 扫描一个 skill/插件清单。前端传入的 `skill_roots`/`plugin_roots` 为额外自定义根，
+/// 后端总是附带默认根（打包资源 + codex_home），保证内置 skill（如 feishu-bot）可被检测到。
 #[tauri::command]
 pub async fn plugins_list(
+    app: tauri::AppHandle,
     codex_home: String,
     skill_roots: Vec<String>,
     plugin_roots: Vec<String>,
@@ -20,13 +42,36 @@ pub async fn plugins_list(
     tauri::async_runtime::spawn_blocking(move || {
         let cfg = harness_config::read(&codex_home).map_err(|e| e.to_string())?;
 
-        let skills = discover_skills(
-            &skill_roots.iter().map(PathBuf::from).collect::<Vec<_>>(),
-        );
+        // 默认根 + 前端额外传入的自定义根，去重后扫描。
+        let mut all_skill_roots: Vec<(PathBuf, &'static str)> = default_roots(&app, &codex_home, "skills");
+        for r in skill_roots.iter().filter(|s| !s.trim().is_empty()) {
+            all_skill_roots.push((PathBuf::from(r), "custom"));
+        }
+        let mut seen_roots: Vec<PathBuf> = Vec::new();
+        let mut dedup_roots: Vec<(PathBuf, &'static str)> = Vec::new();
+        for (p, src) in all_skill_roots {
+            let canon = p.canonicalize().unwrap_or(p.clone());
+            if !seen_roots.contains(&canon) {
+                seen_roots.push(canon);
+                dedup_roots.push((p, src));
+            }
+        }
+
+        let mut skills: Vec<harness_plugins::SkillInfo> = Vec::new();
+        let mut skill_sources: Vec<&'static str> = Vec::new();
+        for (root, src) in &dedup_roots {
+            for s in discover_skills(&[root.clone()]) {
+                if !skills.iter().any(|x| x.dir == s.dir) {
+                    skills.push(s);
+                    skill_sources.push(src);
+                }
+            }
+        }
         // 标记当前配置里的开关（按 name 或 path 匹配）。
         let skills_json: Vec<serde_json::Value> = skills
             .iter()
-            .map(|s| {
+            .enumerate()
+            .map(|(i, s)| {
                 let rule = cfg.skills.iter().find(|r| {
                     (!r.name.is_empty() && r.name == s.name) || (!r.path.is_empty() && r.path == s.dir.to_string_lossy())
                 });
@@ -36,13 +81,24 @@ pub async fn plugins_list(
                     "description": s.description,
                     "dir": s.dir.to_string_lossy(),
                     "enabled": enabled,
+                    "source": skill_sources.get(i).copied().unwrap_or("custom"),
                 })
             })
             .collect();
 
-        let plugins = discover_plugins(
-            &plugin_roots.iter().map(PathBuf::from).collect::<Vec<_>>(),
-        );
+        // 插件：默认根 + 自定义根（同样去重）。
+        let mut all_plugin_roots: Vec<(PathBuf, &'static str)> = default_roots(&app, &codex_home, "plugins");
+        for r in plugin_roots.iter().filter(|s| !s.trim().is_empty()) {
+            all_plugin_roots.push((PathBuf::from(r), "custom"));
+        }
+        let mut plugins: Vec<harness_plugins::PluginInfo> = Vec::new();
+        for (root, _src) in &all_plugin_roots {
+            for p in discover_plugins(&[root.clone()]) {
+                if !plugins.iter().any(|x| x.dir == p.dir) {
+                    plugins.push(p);
+                }
+            }
+        }
         let plugins_json: Vec<serde_json::Value> = plugins
             .iter()
             .map(|p| {
