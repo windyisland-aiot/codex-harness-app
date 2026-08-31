@@ -248,7 +248,7 @@ export default function SettingsPanel({
             <div className="sp-avatar">H</div>
             <div>
               <div className="sp-user-name">Harness 用户</div>
-              <div className="sp-user-sub">本地实例 · v0.5.3</div>
+              <div className="sp-user-sub">本地实例 · v0.5.4</div>
             </div>
           </div>
           <nav className="sp-nav-list">
@@ -1022,7 +1022,7 @@ function SectionAbout({ codexHome, codexBin }: { codexHome: string; codexBin: st
   return (
     <div className="sp-section">
       <h2 className="sp-h">关于 Harness</h2>
-      <p className="sp-desc">基于 OpenAI Codex 的企业内部 Agent 桌面应用。v0.5.3</p>
+      <p className="sp-desc">基于 OpenAI Codex 的企业内部 Agent 桌面应用。v0.5.4</p>
       <div className="sp-card">
         <div className="sp-row"><div className="sp-label">codexHome</div><div className="sp-code">{codexHome}</div></div>
         <div className="sp-row"><div className="sp-label">codexBin</div><div className="sp-code">{codexBin}</div></div>

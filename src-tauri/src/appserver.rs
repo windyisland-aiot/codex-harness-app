@@ -132,6 +132,7 @@ fn load_provider_env(codex_home: &str) -> HashMap<String, String> {
 ///    取出值，注入 codex 子进程环境。此前这一步缺失 → 401 → 对话完全静默失败。
 #[tauri::command]
 pub async fn appserver_start(
+    app: tauri::AppHandle,
     state: State<'_, CodexHandle>,
     codex_bin: String,
     codex_home: String,
@@ -155,6 +156,16 @@ pub async fn appserver_start(
         };
 
         log(&format!("▶ appserver_start: bin={codex_bin}, home={codex_home_log}"));
+
+        // --- v0.5.4：同步内置 skills 到 <codex_home>/skills/ ---
+        // codex 子进程只扫 $CODEX_HOME/skills；安装包资源路径是动态的，
+        // 必须物理拷贝过去才能让 codex 进程原生读到（feishu-bot 等）。
+        // 失败不阻断启动（skill 缺失只影响对应能力，对话本身照常）。
+        match crate::plugins::sync_bundled_skills(&app, &codex_home_log) {
+            Ok(n) if n > 0 => log(&format!("  ✅ 内置 skills 已同步到 $CODEX_HOME/skills（{n} 个）")),
+            Ok(_) => log("  内置 skills：无（跳过同步）"),
+            Err(e) => log(&format!("  ⚠️ 内置 skills 同步失败：{e}")),
+        }
 
         // 读 config（会自动迁移 wire_api/base_url/provider_type 等）
         let cfg = harness_config::read(&codex_home_log)

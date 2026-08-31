@@ -1,13 +1,24 @@
 # Harness 企业内部 Agent — 部署文档
 
-> 版本：v0.5.3（P2 阶段 · RAG + Bitable + 广告脚本多 Agent + 飞书审批直连 + 插件/Skill 面板）（测试发布）
-> 发布类型：v0.5.3 测试发布
+> 版本：v0.5.4（P2 阶段 · RAG + Bitable + 广告脚本多 Agent + 飞书审批直连 + 插件/Skill 面板）（测试发布）
+> 发布类型：v0.5.4 测试发布
 > 目标平台：Windows 10 / Windows 11 x64
 > 源码仓库：`windyisland-aiot/codex-harness-app`（私有）
 
 ---
 
-## 〇、What's New v0.5.3 版更新要点
+## 〇、What's New v0.5.4 版更新要点
+
+让 codex 子进程默认读取正确的 skill 路径：启动时自动把内置 skills 同步到 `$CODEX_HOME/skills/`。
+
+| 分类 | 变更内容 | 对应计划项 |
+|------|----------|------------|
+| 🧠 skill 路径自动同步 | `appserver_start` 在拉起 codex 子进程前，把安装包资源目录的内置 skills 物理同步到 `<codex_home>/skills/`（codex 原生只扫 `$CODEX_HOME/skills`，而安装包资源路径是动态的） | P2-T10 |
+| 🧠 规则自动合并 | 同步后若 config.toml 没有该 skill 的规则，自动追加 `[[skills.config]] path=<dir> enabled=true`（首次默认启用）；已有规则不动，尊重用户在插件面板的开关选择 | P2-T10 |
+| 🧪 测试 | 新增同步逻辑单测 2 条（递归拷贝幂等 + 规则合并不重复） | P2-T10 |
+| 📦 打包 & CI | 版本号统一升到 0.5.4 | P2-T10 |
+
+## 〇-1、v0.5.3 版更新要点（What's New）
 
 本版本集中修复用户反馈的 4 个 UI 问题：插件管理独立页面、按钮悬浮消失、蓝紫主色改黑白、飞书 SKILL 检测不到。
 
