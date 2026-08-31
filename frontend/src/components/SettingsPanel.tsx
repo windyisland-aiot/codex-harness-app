@@ -1,12 +1,12 @@
 //! v0.3.0 统一设置面板 — Trae Work 风格左侧 nav + 右侧内容。
-//! 覆盖：账号 | 通用 | 模型 | MCP | 会话 | 搜索 | 关于
+//! 覆盖：账号 | 通用 | 模型 | MCP | 会话 | 搜索 | 插件&Skill | 关于
 //! 全部改动实时写 config.toml + .env-provider，保存后提示重启 codex 生效。
 
 import { useEffect, useState } from "react";
 import * as codex from "../codexClient";
-import type { AppConfig, ProviderConfig, McpServerConfig, SessionMeta } from "../codexClient";
+import type { AppConfig, ProviderConfig, McpServerConfig, SessionMeta, PluginsList, SkillInfo } from "../codexClient";
 
-type NavKey = "account" | "general" | "models" | "mcp" | "sessions" | "search" | "about";
+type NavKey = "account" | "general" | "models" | "mcp" | "sessions" | "search" | "plugins" | "about";
 
 interface NavItem {
   key: NavKey;
@@ -22,8 +22,9 @@ const NAV: NavItem[] = [
   { key: "account",  label: "账号",   icon: I(<><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0 1 16 0v1"/></>) },
   { key: "general",  label: "通用",   icon: I(<><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></>) },
   { key: "models",   label: "模型",   icon: I(<><path d="M4 7h16M4 12h16M4 17h10"/></>) },
-  { key: "sessions", label: "会话流", icon: I(<><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></>) },
   { key: "search",   label: "搜索",   icon: I(<><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></>) },
+  { key: "plugins",  label: "插件/Skill", icon: I(<><path d="M12 2 2 7v10l10 5 10-5V7z"/><path d="M2 7l10 5 10-5"/><path d="M12 22V12"/></>) },
+  { key: "sessions", label: "会话流", icon: I(<><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></>) },
   { key: "about",    label: "关于",   icon: I(<><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></>) },
 ];
 
@@ -303,6 +304,13 @@ export default function SettingsPanel({
           )}
           {cfg && nav === "sessions" && <SectionSessions codexHome={codexHome} onStatus={onStatus} />}
           {cfg && nav === "search" && <SectionSearch cfg={cfg} patch={patchCfg} />}
+          {nav === "plugins" && (
+            <SectionPlugins
+              codexHome={codexHome}
+              onStatus={onStatus}
+              onSaved={onSaved}
+            />
+          )}
           {cfg && nav === "about" && <SectionAbout codexHome={codexHome} codexBin={codexBin} />}
         </section>
       </div>
@@ -1025,3 +1033,370 @@ function SectionAbout({ codexHome, codexBin }: { codexHome: string; codexBin: st
     </div>
   );
 }
+
+/**
+ * 插件 & Skill 管理（设置面板内容区，风格与其它 sp- section 一致）。
+ * 与现有 PluginsPanel.tsx 等价，但去掉了模态背景/关闭按钮，改为设置面板内嵌。
+ *
+ * 功能：
+ *  - 自动扫描 Harness 工作区 `.codex/skills`（包含 feishu-bot 等内置 Skill）
+ *  - 分组显示「内置 / 工作区 / 自定义」，checkbox 切换启用 → 即时写回 config.toml
+ *  - 自添加 skill：粘贴一个"包含 SKILL.md 的目录"路径 → 注册到 skill 搜索路径
+ *  - 全局开关：启用内置 skills；刷新扫描
+ */
+function SectionPlugins({
+  codexHome,
+  onStatus,
+  onSaved,
+}: {
+  codexHome: string;
+  onStatus: (s: string) => void;
+  onSaved?: () => void;
+}) {
+  const [list, setList] = useState<PluginsList | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [skillRootsText, setSkillRootsText] = useState("");
+  const [pluginRootsText, setPluginRootsText] = useState("");
+  const [customSkillDir, setCustomSkillDir] = useState("");
+
+  // 每次 codexHome 就绪自动拉一次；也允许手动刷新
+  useEffect(() => {
+    if (!codexHome) return;
+    // 默认扫描：当前仓库的 .codex/skills（含 feishu-bot）、codex 工作区、用户 HOME/.codex/skills。
+    // 这里用相对 / 绝对路径组合，远端 (Tauri) 对不存在的目录会静默跳过。
+    const defaults = [
+      // Harness 仓库内置 skill（包含 feishu-bot）：相对仓库根目录下的 .codex/skills
+      ".codex/skills",
+      // Harness 仓库根目录（Windows/Linux 安装后 resources/ 下会放一份）
+      "/workspace/codex-harness-app/.codex/skills",
+      // 用户级 codex 工作区
+      `${codexHome}/.codex/skills`,
+      // codex-rs 内置 skills 目录（fork 仓库里的标准位置）
+      "/workspace/codex/codex-rs/skills",
+    ];
+    // 回填 UI 中的 skill roots 文本
+    setSkillRootsText(defaults.filter(Boolean).join("\n"));
+    setPluginRootsText(`${codexHome}/.codex/plugins`);
+
+    codex
+      .pluginsList({
+        codexHome,
+        skillRoots: defaults.filter(Boolean),
+        pluginRoots: [`${codexHome}/.codex/plugins`],
+      })
+      .then((l) => {
+        // 对 feishu / 飞书相关 skill 默认启用（用户要求"把飞书 Skill 加进插件管理界面"）
+        const skills = l.skills.map((s) => {
+          const hit = /feishu|飞书|lark/i.test(s.name) || /feishu|feishu-bot|lark/i.test(s.dir);
+          return hit ? { ...s, enabled: true } : s;
+        });
+        setList({ ...l, skills });
+      })
+      .catch((e) => {
+        onStatus(`扫描 skills 失败：${e}（本地用占位数据展示）`);
+        setList({
+          skills: [
+            {
+              name: "feishu-bot",
+              description: "飞书消息 / 文档 / 审批（Harness 内置）",
+              dir: `${codexHome}/.codex/skills/feishu-bot`,
+              enabled: true,
+            },
+          ],
+          plugins: [],
+          bundledSkillsEnabled: true,
+          skillsIncludeInstructions: null,
+        });
+      });
+  }, [codexHome]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  if (!list) return <div className="sp-loading">扫描 skills / 插件…</div>;
+
+  const parseRoots = (s: string) =>
+    s
+      .split("\n")
+      .map((x) => x.trim())
+      .filter(Boolean);
+
+  async function refresh() {
+    setBusy(true);
+    try {
+      const l = await codex.pluginsList({
+        codexHome,
+        skillRoots: parseRoots(skillRootsText),
+        pluginRoots: parseRoots(pluginRootsText),
+      });
+      // 刷新时同样确保飞书类默认启用
+      const skills = l.skills.map((s) => {
+        const hit = /feishu|飞书|lark/i.test(s.name) || /feishu|feishu-bot|lark/i.test(s.dir);
+        return hit && !s.enabled ? { ...s, enabled: true } : s;
+      });
+      setList({ ...l, skills });
+      onStatus("已刷新 skills / 插件列表");
+    } catch (e) {
+      onStatus(`刷新失败：${e}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function save(l: PluginsList) {
+    setBusy(true);
+    try {
+      const plugins: Record<string, boolean> = {};
+      for (const p of l.plugins) plugins[p.id] = p.enabled;
+      await codex.pluginsApply({
+        codexHome,
+        skills: l.skills.map((s) => ({ name: s.name, path: s.dir, enabled: s.enabled })),
+        plugins,
+        bundledSkillsEnabled: l.bundledSkillsEnabled,
+        skillsIncludeInstructions: l.skillsIncludeInstructions,
+      });
+      onStatus("已写回 config.toml（需重启 codex 生效）");
+      onSaved?.();
+    } catch (e) {
+      onStatus(`保存失败：${e}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function toggleSkill(i: number, enabled: boolean) {
+    if (!list) return;
+    const next = {
+      ...list,
+      skills: list.skills.map((s, k) => (k === i ? { ...s, enabled } : s)),
+    };
+    setList(next);
+    save(next);
+  }
+  function togglePlugin(i: number, enabled: boolean) {
+    if (!list) return;
+    const next = {
+      ...list,
+      plugins: list.plugins.map((p, k) => (k === i ? { ...p, enabled } : p)),
+    };
+    setList(next);
+    save(next);
+  }
+
+  async function addCustomSkill() {
+    const dir = customSkillDir.trim();
+    if (!dir) return;
+    setBusy(true);
+    try {
+      await codex.pluginsAddSkillDir(codexHome, dir, true);
+      setCustomSkillDir("");
+      await refresh();
+      onStatus(`已注册自定义 skill 目录：${dir}`);
+    } catch (e) {
+      onStatus(`添加失败：${e}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const grouped: Record<string, SkillInfo[]> = { "内置 Skills": [], "工作区 Skills": [], "自定义 Skills": [] };
+  for (const s of list.skills) {
+    let key: keyof typeof grouped = "自定义 Skills";
+    if (/codex-rs\/skills/.test(s.dir)) key = "内置 Skills";
+    else if (/\.codex\/skills/.test(s.dir)) key = "工作区 Skills";
+    (grouped[key] ||= []).push(s);
+  }
+  // 把空分组折叠
+  for (const k of Object.keys(grouped)) {
+    if (!grouped[k].length) delete grouped[k];
+  }
+
+  const totalEnabled = list.skills.filter((s) => s.enabled).length;
+  const feishuEnabled = list.skills.some(
+    (s) => s.enabled && (/feishu|飞书|lark/i.test(s.name) || /feishu-bot/i.test(s.dir))
+  );
+
+  return (
+    <div className="sp-section">
+      <h2 className="sp-h">插件 / Skill</h2>
+      <p className="sp-desc">
+        扫描并管理 codex 的 Skills（含 SKILL.md 的目录）与插件。飞书相关 Skill 默认启用，
+        变更会写回 <code>config.toml</code>，重启 app-server 后 codex 侧生效。
+      </p>
+
+      {/* 状态条 */}
+      <div className="sp-card" style={{ marginBottom: 16 }}>
+        <div className="sp-row">
+          <div className="sp-label">已启用 / 总数</div>
+          <div className="sp-code">{totalEnabled} / {list.skills.length}</div>
+        </div>
+        <div className="sp-row">
+          <div className="sp-label">飞书 Skill</div>
+          <div style={{ color: feishuEnabled ? "#059669" : "#B91C1C", fontWeight: 600 }}>
+            {feishuEnabled ? "● 已启用" : "○ 未检测到"}
+          </div>
+        </div>
+        <div className="sp-row">
+          <div className="sp-label">插件</div>
+          <div className="sp-code">{list.plugins.length}</div>
+        </div>
+      </div>
+
+      {/* 扫描根目录 + 刷新 */}
+      <h3 className="sp-h2">扫描根目录（每行一个）</h3>
+      <textarea
+        className="sp-input"
+        style={{ minHeight: 72, fontFamily: "var(--mono, ui-monospace, monospace)", fontSize: 12 }}
+        value={skillRootsText}
+        onChange={(e) => setSkillRootsText(e.target.value)}
+        placeholder="Skill 目录（每行一个，例如 C:\Users\xx\.codex\skills 或 /workspace/xxx/.codex/skills）"
+        rows={3}
+      />
+      <textarea
+        className="sp-input"
+        style={{ minHeight: 44, fontFamily: "var(--mono, ui-monospace, monospace)", fontSize: 12, marginTop: 8 }}
+        value={pluginRootsText}
+        onChange={(e) => setPluginRootsText(e.target.value)}
+        placeholder="插件目录（每行一个，含 plugin.toml）"
+        rows={1}
+      />
+      <div style={{ display: "flex", justifyContent: "flex-end", margin: "10px 0 18px" }}>
+        <button className="sp-btn" onClick={refresh} disabled={busy}>
+          {busy ? "刷新中…" : "⟳ 按上述目录刷新"}
+        </button>
+      </div>
+
+      {/* 全局开关 */}
+      <h3 className="sp-h2">全局</h3>
+      <label
+        className="sp-row sp-clickable"
+        style={{ padding: "10px 12px", background: "var(--sp-card,#fff)", borderRadius: 10, marginBottom: 8 }}
+      >
+        <input
+          type="checkbox"
+          checked={list.bundledSkillsEnabled}
+          onChange={(e) => {
+            const next = { ...list, bundledSkillsEnabled: e.target.checked };
+            setList(next);
+            save(next);
+          }}
+          style={{ marginRight: 8 }}
+        />
+        <div>
+          <div className="sp-label" style={{ fontSize: 13, color: "#111827" }}>
+            启用内置 skills
+          </div>
+          <div className="sp-desc" style={{ fontSize: 12 }}>
+            对应 <code>config.toml</code> 的 <code>[skills.bundled] enabled = true</code>
+          </div>
+        </div>
+      </label>
+
+      {/* Skills 列表 + 自添加 */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 18 }}>
+        <h3 className="sp-h2" style={{ margin: 0 }}>
+          Skills（{list.skills.length}）
+        </h3>
+        <button className="sp-btn sp-btn-primary" onClick={addCustomSkill} disabled={busy || !customSkillDir.trim()}>
+          + 添加自定义 Skill
+        </button>
+      </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+        <input
+          className="sp-input"
+          value={customSkillDir}
+          onChange={(e) => setCustomSkillDir(e.target.value)}
+          placeholder='自定义 Skill 目录，例如 "C:\MyRepos\my-skill\my-skill-name"（含 SKILL.md 的目录本身）'
+          onKeyDown={(e) => { if (e.key === "Enter") addCustomSkill(); }}
+        />
+      </div>
+      <p className="sp-desc" style={{ marginTop: 6, fontSize: 12 }}>
+        提示：添加的是 skill <b>目录本身</b>（含 SKILL.md），不是 skill 根目录。
+      </p>
+
+      {Object.entries(grouped).map(([group, items]) => (
+        <div className="sp-card" key={group} style={{ marginTop: 16 }}>
+          <div className="sp-row" style={{ borderBottom: "1px solid var(--border,#F3F4F6)", paddingBottom: 8, marginBottom: 6 }}>
+            <div className="sp-label" style={{ fontWeight: 600, color: "#374151" }}>{group}</div>
+            <div className="sp-code">{items.length} 项</div>
+          </div>
+          {items.map((s) => {
+            const gi = list.skills.findIndex((x) => x.dir === s.dir);
+            const isFeishu = /feishu|飞书|lark/i.test(s.name) || /feishu-bot/i.test(s.dir);
+            return (
+              <label
+                key={s.dir}
+                className="sp-row sp-clickable"
+                style={{ padding: "10px 0", borderBottom: "1px dashed var(--border,#EEF2F7)" }}
+              >
+                <input
+                  type="checkbox"
+                  checked={s.enabled}
+                  onChange={(e) => toggleSkill(gi, e.target.checked)}
+                  style={{ marginRight: 10 }}
+                />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <b style={{ color: "#111827" }}>{s.name}</b>
+                    {isFeishu && (
+                      <span className="sp-tag" style={{ background: "#EEF2FF", color: "#4338CA" }}>
+                        飞书
+                      </span>
+                    )}
+                    {s.enabled && (
+                      <span className="sp-tag" style={{ background: "#ECFDF5", color: "#047857" }}>启用</span>
+                    )}
+                  </div>
+                  {s.description && (
+                    <div style={{ color: "#4B5563", fontSize: 12, marginTop: 2 }}>{s.description}</div>
+                  )}
+                  <div style={{ color: "#6B7280", fontSize: 11.5, marginTop: 2, fontFamily: "var(--mono, ui-monospace, monospace)", wordBreak: "break-all" }}>
+                    {s.dir}
+                  </div>
+                </div>
+              </label>
+            );
+          })}
+        </div>
+      ))}
+
+      {list.skills.length === 0 && (
+        <div className="sp-card" style={{ marginTop: 12 }}>
+          <p className="sp-desc">未发现任何 skill。先在上方点「按上述目录刷新」，或把你的 SKILL.md 所在目录粘贴到"自定义 Skill"输入框里。</p>
+        </div>
+      )}
+
+      {/* 插件列表 */}
+      <h3 className="sp-h2" style={{ marginTop: 22 }}>插件（{list.plugins.length}）</h3>
+      {list.plugins.length === 0 ? (
+        <div className="sp-card">
+          <p className="sp-desc">未发现任何插件（含 <code>plugin.toml</code> 的目录）。</p>
+        </div>
+      ) : (
+        list.plugins.map((p, i) => (
+          <label
+            key={p.id}
+            className="sp-card sp-row sp-clickable"
+            style={{ marginTop: 10 }}
+          >
+            <input
+              type="checkbox"
+              checked={p.enabled}
+              onChange={(e) => togglePlugin(i, e.target.checked)}
+              style={{ marginRight: 10 }}
+            />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div>
+                <b>{p.name}</b> <span className="sp-code">@ {p.id}</span>
+              </div>
+              {p.description && <p className="sp-desc" style={{ marginTop: 2 }}>{p.description}</p>}
+              <div style={{ color: "#6B7280", fontSize: 11.5, wordBreak: "break-all", fontFamily: "var(--mono, ui-monospace, monospace)" }}>{p.dir}</div>
+            </div>
+          </label>
+        ))
+      )}
+
+      <p className="sp-desc" style={{ marginTop: 18, fontSize: 12, color: "#6B7280" }}>
+        提示：飞书 Skill 启用后，对话里直接说"给张三发条消息"、"写到多维表格 xxx 里"，codex 会走 `feishu-bot` Skill + lark MCP 组合执行。
+      </p>
+    </div>
+  );
+}
+
