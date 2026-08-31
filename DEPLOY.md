@@ -1,12 +1,26 @@
 # Harness 企业内部 Agent — 部署文档
 
-> 版本：v0.5.1（P2 阶段 · RAG + Bitable + 广告脚本多 Agent + 飞书审批直连）（测试发布）
+> 版本：v0.5.2（P2 阶段 · RAG + Bitable + 广告脚本多 Agent + 飞书审批直连 + 插件/Skill 面板）（测试发布）
+> 发布类型：v0.5.2 测试发布
 > 目标平台：Windows 10 / Windows 11 x64
 > 源码仓库：`windyisland-aiot/codex-harness-app`（私有）
 
 ---
 
-## 〇、v0.5.1 版更新要点（What's New）
+## 〇、What's New v0.5.2 版更新要点
+
+在 v0.5.1 基础上补上 **UI 可用性缺口**：解决用户反馈"模型配置对话框拉伸错误"和"没有 Skill 使用界面"两个问题，并把飞书 Skill 默认启用加入插件管理界面，让终端用户开箱即可在对话里调用 feishu-bot。
+
+| 分类 | 变更内容 | 对应计划项 |
+|------|----------|------------|
+| 🎨 UI 修复 | 设置面板「编辑模型 / 新增模型」对话框从 560px 扩到 680px；`.sp-hint` / `.sp-hint code` 新增 `overflow-wrap: anywhere` + `word-break: break-all`，长 Base URL 提示不再撑破卡片边界溢出外部 | P2-T8 |
+| 🧩 插件/Skill 面板 | SettingsPanel 左侧新增「插件/Skill」tab（SectionPlugins）：状态条、扫描根目录可编辑、刷新、全局开关、分组 checkbox 即时写回、自添加 Skill 目录输入框 | T14 + P2-T10 |
+| 🧩 插件/Skill 面板 | 自动扫描 `.codex/skills`，对匹配 `feishu / 飞书 / lark / feishu-bot` 的 Skill 默认启用，列表中显示"飞书"与"启用"tag，对话里直接触发 feishu-bot SKILL 执行 | P2-T10 |
+| 🧩 插件/Skill 面板 | 样式对齐 sp- 系列：新增 `.sp-h2`、`.sp-clickable`、`.sp-tag` 3 个视觉类，风格与账号/模型/MCP 等 tab 完全一致 | P2-T10 |
+| 📦 打包 & CI | 版本号统一升到 0.5.2（Cargo.toml / tauri.conf.json / approval_feishu.rs / SettingsPanel 顶部 & 关于页 & DEPLOY.md） | P2-T10 |
+| 🧪 测试 | 新增设置面板 Skill UI 断言（10 项）→ 6 项 RED → 10 项 GREEN；tsc + vite build 全通过 | P2-T10 |
+
+## 〇-1、v0.5.1 版更新要点（What's New）
 
 本版本是**企业内多 Agent 协同（广告脚本生成）能力落地**的里程碑测试发布，同时把知识库 RAG、飞书多维表格（Base/Bitable）、飞书审批直连 3 条关键数据链路从后端贯通到前端 UI。
 

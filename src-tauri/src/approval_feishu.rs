@@ -62,7 +62,7 @@ pub async fn approval_send_to_feishu(
             "start_method": "API",
             "origin_detail": {
                 "platform": "Harness Desktop",
-                "version": "0.5.1",
+                "version": "0.5.2",
             },
             "approver_open_ids": approver_open_ids,
             "dept_id": dept_id,
