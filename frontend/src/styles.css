@@ -2331,9 +2331,12 @@ body.theme-dark .log-line.is-err {
   font-size: 13px;
 }
 
-/* 编辑模型 dialog（居中小弹窗） */
+/* 编辑模型 dialog（居中小弹窗） — v0.5.1 修复：原 560px 过窄，
+   Base URL 提示里的长 code URL 会撑破卡片边界（拉伸视觉错误）。
+   现宽度升至 680px + hint/code 双重断行保护。 */
 .modal-dialog.edit-model-dialog {
-  width: min(560px, 94vw);
+  width: min(680px, 94vw);
+  min-width: 0;
 }
 .edit-model-form .form-block {
   margin-bottom: 14px;
@@ -2349,15 +2352,35 @@ body.theme-dark .log-line.is-err {
   margin-top: 4px;
   font-size: 11.5px;
   color: #6B7280;
+  /* 防长 URL / 提示词撑破对话框宽度。 */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.55;
+  max-width: 100%;
+  min-width: 0;
+}
+/* .sp-hint 里的 code 是长 URL 溢出的直接元凶（monospace 不换行）：
+   强制 wrap，必要时 break-all（因为域名中间没有合法断点）。 */
+.edit-model-form .sp-hint code {
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  white-space: normal;
+  display: inline;
+  /* 缩小 0.5px 字号让折行后在 680px 内只占 1 行（理想宽度）。 */
+  font-size: 11.5px;
+  padding: 1px 5px;
 }
 .edit-model-form .sp-input-sm {
   width: 100%;
+  min-width: 0;
 }
 .edit-model-form .two-col {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
+  min-width: 0;
 }
+.edit-model-form .two-col .form-block { min-width: 0; }
 @media (max-width: 520px) {
   .edit-model-form .two-col { grid-template-columns: 1fr; }
 }
