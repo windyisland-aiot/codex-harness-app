@@ -1,14 +1,14 @@
 # Harness 企业内部 Agent — 部署文档
 
-> 版本：v0.5.0（P2 阶段 · RAG + Bitable + 广告脚本多 Agent + 飞书审批直连）
+> 版本：v0.5.1（P2 阶段 · RAG + Bitable + 广告脚本多 Agent + 飞书审批直连）（测试发布）
 > 目标平台：Windows 10 / Windows 11 x64
 > 源码仓库：`windyisland-aiot/codex-harness-app`（私有）
 
 ---
 
-## 〇、v0.5.0 版更新要点（What's New）
+## 〇、v0.5.1 版更新要点（What's New）
 
-本版本是**企业内多 Agent 协同（广告脚本生成）能力落地**的里程碑版本，同时把知识库 RAG、飞书多维表格（Base/Bitable）、飞书审批直连 3 条关键数据链路从后端贯通到前端 UI。
+本版本是**企业内多 Agent 协同（广告脚本生成）能力落地**的里程碑测试发布，同时把知识库 RAG、飞书多维表格（Base/Bitable）、飞书审批直连 3 条关键数据链路从后端贯通到前端 UI。
 
 | 分类 | 变更内容 | 对应计划项 |
 |------|----------|------------|
@@ -65,8 +65,8 @@
 
 | 格式 | 下载链接 | 体积 | 适用场景 |
 |------|----------|------|----------|
-| MSI | [Harness_0.5.0_x64_en-US.msi](https://github.com/windyisland-aiot/codex-harness-app/releases/download/v0.5.0/Harness_0.5.0_x64_en-US.msi) | ≈ 6 MB | 企业 IT 批量部署、组策略管理 |
-| NSIS (EXE) | [Harness_0.5.0_x64-setup.exe](https://github.com/windyisland-aiot/codex-harness-app/releases/download/v0.5.0/Harness_0.5.0_x64-setup.exe) | ≈ 4.5 MB | 个人开发者本地双击安装 |
+| MSI | [Harness_0.5.1_x64_en-US.msi](https://github.com/windyisland-aiot/codex-harness-app/releases/download/v0.5.1/Harness_0.5.1_x64_en-US.msi) | ≈ 6 MB | 企业 IT 批量部署、组策略管理 |
+| NSIS (EXE) | [Harness_0.5.1_x64-setup.exe](https://github.com/windyisland-aiot/codex-harness-app/releases/download/v0.5.1/Harness_0.5.1_x64-setup.exe) | ≈ 4.5 MB | 个人开发者本地双击安装 |
 
 安装步骤：
 1. 双击安装包（如被 SmartScreen 拦截，点「更多信息」→「仍要运行」）。
@@ -409,7 +409,7 @@ cargo test -p appserver     # JSON-RPC 客户端
 
 ## 八、参考链接
 
-- GitHub Release: https://github.com/windyisland-aiot/codex-harness-app/releases/tag/v0.5.0
+- GitHub Release: https://github.com/windyisland-aiot/codex-harness-app/releases/tag/v0.5.1
 - CI Workflow: `.github/workflows/build-windows-release.yml`
 - 任务清单: [TASKS.md](TASKS.md)
 - Tauri 2.x 文档: https://v2.tauri.app/

@@ -1,6 +1,6 @@
 [package]
 name = "harness-app"
-version = "0.5.0"
+version = "0.5.1"
 description = "企业内部 Agent 桌面应用（Windows 目标）"
 edition = "2021"
 
