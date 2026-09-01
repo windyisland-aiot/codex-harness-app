@@ -3081,3 +3081,95 @@ body.theme-dark .plg-card-tag.type-plugin { background: rgba(59,130,246,.15); co
 .cfg-hint { margin: 0; font-size: 12px; color: var(--text-secondary); }
 .cfg-empty { padding: 18px 0; text-align: center; color: var(--text-muted); font-size: 13px; }
 
+/* ============ B2 云端登录弹窗 ============ */
+.cloud-login-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(17, 24, 39, .5);
+  backdrop-filter: blur(6px);
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cloud-login-modal {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 28px 32px;
+  width: min(400px, 92vw);
+  box-shadow: var(--shadow-lg);
+}
+.cloud-login-modal h2 {
+  margin: 0 0 8px;
+  font-size: 18px;
+  color: var(--text);
+}
+.cloud-login-hint {
+  margin: 0 0 20px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+.cloud-login-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  border-radius: 10px;
+  border: 1px solid var(--border-input);
+  background: var(--bg-sunken);
+  color: var(--text);
+  font-size: 14px;
+  outline: none;
+  transition: border-color .12s;
+}
+.cloud-login-input:focus {
+  border-color: var(--brand);
+}
+.cloud-login-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 8px;
+}
+.cloud-login-actions button {
+  padding: 8px 20px;
+  border-radius: 8px;
+  border: 1px solid var(--border-input);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all .12s;
+}
+.cloud-login-actions button:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.cloud-login-actions button.primary {
+  background: var(--brand);
+  border-color: var(--brand);
+  color: var(--text-invert);
+}
+.cloud-login-actions button.primary:hover {
+  opacity: .9;
+}
+.cloud-login-actions button:disabled {
+  opacity: .4;
+  cursor: not-allowed;
+}
+
+/* 云端阶段指示器 */
+.cloud-stage-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(79, 70, 229, .12);
+  color: var(--brand);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+

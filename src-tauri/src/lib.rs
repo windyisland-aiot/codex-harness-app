@@ -10,6 +10,7 @@
 mod appserver;
 mod approval_feishu;
 mod base;
+mod cloud_bridge;
 mod config;
 mod feishu;
 mod fs;
@@ -131,6 +132,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
         .manage(appserver::managed_state())
+        .manage(cloud_bridge::managed_state())
         .setup(|_app| Ok(()))
         .invoke_handler(tauri::generate_handler![
             greet,
@@ -182,6 +184,14 @@ pub fn run() {
             fs::fs_read_file,
             fs::fs_write_file,
             harness_resolve_paths,
+            // B2 云端 codex 执行桥
+            cloud_bridge::cloud_login,
+            cloud_bridge::cloud_mode_set,
+            cloud_bridge::cloud_mode_get,
+            cloud_bridge::cloud_health,
+            cloud_bridge::cloud_thread_start,
+            cloud_bridge::cloud_turn_start,
+            cloud_bridge::cloud_skills_sync,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

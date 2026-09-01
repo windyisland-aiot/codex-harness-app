@@ -683,3 +683,156 @@ export function approvalSendToFeishu(opts: {
     uuid: opts.uuid ?? null,
   });
 }
+
+// --- B2 云端 codex 执行桥 ---
+
+export interface CloudModeStatus {
+  enabled: boolean;
+  hasToken: boolean;
+  apiBase: string;
+  sessionId: string | null;
+}
+
+export interface CloudLoginResult {
+  ok: boolean;
+  token: string;
+  user?: { id: string; username: string; role?: string };
+}
+
+export interface CloudHealthResult {
+  ok: boolean;
+  reachable: boolean;
+  latencyMs?: number;
+  message?: string;
+  data?: unknown;
+}
+
+export interface CloudBrief {
+  target_audience?: string;
+  primary_selling_point?: string;
+  duration_seconds?: number;
+  script_mode?: string;
+  promotion_context?: string;
+}
+
+/** 登录 bibike 云端，获取 Bearer token。 */
+export function cloudLogin(input: {
+  apiBase?: string;
+  username: string;
+  password: string;
+}): Promise<CloudLoginResult> {
+  return invoke<CloudLoginResult>("cloud_login", {
+    apiBase: input.apiBase ?? null,
+    username: input.username,
+    password: input.password,
+  });
+}
+
+/** 开关云端模式。 */
+export function cloudModeSet(enabled: boolean): Promise<void> {
+  return invoke("cloud_mode_set", { enabled });
+}
+
+/** 读取云端模式状态。 */
+export function cloudModeGet(): Promise<CloudModeStatus> {
+  return invoke<CloudModeStatus>("cloud_mode_get");
+}
+
+/** 云端健康检查。 */
+export function cloudHealth(): Promise<CloudHealthResult> {
+  return invoke<CloudHealthResult>("cloud_health");
+}
+
+/** 创建云端会话（返回 session_id）。 */
+export function cloudThreadStart(): Promise<string> {
+  return invoke<string>("cloud_thread_start");
+}
+
+/**
+ * 发送消息到云端 codex 桥。
+ * SSE 流在 Rust 后台线程消费，事件推入 pollEvents() 队列。
+ * 事件 method 前缀 `cloud/`：
+ * - cloud/status          → { stage: "intake|retrieving|generating|guard" }
+ * - cloud/intake_question  → { question, reason }
+ * - cloud/result           → { script, creative_notes, suggestions, issues, references, mode, brief }
+ * - cloud/turn_completed   → 本轮结束
+ * - cloud/error            → { message }
+ */
+export function cloudTurnStart(input: {
+  sessionId: string;
+  text: string;
+  brief?: CloudBrief;
+}): Promise<void> {
+  return invoke("cloud_turn_start", {
+    sessionId: input.sessionId,
+    text: input.text,
+    brief: input.brief ?? null,
+  });
+}
+
+/** 从云端同步 skill 列表。 */
+export function cloudSkillsSync(): Promise<{ ok: boolean; synced?: string[] }> {
+  return invoke("cloud_skills_sync");
+}
+
+// --- 云端 SSE 事件解析辅助 ---
+
+/** 从 pollEvents() 返回的事件中提取云端状态更新。 */
+export function cloudStatusStage(e: AppEvent): string | null {
+  if (e.method === "cloud/status") {
+    const stage = e.params?.stage;
+    return typeof stage === "string" ? stage : null;
+  }
+  return null;
+}
+
+/** 从事件中提取 intake 提问（需要编导回答后继续发消息）。 */
+export function cloudIntakeQuestion(e: AppEvent): { question: string; reason: string } | null {
+  if (e.method === "cloud/intake_question") {
+    const q = e.params?.question;
+    const r = e.params?.reason;
+    if (typeof q === "string") {
+      return { question: q, reason: typeof r === "string" ? r : "" };
+    }
+  }
+  return null;
+}
+
+/** 从事件中提取脚本生成结果。 */
+export function cloudResult(e: AppEvent): {
+  script: string;
+  creative_notes?: string;
+  suggestions?: string[];
+  issues?: string[];
+  references?: unknown[];
+  mode?: string;
+} | null {
+  if (e.method === "cloud/result") {
+    const script = e.params?.script;
+    if (typeof script === "string") {
+      return {
+        script,
+        creative_notes: e.params?.creative_notes as string | undefined,
+        suggestions: e.params?.suggestions as string[] | undefined,
+        issues: e.params?.issues as string[] | undefined,
+        references: e.params?.references as unknown[] | undefined,
+        mode: e.params?.mode as string | undefined,
+      };
+    }
+  }
+  return null;
+}
+
+/** 云端事件：本轮完成。 */
+export function isCloudTurnCompleted(e: AppEvent): boolean {
+  return e.method === "cloud/turn_completed";
+}
+
+/** 云端事件：错误。 */
+export function cloudError(e: AppEvent): string | null {
+  if (e.method === "cloud/error") {
+    const msg = e.params?.message;
+    return typeof msg === "string" ? msg : null;
+  }
+  return null;
+}
