@@ -171,41 +171,6 @@ pub async fn appserver_start(
         let cfg = harness_config::read(&codex_home_log)
             .map_err(|e| format!("config 迁移失败: {e}"))?;
 
-        // --- v0.6.0：强制覆盖 base_url 为统一的方舟 plan/v3 ---
-        // 所有 provider 都走 plan/v3（之前可能是旧的 coding/v3 或手动填的），
-        // 启动时写回 config.toml，后续不再迁移。
-        const HARDCODED_BASE_URL: &str = "https://ark.cn-beijing.volces.com/api/plan/v3";
-        let cfg_mutated = {
-            let mut c = cfg.clone();
-            let mut changed = false;
-            for p in &mut c.model_providers {
-                if p.base_url != HARDCODED_BASE_URL {
-                    log(&format!("  ⚠️ provider {} base_url={} → 强制覆盖为 {}",
-                        p.id, p.base_url, HARDCODED_BASE_URL));
-                    p.base_url = HARDCODED_BASE_URL.to_string();
-                    changed = true;
-                }
-                // 确保 env_key 正确
-                if p.env_key != "VOLCENGINE_ARK_API_KEY" {
-                    p.env_key = "VOLCENGINE_ARK_API_KEY".to_string();
-                    changed = true;
-                }
-                // 确保 wire_api 为 responses
-                if !p.wire_api.is_empty() && p.wire_api != "responses" {
-                    p.wire_api = "responses".to_string();
-                    changed = true;
-                }
-            }
-            if changed {
-                let _ = harness_config::write(&codex_home_log, &c)
-                    .map_err(|e| log(&format!("  ⚠️ config 写回失败: {e}")));
-                log("  ✅ config.toml base_url/env_key/wire_api 已强制对齐 v0.6.0 规范");
-            }
-            c
-        };
-        // cfg_mutated 用于后续读取
-        let cfg = cfg_mutated;
-
         log(&format!("  config: model={}, modelProvider={}, providers={}",
             cfg.model, cfg.model_provider, cfg.model_providers.len()));
         for p in &cfg.model_providers {
@@ -254,11 +219,23 @@ pub async fn appserver_start(
             log(&format!("  ✅ 飞书凭据已写入 {}", env_path.display()));
         }
 
-        // --- v0.6.0：硬编码注入 Volcengine Ark API Key ---
-        // 不再从 .env-provider 读取，统一使用 Harness 内置 key。
-        const ARK_API_KEY: &str = "ark-504d682a-6c53-4ee5-9c63-6ce31ffb8fa3-fd87a";
-        child_env.insert("VOLCENGINE_ARK_API_KEY".to_string(), ARK_API_KEY.to_string());
-        log(&format!("  ✅ 硬编码注入 VOLCENGINE_ARK_API_KEY (len={})", ARK_API_KEY.len()));
+        // --- 按 config.toml 的 provider.env_key 注入 API key ---
+        let creds = load_provider_env(&codex_home_log);
+        log(&format!("  creds loaded: {} keys", creds.len()));
+
+        for p in &cfg.model_providers {
+            let ek = p.env_key.trim();
+            if ek.is_empty() { continue; }
+            match creds.get(ek).filter(|v| !v.is_empty()) {
+                Some(v) => {
+                    child_env.entry(ek.to_string()).or_insert_with(|| v.clone());
+                    log(&format!("  ✅ 注入 env {ek}=***({})", v.len()));
+                }
+                None => {
+                    log(&format!("  ⚠️ provider {} 的 env_key={ek} 未配置 API key → 该 provider 调用会 401", p.id));
+                }
+            }
+        }
 
         // 前端传的额外 env
         if let Some(extra) = env {

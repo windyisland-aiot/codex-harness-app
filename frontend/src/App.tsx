@@ -16,6 +16,7 @@ import type {
   ResolvedPaths,
   SessionMeta,
 } from "./codexClient";
+import { MODEL_GROUPS, logoForModel } from "./models";
 
 // 窗口控制：Tauri 2.x 下优先用 @tauri-apps/api/window 的 getCurrentWindow() 实例方法。
 // 如果 `toggleMaximize` 在个别运行时不存在，退化为 maximize/unmaximize；
@@ -192,6 +193,33 @@ const IconPlus = (
     <line x1="5" y1="12" x2="19" y2="12" />
   </svg>
 );
+const IconApproval = (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M20 6L9 17l-5-5" />
+  </svg>
+);
+const IconCaretDown = (
+  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="6 9 12 15 18 9" />
+  </svg>
+);
+const IconFeishu = (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="3" width="18" height="18" rx="3"/>
+    <path d="M8 14l4-4 4 4"/>
+  </svg>
+);
+const IconRAG = (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+  </svg>
+);
+const IconSparkle = (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 2l2 6 6 2-6 2-2 6-2-6-6-2 6-2z"/>
+  </svg>
+);
 
 export default function App() {
   // ------- 运行时路径 -------
@@ -202,6 +230,7 @@ export default function App() {
   // ------- 默认模型 -------
   const [model, setModel] = useState("ark-code-latest");
   const [provider, setProvider] = useState("volcengine-ark");
+  const [autoModeOpen, setAutoModeOpen] = useState(false);
 
   // ------- 设置面板开关（v0.3.0 统一成单个 SettingsPanel） -------
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -915,37 +944,145 @@ export default function App() {
             )}
           </section>
 
-          {/* 发送器 composer */}
+          {/* 发送器 composer · v0.6.0 新布局 */}
           <footer className="composer">
-            <div className="composer-inner">
-              <div className="composer-tools-left">
-                <button className="ctool" title="附件（敬请期待 v0.2）" onClick={() => setStatus("附件：v0.2 支持上传/拖拽")}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+            {/* 主输入栏：左工具 + textarea + 右发送 */}
+            <div className="composer-bar">
+              {/* 左侧：+ 导入文件 / 手动审批 / 插件图标 */}
+              <div className="bar-left">
+                {/* + 导入文件 */}
+                <button
+                  className="bar-btn-plus"
+                  title="导入本地文件（skill / 插件 / 配置）"
+                  onClick={() => setPluginsOpen(true)}
+                >
+                  {IconPlus}
                 </button>
-                <button className="ctool" title="媒体（敬请期待 v0.2）" onClick={() => setStatus("媒体：v0.2 支持图片/音视频")}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-                </button>
-                <button className="ctool" title="设计工具（敬请期待 v0.2）" onClick={() => setStatus("设计：v0.2 接入 Seedance/Seedream")}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>
-                </button>
-                <button className="ctool" title="MCP 工具（敬请期待 v0.2）" onClick={() => setStatus("MCP 工具：运行中即可使用")}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
-                </button>
+
+                {/* 手动审批 下拉按钮 */}
+                <div className="bar-btn-approval-wrap">
+                  <button
+                    className="bar-btn-approval"
+                    onClick={() => setApprovalOpen(true)}
+                    title={approvals.length > 0 ? `有 ${approvals.length} 条待审批` : "手动审批"}
+                  >
+                    {IconApproval}
+                    <span>
+                      {approvals.length > 0
+                        ? `${approvals.length} 条待审`
+                        : "手动审批"}
+                    </span>
+                    {approvals.length > 0 && (
+                      <span className="approval-count-badge">{approvals.length}</span>
+                    )}
+                    {IconCaretDown}
+                  </button>
+                </div>
+
+                {/* 插件 / skill 功能图标（保持现有图标：飞书、RAG、设计、MCP 等） */}
+                <div className="skill-icons">
+                  <button
+                    className="sicon"
+                    title="飞书集成（多维表格 / 审批 / 文档）"
+                    onClick={() => setStatus("飞书集成：运行 codex 时自动可用，支持多维表格读写、审批提单、文档操作")}
+                  >
+                    {IconFeishu}
+                  </button>
+                  <button
+                    className="sicon"
+                    title="RAG 知识库（本地 / 云端）"
+                    onClick={() => setStatus("RAG：对话时自动检索知识库，增强回答质量")}
+                  >
+                    {IconRAG}
+                  </button>
+                  <button
+                    className="sicon"
+                    title="设计工具（Seedance 视频 / Seedream 图片）"
+                    onClick={() => setStatus("设计工具：v0.2 接入 Seedance/Seedream")}
+                  >
+                    {IconSparkle}
+                  </button>
+                  <button
+                    className="sicon"
+                    title="附件（v0.2 上传 / 拖拽）"
+                    onClick={() => setStatus("附件：v0.2 支持上传/拖拽")}
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                  </button>
+                </div>
               </div>
+
+              {/* textarea 主输入 */}
               <textarea
                 rows={1}
                 value={input}
                 onChange={(e) => {
                   setInput(e.target.value);
                   e.target.style.height = "auto";
-                  e.target.style.height = Math.min(e.target.scrollHeight, 180) + "px";
+                  e.target.style.height = Math.min(e.target.scrollHeight, 200) + "px";
                 }}
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
                 placeholder="告诉 Harness 你想做什么，用自然语言下达任务"
                 disabled={pending || running || !paths}
                 className="composer-input"
               />
-              <div className="composer-send-wrap">
+
+              {/* 右侧：Auto Mode 模型选择 + 发送按钮 */}
+              <div className="bar-right">
+                {/* Auto Mode 模型选择下拉 */}
+                <div className="auto-mode-pill-wrap">
+                  <button
+                    className="auto-mode-pill"
+                    onClick={() => setAutoModeOpen((v) => !v)}
+                    title="切换模型（所有模型统一走火山方舟）"
+                  >
+                    <span
+                      className="auto-logo"
+                      dangerouslySetInnerHTML={{ __html: logoForModel(model).svg }}
+                    />
+                    <span className="auto-label">Auto Mode</span>
+                    <span className="auto-model">{model}</span>
+                    <span className="caret" style={{ transform: autoModeOpen ? "rotate(180deg)" : "none", transition: "transform .15s" }}>
+                      {IconCaretDown}
+                    </span>
+                  </button>
+                  {/* 下拉浮层 */}
+                  {autoModeOpen && (
+                    <>
+                      <div className="auto-mode-backdrop" onClick={() => setAutoModeOpen(false)} />
+                      <div className="auto-mode-menu">
+                        {MODEL_GROUPS.map((g) => (
+                          <div key={g.label} className="auto-group">
+                            <div className="auto-group-label">{g.label}</div>
+                            {g.models.map((m) => {
+                              const logo = logoForModel(m);
+                              const isActive = m === model;
+                              return (
+                                <button
+                                  key={m}
+                                  className={`auto-item ${isActive ? "active" : ""}`}
+                                  onClick={() => {
+                                    setModel(m);
+                                    setAutoModeOpen(false);
+                                  }}
+                                >
+                                  <span
+                                    className="auto-item-logo"
+                                    dangerouslySetInnerHTML={{ __html: logo.svg }}
+                                  />
+                                  <span className="auto-item-name">{m}</span>
+                                  {isActive && <span className="auto-item-check">✓</span>}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* 发送按钮 */}
                 <button
                   className="btn-send"
                   disabled={pending || running || !paths || !input.trim()}
@@ -957,18 +1094,20 @@ export default function App() {
               </div>
             </div>
 
+            {/* 薄状态栏：左状态 / 右日志 + 语音 */}
             <div className="composer-meta">
               <div className="meta-left">
-                <span className="auto-mode-pill" title="当前使用的模型（设置 → 通用里修改）">
-                  <span className="pill-label">模型</span>
-                  <span className="pill-val">{provider}/{model}</span>
-                </span>
                 <span className="status-chip" title={status}>{status}</span>
+                {errCount > 0 && (
+                  <span className="err-chip" title="有错误，点击日志查看详情">
+                    ⚠ {errCount}
+                  </span>
+                )}
               </div>
               <div className="meta-right">
                 <button className={`log-toggle ${errCount > 0 ? "has-err" : ""}`} onClick={() => setLogOpen((v) => !v)}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 17l6-6-6-6M12 19h8"/></svg>
-                  <span>日志</span>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 17l6-6-6-6M12 19h8"/></svg>
+                  <span>{logOpen ? "收起" : "日志"}</span>
                   {errCount > 0 && <span className="log-badge">{errCount}</span>}
                 </button>
                 <button className="tb-icon-btn tiny" title="语音输入（v0.2 占位）" onClick={() => setStatus("语音：敬请期待（v0.2）")}>
@@ -977,7 +1116,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* 可折叠错误/日志面板（stderr 高亮） */}
+            {/* 可折叠错误/日志面板 */}
             {logOpen && (
               <div className="log-pane">
                 <div className="log-pane-head">

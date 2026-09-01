@@ -387,12 +387,11 @@ function SectionModels({
   const [editIdx, setEditIdx] = useState<number | null>(null);
   const isNew = editIdx === -1;
 
-  // 点击 + 添加模型：先创建一个空 provider 模板，然后打开编辑
-  function handleAddAndEdit() {
-    addProvider(); // 创建并推入 modelProviders
-    // 下一个 tick 时最后一个元素就是新的
+  // v0.6.0 自动托管后不再需要手动添加 — 函数保留供未来扩展
+  void function _unused_handleAddAndEdit() {
+    addProvider();
     setTimeout(() => setEditIdx(cfg.modelProviders.length), 0);
-  }
+  };
 
   // ---------- SVG 图标 helpers（inline 无依赖） ----------
   const IcPencil = (
@@ -427,7 +426,7 @@ function SectionModels({
     <div className="sp-section">
       <h2 className="sp-h">模型</h2>
       <p className="sp-desc">
-        模型管理 · 配置 API Key 添加更多可用模型，预置模型默认使用稳定版本。
+        v0.6.0 自动托管：URL / API Key 已在后台硬编码注入，所有模型统一走火山方舟端点。切换模型请使用底部输入栏右侧的 Auto Mode 下拉。
       </p>
 
       <div className="sp-current-hint" style={{
@@ -445,7 +444,28 @@ function SectionModels({
         </div>
       </div>
 
-      <button className="sp-btn sp-btn-ghost sp-add-btn" onClick={handleAddAndEdit}>+ 添加模型</button>
+      <div className="sp-hardcode-banner" style={{
+  marginBottom: 14,
+  padding: "10px 14px",
+  borderRadius: 10,
+  background: "var(--bg-sunken)",
+  border: "1px solid var(--border)",
+  fontSize: 12.5,
+  color: "var(--text-secondary)",
+  lineHeight: 1.7,
+}}>
+  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+    <span style={{ color: "var(--brand)", fontWeight: 600 }}>🔒 已自动托管（v0.6.0）</span>
+  </div>
+  <div><b>Provider：</b>火山方舟 Ark · 单一端点</div>
+  <div><b>Base URL：</b><code style={{ fontFamily: "var(--mono)", fontSize: 11, background: "var(--bg-hover)", padding: "1px 6px", borderRadius: 4 }}>https://ark.cn-beijing.volces.com/api/plan/v3</code></div>
+  <div><b>API Key：</b>已内置，自动注入 codex 子进程</div>
+  <div><b>Wire API：</b>Responses · <b>默认模型：</b>ark-code-latest</div>
+  <div style={{ marginTop: 6, color: "var(--text-muted)", fontSize: 11.5 }}>
+    切换当前对话使用的模型 → 点击底部输入栏右侧的「Auto Mode」下拉。
+  </div>
+</div>
+<button className="sp-btn sp-btn-ghost sp-add-btn" disabled title="v0.6.0 已自动托管，无需手动添加">🔒 自动托管中（v0.6.0）</button>
 
       <table className="tw-model-table">
         <thead>
