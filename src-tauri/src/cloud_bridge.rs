@@ -34,7 +34,7 @@ pub type CloudHandle = Arc<Mutex<CloudConfig>>;
 
 pub fn managed_state() -> CloudHandle {
     Arc::new(Mutex::new(CloudConfig {
-        api_base: "http://118.31.107.214:8000/api/v1".to_string(),
+        api_base: "http://118.31.107.214/api/v1".to_string(),
         ..Default::default()
     }))
 }

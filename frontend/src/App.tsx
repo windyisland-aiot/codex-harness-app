@@ -533,10 +533,19 @@ export default function App() {
             let resultText = result.script;
             if (result.creative_notes) resultText += `\n\n---\n**创意备注**\n${result.creative_notes}`;
             if (result.issues && result.issues.length > 0) {
-              resultText += `\n\n---\n**⚠️ 守卫提醒（不阻断）**\n` + result.issues.map((i, idx) => `${idx + 1}. ${i}`).join("\n");
+              const issueLines = result.issues.map((i, idx) => {
+                const sev = i.severity ? `[${i.severity}] ` : "";
+                return `${idx + 1}. ${sev}${i.message}`;
+              });
+              resultText += `\n\n---\n**⚠️ 守卫提醒（不阻断）**\n` + issueLines.join("\n");
             }
-            if (result.suggestions && result.suggestions.length > 0) {
-              resultText += `\n\n---\n**优化建议**\n` + result.suggestions.map((s, idx) => `${idx + 1}. ${s}`).join("\n");
+            if (result.suggestions) {
+              const sugArr = typeof result.suggestions === "string"
+                ? [result.suggestions]
+                : (result.suggestions as string[]);
+              if (sugArr.length > 0) {
+                resultText += `\n\n---\n**优化建议**\n` + sugArr.map((s, idx) => `${idx + 1}. ${s}`).join("\n");
+              }
             }
             setMessages([...cur, { role: "assistant", text: resultText }]);
             setTerminalLines((prev) => [

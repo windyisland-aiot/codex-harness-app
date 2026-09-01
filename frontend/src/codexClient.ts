@@ -802,8 +802,8 @@ export function cloudIntakeQuestion(e: AppEvent): { question: string; reason: st
 export function cloudResult(e: AppEvent): {
   script: string;
   creative_notes?: string;
-  suggestions?: string[];
-  issues?: string[];
+  suggestions?: string | string[];
+  issues?: Array<{ severity: string; message: string; evidence?: string }>;
   references?: unknown[];
   mode?: string;
 } | null {
@@ -813,8 +813,8 @@ export function cloudResult(e: AppEvent): {
       return {
         script,
         creative_notes: e.params?.creative_notes as string | undefined,
-        suggestions: e.params?.suggestions as string[] | undefined,
-        issues: e.params?.issues as string[] | undefined,
+        suggestions: e.params?.suggestions as string | string[] | undefined,
+        issues: e.params?.issues as Array<{ severity: string; message: string; evidence?: string }> | undefined,
         references: e.params?.references as unknown[] | undefined,
         mode: e.params?.mode as string | undefined,
       };
