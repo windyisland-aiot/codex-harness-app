@@ -156,6 +156,11 @@ pub fn run() {
             plugins::plugins_list,
             plugins::plugins_apply,
             plugins::plugins_add_skill_dir,
+            // v0.6.0 云端市场 & 本地导入
+            plugins::plugins_cloud_health,
+            plugins::plugins_cloud_list,
+            plugins::plugins_cloud_install,
+            plugins::plugins_import_local,
             search::search_execute,
             search::search_register_mcp,
             search::search_status,

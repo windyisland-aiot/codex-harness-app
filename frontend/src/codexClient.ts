@@ -206,6 +206,7 @@ export interface SkillInfo {
   description: string;
   dir: string;
   enabled: boolean;
+  version?: string;
   /** 来源：bundled（随安装包分发）/ codex-home / custom（v0.5.3） */
   source?: "bundled" | "codex-home" | "custom" | string;
 }
@@ -215,6 +216,7 @@ export interface PluginInfo {
   description: string;
   dir: string;
   enabled: boolean;
+  version?: string;
 }
 export interface PluginsList {
   skills: SkillInfo[];
@@ -263,6 +265,69 @@ export function pluginsAddSkillDir(
     codexHome,
     dir,
     enabled,
+  });
+}
+
+// --- T20 云端市场 & 本地导入（v0.6.0） ---
+
+export interface CloudMarketItem {
+  id: string;
+  name: string;
+  type: "skill" | "plugin";
+  version: string;
+  author?: string;
+  description: string;
+  tags?: string[];
+  downloadUrl: string;
+  size?: number;
+  updatedAt?: string;
+}
+export interface CloudMarketResponse {
+  ok: boolean;
+  items: CloudMarketItem[];
+  message?: string;
+}
+export interface CloudHealth {
+  ok: boolean;
+  baseUrl: string;
+  message: string;
+  latencyMs?: number;
+}
+
+/** 云端服务器健康检查（云服务器 118.31.107.214）。 */
+export function pluginsCloudHealth(baseUrl?: string): Promise<CloudHealth> {
+  return invoke<CloudHealth>("plugins_cloud_health", { baseUrl: baseUrl ?? null });
+}
+
+/** 拉取云端市场可下载的插件/技能清单。 */
+export function pluginsCloudList(baseUrl?: string): Promise<CloudMarketResponse> {
+  return invoke<CloudMarketResponse>("plugins_cloud_list", { baseUrl: baseUrl ?? null });
+}
+
+/** 从云端下载并安装单个插件/skill 到 codex_home 下对应目录。 */
+export function pluginsCloudInstall(input: {
+  codexHome: string;
+  itemId: string;
+  baseUrl?: string;
+}): Promise<{ ok: boolean; installedDir: string; message?: string }> {
+  return invoke("plugins_cloud_install", {
+    codexHome: input.codexHome,
+    itemId: input.itemId,
+    baseUrl: input.baseUrl ?? null,
+  });
+}
+
+/** 打开本地文件选择器，导入 SKILL.md 目录或 plugin.toml 插件（ZIP/文件夹）。 */
+export function pluginsImportLocal(input: {
+  codexHome: string;
+  /** 为空时打开文件对话框让用户选 */
+  sourcePath?: string;
+  kind?: "skill" | "plugin" | "auto";
+}): Promise<{ ok: boolean; installedDir: string; message?: string }> {
+  return invoke("plugins_import_local", {
+    codexHome: input.codexHome,
+    sourcePath: input.sourcePath ?? null,
+    kind: input.kind ?? "auto",
   });
 }
 
