@@ -1036,12 +1036,10 @@ export default function App() {
                     onClick={() => setAutoModeOpen((v) => !v)}
                     title="切换模型（所有模型统一走火山方舟）"
                   >
-                    <span
-                      className="auto-logo"
-                      dangerouslySetInnerHTML={{ __html: logoForModel(model).svg }}
-                    />
+                    <span className="auto-logo">
+                      <img src={logoForModel(model).logoUrl} alt="" className="auto-logo-img" />
+                    </span>
                     <span className="auto-label">Auto Mode</span>
-                    <span className="auto-model">{model}</span>
                     <span className="caret" style={{ transform: autoModeOpen ? "rotate(180deg)" : "none", transition: "transform .15s" }}>
                       {IconCaretDown}
                     </span>
@@ -1066,10 +1064,9 @@ export default function App() {
                                     setAutoModeOpen(false);
                                   }}
                                 >
-                                  <span
-                                    className="auto-item-logo"
-                                    dangerouslySetInnerHTML={{ __html: logo.svg }}
-                                  />
+                                  <span className="auto-item-logo">
+                                    <img src={logo.logoUrl} alt="" className="auto-item-logo-img" />
+                                  </span>
                                   <span className="auto-item-name">{m}</span>
                                   {isActive && <span className="auto-item-check">✓</span>}
                                 </button>

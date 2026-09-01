@@ -1056,17 +1056,21 @@ body.theme-dark .md :not(pre) > code {
   border-radius: 8px;
   border: none;
   background: transparent;
-  color: var(--text-muted);
+  color: var(--text-secondary);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   transition: all .12s ease;
 }
+.sicon svg { display: block; }
 .sicon:hover {
   background: var(--bg-hover);
   color: var(--text);
 }
+/* 暗色模式：显式提升图标对比度 */
+body.theme-dark .sicon { color: #9CA3AF; }
+body.theme-dark .sicon:hover { color: var(--text); }
 
 /* ---------- textarea ---------- */
 .composer-input {
@@ -1123,19 +1127,12 @@ body.theme-dark .md :not(pre) > code {
   align-items: center; justify-content: center;
   flex-shrink: 0;
 }
-.auto-logo svg { width: 20px !important; height: 20px !important; }
-.auto-label { font-weight: 600; }
-.auto-model {
-  max-width: 0;
-  overflow: hidden;
-  white-space: nowrap;
-  color: var(--text-muted);
-  font-weight: 400;
-  font-family: var(--mono);
-  font-size: 11.5px;
-  transition: max-width .15s;
+.auto-logo-img {
+  width: 20px; height: 20px;
+  object-fit: contain;
+  display: block;
 }
-.auto-mode-pill:hover .auto-model { max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
+.auto-label { font-weight: 600; }
 .auto-mode-pill .caret { flex-shrink: 0; }
 
 /* Auto Mode 下拉浮层 */
@@ -1191,8 +1188,20 @@ body.theme-dark .md :not(pre) > code {
   background: var(--bg-active);
   color: var(--brand);
 }
-.auto-item-logo { flex-shrink: 0; }
-.auto-item-logo svg { width: 20px !important; height: 20px !important; }
+.auto-item-logo {
+  flex-shrink: 0;
+  width: 20px; height: 20px;
+  display: inline-flex;
+  align-items: center; justify-content: center;
+  border-radius: 5px;
+  background: var(--bg-sunken);
+  padding: 2px;
+}
+.auto-item-logo-img {
+  width: 100%; height: 100%;
+  object-fit: contain;
+  display: block;
+}
 .auto-item-name {
   flex: 1; min-width: 0;
   overflow: hidden; text-overflow: ellipsis;

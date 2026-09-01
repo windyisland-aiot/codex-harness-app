@@ -19,10 +19,9 @@ export interface ModelPreset {
   wire_api: "responses" | "chat";
   models: string[];
   default_model: string;
-  /** 在选择器中分组展示（可选）。 */
   group?: string;
-  /** 供应商 logo（inline SVG 或 emoji）。 */
-  logo?: string;
+  /** 供应商 logo 图像 URL（/public/logos/ 下的真实品牌 SVG）。 */
+  logoUrl?: string;
 }
 
 /** 硬编码的单一 provider — 火山方舟。 */
@@ -68,55 +67,74 @@ export const MODEL_GROUPS: ModelGroup[] = [
   { label: "Kimi · 月之暗面",    models: ["kimi-k2.5", "kimi-k3"] },
 ];
 
-/** 供应商 logo（inline SVG，24×24 适合做小徽章）。 */
+/** 供应商 logo 元信息（真实品牌 logo，走 /public/logos/*.svg）。 */
 export interface ProviderLogo {
   id: string;
   name: string;
-  /** 主色（用于标签背景、选中边框等）。 */
+  /** 主色（用于选中边框/标签等）。 */
   color: string;
-  /** 单色 SVG 用于 light mode；另用 CSS filter 适配 dark mode。 */
-  svg: string;
+  /** 彩色官方 logo（lobehub 官方品牌图标 / 各公司 Favicon）。 */
+  logoUrl: string;
 }
 
+/**
+ * 所有 logo SVG 均来自 lobehub/lobe-icons 开源图标库（MIT License），
+ * 已下载到 /public/logos/ 目录。这是目前最完整的中文 AI 模型官方 logo 集合。
+ *
+ * 具体文件：
+ *   doubao(-color).svg      → 字节跳动 豆包
+ *   deepseek(-color).svg    → DeepSeek
+ *   minimax(-color).svg     → MiniMax
+ *   moonshot.svg            → Moonshot AI（Kimi 母公司）
+ *   zhipu(-color).svg       → 智谱 AI（GLM）
+ *   volcengine(-color).svg  → 火山引擎（Ark 平台）
+ */
 export const PROVIDER_LOGOS: Record<string, ProviderLogo> = {
   "volcengine-ark": {
     id: "volcengine-ark",
     name: "火山方舟",
-    color: "#4F46E5",
-    svg: `<svg viewBox="0 0 24 24" width="24" height="24" fill="none">
-      <rect x="2.5" y="3" width="19" height="18" rx="4" fill="#4F46E5"/>
-      <path d="M7 15.5c1.8 1.5 4.5 1.7 6.6.4 2.1-1.3 2.6-3.8 1.1-5.2-1.1-1-2.5-1.2-4-.5l1 .6-4.5 5.1z" fill="#fff"/>
-      <circle cx="17" cy="7.5" r="1.8" fill="#fff"/>
-    </svg>`,
-  },
-  // 按模型名匹配 → 供应商 logo
-  "doubao": {
-    id: "doubao", name: "豆包", color: "#1677FF",
-    svg: `<svg viewBox="0 0 24 24" width="24" height="24"><rect x="3" y="3" width="18" height="18" rx="5" fill="#1677FF"/><text x="12" y="16" text-anchor="middle" fill="#fff" font-size="11" font-weight="700">豆</text></svg>`,
-  },
-  "deepseek": {
-    id: "deepseek", name: "DeepSeek", color: "#0ECB81",
-    svg: `<svg viewBox="0 0 24 24" width="24" height="24"><rect x="3" y="3" width="18" height="18" rx="5" fill="#0ECB81"/><text x="12" y="16" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">DS</text></svg>`,
-  },
-  "minimax": {
-    id: "minimax", name: "MiniMax", color: "#6366F1",
-    svg: `<svg viewBox="0 0 24 24" width="24" height="24"><rect x="3" y="3" width="18" height="18" rx="5" fill="#6366F1"/><text x="12" y="16" text-anchor="middle" fill="#fff" font-size="8" font-weight="700">MX</text></svg>`,
-  },
-  "glm": {
-    id: "glm", name: "智谱 GLM", color: "#FF6B35",
-    svg: `<svg viewBox="0 0 24 24" width="24" height="24"><rect x="3" y="3" width="18" height="18" rx="5" fill="#FF6B35"/><text x="12" y="16" text-anchor="middle" fill="#fff" font-size="8" font-weight="700">GLM</text></svg>`,
-  },
-  "kimi": {
-    id: "kimi", name: "Kimi", color: "#F59E0B",
-    svg: `<svg viewBox="0 0 24 24" width="24" height="24"><rect x="3" y="3" width="18" height="18" rx="5" fill="#F59E0B"/><text x="12" y="16" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">K</text></svg>`,
+    color: "#00E5E5",
+    logoUrl: "/logos/volcengine-color.svg",
   },
   "ark": {
-    id: "ark", name: "Ark Auto", color: "#7C3AED",
-    svg: `<svg viewBox="0 0 24 24" width="24" height="24"><rect x="3" y="3" width="18" height="18" rx="5" fill="#7C3AED"/><text x="12" y="16" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">AUTO</text></svg>`,
+    id: "ark",
+    name: "Ark Auto",
+    color: "#00E5E5",
+    logoUrl: "/logos/volcengine-color.svg",
+  },
+  "doubao": {
+    id: "doubao",
+    name: "豆包",
+    color: "#1E37FC",
+    logoUrl: "/logos/doubao-color.svg",
+  },
+  "deepseek": {
+    id: "deepseek",
+    name: "DeepSeek",
+    color: "#4B6BFF",
+    logoUrl: "/logos/deepseek-color.svg",
+  },
+  "minimax": {
+    id: "minimax",
+    name: "MiniMax",
+    color: "#E2167E",
+    logoUrl: "/logos/minimax-color.svg",
+  },
+  "glm": {
+    id: "glm",
+    name: "智谱 GLM",
+    color: "#2C5AF7",
+    logoUrl: "/logos/zhipu-color.svg",
+  },
+  "kimi": {
+    id: "kimi",
+    name: "Kimi",
+    color: "#2D6BFF",
+    logoUrl: "/logos/moonshot.svg",
   },
 };
 
-/** 根据模型名推断供应商 logo（用于下拉中显示）。 */
+/** 根据模型名推断供应商 logo（用于下拉 / pill 中显示）。 */
 export function logoForModel(model: string): ProviderLogo {
   if (model.startsWith("ark")) return PROVIDER_LOGOS["ark"];
   if (model.startsWith("doubao")) return PROVIDER_LOGOS["doubao"];
@@ -129,18 +147,14 @@ export function logoForModel(model: string): ProviderLogo {
 
 /** 对外导出：所有预设（目前就一个）。 */
 export const MODEL_PRESETS: ModelPreset[] = [VOLCES_PROVIDER];
-
-/** UI 展示用（同上）。 */
 export const VISIBLE_MODEL_PRESETS: ModelPreset[] = MODEL_PRESETS;
-
-/** 所有可用模型名的扁平化列表。 */
 export const ALL_MODELS: string[] = VOLCES_PROVIDER.models;
 
 export function presetFor(id: string): ModelPreset | undefined {
   return MODEL_PRESETS.find((p) => p.id === id);
 }
 
-/** 全局硬编码的 API key（前端展示/写入配置用）。 */
+/** 全局硬编码的 API key（前端展示 / 写入配置用）。 */
 export const ARK_HARDCODED: { api_key: string; base_url: string; env_key: string; wire_api: "responses" | "chat" } = {
   api_key: "ark-504d682a-6c53-4ee5-9c63-6ce31ffb8fa3-fd87a",
   base_url: VOLCES_PROVIDER.base_url,
