@@ -300,7 +300,7 @@ pub async fn plugins_cloud_health(base_url: Option<String>) -> Result<serde_json
     let start = Instant::now();
     let url = format!("{}/api/v1/health", base);
     tauri::async_runtime::spawn_blocking(move || {
-        let resp = ureq::get(&url).timeout_connect(std::time::Duration::from_secs(5)).call();
+        let resp = ureq::get(&url).timeout(std::time::Duration::from_secs(5)).call();
         let latency = start.elapsed().as_millis() as u64;
         match resp {
             Ok(r) => {
@@ -342,7 +342,7 @@ pub async fn plugins_cloud_list(base_url: Option<String>) -> Result<serde_json::
         ];
         let mut last_err: Option<String> = None;
         for (tag, url) in &candidates {
-            match ureq::get(url).timeout_connect(std::time::Duration::from_secs(5)).call() {
+            match ureq::get(url).timeout(std::time::Duration::from_secs(5)).call() {
                 Ok(r) if r.status() >= 200 && r.status() < 300 => {
                     match r.into_json::<serde_json::Value>() {
                         Ok(v) => {
@@ -407,7 +407,6 @@ pub async fn plugins_cloud_install(
         // 下载端点格式：GET /api/v1/market/{item_id}/download → 返回 ZIP
         let download_url = format!("{}/api/v1/market/{}/download", base, item_id);
         let resp = ureq::get(&download_url)
-            .timeout_connect(std::time::Duration::from_secs(8))
             .timeout(std::time::Duration::from_secs(60))
             .call();
         let resp = match resp {

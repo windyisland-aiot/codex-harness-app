@@ -63,7 +63,7 @@ pub async fn cloud_login(
     let resp = ureq::post(&url)
         .timeout(SHORT_TIMEOUT)
         .set("Content-Type", "application/json")
-        .send_string(body.to_string())
+        .send_string(&body.to_string())
         .map_err(|e| format!("登录请求失败: {e}"))?;
 
     let body: Value = resp.into_json().map_err(|e| format!("解析登录响应失败: {e}"))?;
@@ -200,7 +200,7 @@ pub async fn cloud_turn_start(
             .set("Content-Type", "application/json")
             .set("Accept", "text/event-stream")
             .timeout(Duration::from_secs(300)) // SSE 长连接
-            .send_string(body.to_string());
+            .send_string(&body.to_string());
 
         let resp = match resp {
             Ok(r) => r,
