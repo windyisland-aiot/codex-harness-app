@@ -1,10 +1,15 @@
 # Codex runtime homes created by tests (session/sqlite/tmp artifacts)
-.codex-approval/**
-.codex-test/**
-!**/*.toml
+.codex-approval/
+.codex-test/
 approval-home/
 .codex-home/
 .codex-t10-probe/
+# TRAE IDE / 沙箱残留
+.trae/
+.trae-html-share-packages/
+# 测试报告 / 临时脚本
+E2E_REPORT.md
+scripts_e2e_report.sh
 target/
 node_modules/
 dist/
