@@ -116,11 +116,11 @@ const STARTER_CHIPS = [
 /* =============================================================
    内联 SVG 图标（Trae Work 极简 linear 风格，避免 emoji）
    ============================================================= */
+/* 左上角 sidebar toggle：圆角深色方块 + 白色竖条（Trae Work 图一样式） */
 const IconHamburger = (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="3" y1="6" x2="21" y2="6" />
-    <line x1="3" y1="12" x2="21" y2="12" />
-    <line x1="3" y1="18" x2="21" y2="18" />
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+    <rect x="3" y="3" width="18" height="18" rx="5" className="tbtn-shell" />
+    <rect x="10.5" y="7" width="3" height="10" rx="1.5" className="tbtn-bar" />
   </svg>
 );
 const IconSearch = (
@@ -330,9 +330,9 @@ export default function App() {
   const [logOpen, setLogOpen] = useState(false);
   const [confirmDel, setConfirmDel] = useState<{ open: boolean; id: string; title: string }>({ open: false, id: "", title: "" });
   const [accessMode, setAccessMode] = useState<"auto" | "full">("auto");
-  const [promptBarOpen, setPromptBarOpen] = useState(false);
   const [automationOpen, setAutomationOpen] = useState(false);
-  const systemPrompt = "你是 Harness Agent，一个专注于广告脚本生成和内容创作的 AI 助手。回答前先思考，执行命令前先审批。请用中文回答。";
+  const [autoTab, setAutoTab] = useState<"configured" | "templates" | "history">("configured");
+  const [showNewTaskModal, setShowNewTaskModal] = useState(false);
 
   // ------- Refs 用于 timer 里拿最新值 -------
   const threadProviderRef = useRef<string | null>(null);
@@ -855,7 +855,7 @@ export default function App() {
       {/* ============ 顶部栏 (42px) ============ */}
       <header className="topbar" style={{ "-webkit-app-region": "drag" } as React.CSSProperties}>
         <button
-          className="tb-icon-btn"
+          className="tb-icon-btn tb-sidebar-toggle"
           data-tauri-drag-region="false"
           onClick={() => setCollapsed((c) => !c)}
           title={collapsed ? "显示任务栏" : "隐藏任务栏"}
@@ -1058,57 +1058,183 @@ export default function App() {
             </div>
           </div>
 
-          {/* ============ 自动化面板（codex 原功能：skill 列表 + 运行） ============ */}
+          {/* ============ 自动化面板（Trae Work 风格：定时任务管理） ============ */}
           {automationOpen ? (
             <div className="automation-panel">
-              <div className="ap-head">
-                <h2>自动化 & Skills</h2>
-                <span className="ap-sub">点击卡片在新会话中运行对应的自动化 Skill</span>
+              <div className="ap-top">
+                <div className="ap-tabs">
+                  {([
+                    ["configured", "已配置"],
+                    ["templates", "任务模板"],
+                    ["history", "执行历史"],
+                  ] as const).map(([k, label]) => (
+                    <button
+                      key={k}
+                      className={`ap-tab ${autoTab === k ? "on" : ""}`}
+                      onClick={() => setAutoTab(k)}
+                    >{label}</button>
+                  ))}
+                </div>
+                <div className="ap-actions">
+                  <button className="ap-btn ghost" onClick={() => setStatus("从对话中创建：输入需求即可")}>在对话中创建</button>
+                  <button className="ap-btn primary" onClick={() => setShowNewTaskModal(true)}>+ 手动新建</button>
+                </div>
               </div>
-              <div className="ap-grid">
-                {[
-                  { key: "talk-script", name: "广告脚本生成", desc: "RAG 检索品牌话术 → LLM 生成口播稿 → 飞书审批", tag: "Skill", color: "#EF4444" },
-                  { key: "feishu-bot", name: "飞书多维表格同步", desc: "定时从飞书 Base 拉取数据，入库并触发脚本生成", tag: "Skill", color: "#3B82F6" },
-                  { key: "video-analyze", name: "视频转写与脚本分析", desc: "Whisper 转写 → 结构化脚本分析，输出钩子/卖点/CTA", tag: "Automation", color: "#8B5CF6" },
-                  { key: "yingdao-hook", name: "影刀 Webhook 触发", desc: "后台配置影刀任务模板，Webhook 一键触发", tag: "Automation", color: "#059669" },
-                  { key: "daily-report", name: "每日数据简报", desc: "抓取投放数据 → 生成简报 → 飞书群推送", tag: "Automation", color: "#F59E0B" },
-                  { key: "custom-skill", name: "自定义 Skill", desc: "从云端插件市场导入或本地编写 SKILL.md", tag: "Skill", color: "#6B7280" },
-                ].map((s) => (
-                  <button
-                    key={s.key}
-                    className="ap-card"
-                    onClick={() => {
-                      setAutomationOpen(false);
-                      newChat();
-                      setInput(`运行 ${s.name} skill`);
-                      setStatus(`正在准备「${s.name}」…`);
-                    }}
-                  >
-                    <div className="ap-card-top">
-                      <div className="ap-dot" style={{ background: s.color }} />
-                      <span className="ap-tag" style={{ borderColor: s.color, color: s.color }}>{s.tag}</span>
+
+              {/* ---- 已配置 ---- */}
+              {autoTab === "configured" && (
+                <div className="ap-list">
+                  {[
+                    { id: "t1", name: "每日数据简报", trigger: "每天 09:00", next: "今天 09:00 · 2h 后", env: "云端", mode: "Work", on: true, lastRun: "2 小时前" },
+                    { id: "t2", name: "飞书多维表格同步", trigger: "每 30 分钟", next: "18:30 · 12 分钟后", env: "云端", mode: "Code", on: true, lastRun: "30 分钟前" },
+                    { id: "t3", name: "竞品投放监控", trigger: "工作日 10:00 / 15:00", next: "今天 15:00 · 6h 后", env: "云端", mode: "Work", on: false, lastRun: "昨天" },
+                    { id: "t4", name: "影刀日终数据拉取", trigger: "每天 23:00", next: "今天 23:00 · 14h 后", env: "本地", mode: "Code", on: true, lastRun: "昨天 23:00" },
+                    { id: "t5", name: "广告脚本周报", trigger: "每周一 08:30", next: "周一 08:30 · 3d 后", env: "云端", mode: "Work", on: true, lastRun: "上周一" },
+                  ].map((t) => (
+                    <div key={t.id} className="ap-row">
+                      <div className="ap-row-main">
+                        <div className="ap-row-title">
+                          <span className={`ap-status-dot ${t.on ? "on" : "off"}`} />
+                          {t.name}
+                        </div>
+                        <div className="ap-row-meta">
+                          <span>⏱ {t.trigger}</span>
+                          <span>📦 {t.env}</span>
+                          <span className={`ap-mode ap-mode-${t.mode.toLowerCase()}`}>{t.mode}</span>
+                        </div>
+                      </div>
+                      <div className="ap-row-right">
+                        <div className="ap-row-next">
+                          <div className="ap-row-next-label">下次执行</div>
+                          <div className="ap-row-next-val">{t.next}</div>
+                        </div>
+                        <div className="ap-row-last">上次：{t.lastRun}</div>
+                        <div className="ap-row-ops">
+                          <button className="ap-row-btn" title="立即运行">▶</button>
+                          <button className="ap-row-btn" title="编辑">✎</button>
+                          <button className="ap-row-btn danger" title="删除">×</button>
+                        </div>
+                        <label className={`ap-switch ${t.on ? "on" : ""}`}>
+                          <input type="checkbox" defaultChecked={t.on} />
+                          <span className="ap-switch-track" />
+                        </label>
+                      </div>
                     </div>
-                    <div className="ap-name">{s.name}</div>
-                    <div className="ap-desc">{s.desc}</div>
-                  </button>
-                ))}
-              </div>
+                  ))}
+                </div>
+              )}
+
+              {/* ---- 任务模板 ---- */}
+              {autoTab === "templates" && (
+                <div className="ap-grid">
+                  {[
+                    { name: "代码安全扫描", desc: "每天自动扫描代码库，发现潜在漏洞并生成报告", cat: "研发效能" },
+                    { name: "投放数据日报", desc: "定时抓取各渠道投放数据，自动生成日报并推送飞书", cat: "运营" },
+                    { name: "竞品舆情监控", desc: "每天定时采集竞品动态、新品发布、社媒热帖", cat: "市场" },
+                    { name: "脚本生成自动化", desc: "定时读取品牌知识库，生成广告脚本初稿并送审", cat: "内容" },
+                    { name: "代码变更周报", desc: "每周一汇总代码仓库变更，生成周报发团队", cat: "研发效能" },
+                    { name: "服务器巡检", desc: "每 2 小时巡检核心服务状态，异常自动告警", cat: "运维" },
+                    { name: "客户反馈汇总", desc: "每天收集应用商店 / 社区反馈，整理摘要发飞书", cat: "产品" },
+                    { name: "影刀任务触发", desc: "按时间或 Webhook 触发影刀 RPA 任务", cat: "自动化" },
+                  ].map((tmpl) => (
+                    <button key={tmpl.name} className="ap-card" onClick={() => setStatus(`从模板「${tmpl.name}」创建（v0.2 接入调度后端）`)}>
+                      <div className="ap-card-cat">{tmpl.cat}</div>
+                      <div className="ap-name">{tmpl.name}</div>
+                      <div className="ap-desc">{tmpl.desc}</div>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* ---- 执行历史 ---- */}
+              {autoTab === "history" && (
+                <div className="ap-list">
+                  {[
+                    { name: "每日数据简报", time: "今天 09:00", status: "success", dur: "2m 14s", trigger: "定时触发" },
+                    { name: "飞书多维表格同步", time: "今天 08:30", status: "success", dur: "42s", trigger: "定时触发" },
+                    { name: "竞品投放监控", time: "昨天 15:00", status: "failed", dur: "8s", trigger: "定时触发" },
+                    { name: "影刀日终数据拉取", time: "昨天 23:00", status: "success", dur: "5m 30s", trigger: "定时触发" },
+                    { name: "广告脚本周报", time: "上周一 08:30", status: "success", dur: "3m 05s", trigger: "定时触发" },
+                    { name: "每日数据简报", time: "昨天 09:00", status: "success", dur: "1m 58s", trigger: "定时触发" },
+                  ].map((h, i) => (
+                    <div key={i} className="ap-row ap-row-history">
+                      <div className="ap-row-main">
+                        <div className="ap-row-title">
+                          <span className={`ap-badge ${h.status}`}>{h.status === "success" ? "✓ 成功" : "✕ 失败"}</span>
+                          {h.name}
+                        </div>
+                        <div className="ap-row-meta">
+                          <span>{h.time}</span>
+                          <span>⏱ {h.dur}</span>
+                          <span>🎯 {h.trigger}</span>
+                        </div>
+                      </div>
+                      <div className="ap-row-right">
+                        <button className="ap-row-btn" title="查看结果">查看</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* ---- 新建定时任务 Modal ---- */}
+              {showNewTaskModal && (
+                <div className="modal-backdrop" onClick={() => setShowNewTaskModal(false)}>
+                  <div className="ap-modal" onClick={(e) => e.stopPropagation()}>
+                    <div className="ap-modal-head">
+                      <h3>新建自动化任务</h3>
+                      <button className="ap-row-btn" onClick={() => setShowNewTaskModal(false)}>×</button>
+                    </div>
+                    <div className="ap-modal-body">
+                      <label className="ap-field">
+                        <span className="ap-label">任务名称</span>
+                        <input className="ap-input" placeholder="例如：每日投放数据简报" />
+                      </label>
+                      <label className="ap-field">
+                        <span className="ap-label">触发时间</span>
+                        <div className="ap-trigger-row">
+                          <select className="ap-input">
+                            <option>固定时间</option>
+                            <option>间隔触发</option>
+                            <option>自定义（自然语言）</option>
+                          </select>
+                          <input className="ap-input" placeholder="每天 09:00" />
+                        </div>
+                      </label>
+                      <label className="ap-field">
+                        <span className="ap-label">任务内容</span>
+                        <textarea className="ap-input ap-textarea" rows={3} placeholder="用自然语言描述这个任务要做什么，或直接引用 Skill 名称"></textarea>
+                      </label>
+                      <div className="ap-field-row">
+                        <label className="ap-field half">
+                          <span className="ap-label">运行模式</span>
+                          <div className="ap-seg">
+                            <button className="ap-seg-btn on">Work</button>
+                            <button className="ap-seg-btn">Code</button>
+                          </div>
+                        </label>
+                        <label className="ap-field half">
+                          <span className="ap-label">运行环境</span>
+                          <div className="ap-seg">
+                            <button className="ap-seg-btn on">云端</button>
+                            <button className="ap-seg-btn">本地</button>
+                          </div>
+                        </label>
+                      </div>
+                      <label className="ap-field">
+                        <span className="ap-label">输出存储位置</span>
+                        <input className="ap-input" placeholder="例如：/workspace/outputs/" defaultValue="/workspace/outputs/" />
+                      </label>
+                    </div>
+                    <div className="ap-modal-foot">
+                      <button className="ap-btn ghost" onClick={() => setShowNewTaskModal(false)}>取消</button>
+                      <button className="ap-btn primary" onClick={() => { setShowNewTaskModal(false); setStatus("定时任务创建成功（v0.2 接入调度后端）"); }}>创建</button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           ) : (<>
-
-          {/* 系统提示词固定在顶端 */}
-          <div className="system-prompt-bar" onClick={() => setPromptBarOpen((v) => !v)}>
-            <span className="spb-tag">PROMPT</span>
-            <span className="spb-text">{systemPrompt}</span>
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ transform: promptBarOpen ? "rotate(180deg)" : "none", transition: "transform .15s" }}>
-              <polyline points="6 9 12 15 18 9" />
-            </svg>
-          </div>
-          {promptBarOpen && (
-            <div style={{ padding: "12px 18px", fontSize: 12.5, color: "var(--text-secondary)", lineHeight: 1.7, borderBottom: "1px solid var(--border)", background: "var(--bg-surface)", whiteSpace: "pre-wrap" }}>
-              {systemPrompt}
-            </div>
-          )}
 
           {/* 有审批待处理且在自动模式时 → 审批界面替代对话框 */}
           {approvals.length > 0 && accessMode === "auto" ? (

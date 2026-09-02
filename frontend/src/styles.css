@@ -174,6 +174,22 @@ body.theme-dark code { color: #C7D2FE; }
   background: var(--bg-hover);
   color: var(--text);
 }
+/* 左上角 sidebar toggle：深色圆角方块 + 白色竖条 */
+.tb-sidebar-toggle {
+  color: #111827;
+}
+.tb-sidebar-toggle .tbtn-shell {
+  fill: currentColor;
+}
+.tb-sidebar-toggle .tbtn-bar {
+  fill: #ffffff;
+}
+body.theme-dark .tb-sidebar-toggle {
+  color: #E5E7EB;
+}
+body.theme-dark .tb-sidebar-toggle .tbtn-bar {
+  fill: #111827;
+}
 .tb-icon-btn:active {
   background: var(--bg-active);
 }
@@ -3285,64 +3301,277 @@ body.theme-dark .bar-btn-approval.is-full {
   color: #34D399;
 }
 
-/* system prompt pinned bar */
-.system-prompt-bar {
-  padding: 10px 18px;
-  background: var(--bg-sunken);
-  border-bottom: 1px solid var(--border);
-  font-size: 12.5px;
-  color: var(--text-secondary);
-  line-height: 1.55;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  transition: background .12s;
-}
-.system-prompt-bar:hover {
-  background: var(--bg-hover);
-}
-.system-prompt-bar .spb-tag {
-  font-size: 10.5px;
-  letter-spacing: .04em;
-  padding: 2px 7px;
-  border-radius: 4px;
-  background: var(--brand);
-  color: var(--btn-primary-text);
-  flex-shrink: 0;
-  text-transform: uppercase;
-  font-weight: 600;
-}
-.system-prompt-bar .spb-text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+/* ======================== 自动化面板（Trae Work 定时任务风格） ======================== */
+.automation-panel {
+  padding: 0;
+  overflow-y: auto;
   flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 
-/* ======================== 自动化面板 ======================== */
-.automation-panel {
-  padding: 28px 28px 16px;
+/* 顶栏：tabs + 操作按钮 */
+.ap-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+  flex-shrink: 0;
+}
+.ap-tabs {
+  display: flex;
+  gap: 4px;
+}
+.ap-tab {
+  padding: 7px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all .15s;
+}
+.ap-tab:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+.ap-tab.on {
+  background: var(--bg-hover);
+  color: var(--text);
+  font-weight: 600;
+}
+.ap-actions {
+  display: flex;
+  gap: 8px;
+}
+.ap-btn {
+  padding: 7px 14px;
+  font-size: 12.5px;
+  font-weight: 500;
+  border-radius: 8px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: all .15s;
+}
+.ap-btn.ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  border-color: var(--border);
+}
+.ap-btn.ghost:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.ap-btn.primary {
+  background: var(--btn-primary);
+  color: var(--btn-primary-text);
+  border-color: var(--btn-primary);
+}
+.ap-btn.primary:hover {
+  filter: brightness(1.08);
+}
+
+/* 列表：已配置 / 执行历史 */
+.ap-list {
+  padding: 12px 24px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   overflow-y: auto;
   flex: 1;
 }
-.ap-head {
-  margin-bottom: 20px;
+.ap-row {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  padding: 14px 16px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  transition: border-color .15s, background .15s;
+  gap: 20px;
 }
-.ap-head h2 {
-  font-size: 18px;
+.ap-row:hover {
+  border-color: var(--border-strong);
+}
+.ap-row-main {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+.ap-row-title {
+  font-size: 14px;
   font-weight: 600;
   color: var(--text);
-  margin: 0 0 4px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
-.ap-sub {
-  font-size: 12.5px;
+.ap-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.ap-status-dot.on {
+  background: #10B981;
+  box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
+}
+.ap-status-dot.off {
+  background: #9CA3AF;
+}
+.ap-row-meta {
+  display: flex;
+  gap: 14px;
+  font-size: 12px;
+  color: var(--text-muted);
+  flex-wrap: wrap;
+}
+.ap-row-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.ap-mode {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 4px;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+}
+.ap-mode-work {
+  background: rgba(59, 130, 246, 0.12);
+  color: #3B82F6;
+}
+.ap-mode-code {
+  background: rgba(16, 185, 129, 0.12);
+  color: #10B981;
+}
+.ap-row-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  flex-shrink: 0;
+  min-width: 220px;
+}
+.ap-row-next {
+  text-align: right;
+}
+.ap-row-next-label {
+  font-size: 10.5px;
+  color: var(--text-muted);
+  letter-spacing: .03em;
+}
+.ap-row-next-val {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.ap-row-last {
+  font-size: 11.5px;
   color: var(--text-muted);
 }
+.ap-row-ops {
+  display: flex;
+  gap: 4px;
+}
+.ap-row-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all .12s;
+}
+.ap-row-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.ap-row-btn.danger:hover {
+  background: rgba(239, 68, 68, 0.12);
+  color: #EF4444;
+}
+
+/* Switch */
+.ap-switch {
+  position: relative;
+  display: inline-block;
+  width: 36px;
+  height: 20px;
+  cursor: pointer;
+}
+.ap-switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+.ap-switch-track {
+  position: absolute;
+  inset: 0;
+  background: var(--border-strong);
+  border-radius: 10px;
+  transition: background .18s;
+}
+.ap-switch-track::after {
+  content: "";
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  top: 2px;
+  left: 2px;
+  transition: transform .18s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+}
+.ap-switch.on .ap-switch-track,
+.ap-switch input:checked + .ap-switch-track {
+  background: #10B981;
+}
+.ap-switch.on .ap-switch-track::after,
+.ap-switch input:checked + .ap-switch-track::after {
+  transform: translateX(16px);
+}
+
+/* 执行历史 badge */
+.ap-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+.ap-badge.success {
+  background: rgba(16, 185, 129, 0.12);
+  color: #10B981;
+}
+.ap-badge.failed {
+  background: rgba(239, 68, 68, 0.12);
+  color: #EF4444;
+}
+
+/* 模板卡片网格 */
 .ap-grid {
+  padding: 20px 24px 24px;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
   gap: 14px;
+  overflow-y: auto;
+  flex: 1;
 }
 .ap-card {
   text-align: left;
@@ -3354,7 +3583,7 @@ body.theme-dark .bar-btn-approval.is-full {
   transition: all .14s;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
 .ap-card:hover {
   background: var(--bg-hover);
@@ -3362,23 +3591,12 @@ body.theme-dark .bar-btn-approval.is-full {
   transform: translateY(-1px);
   box-shadow: var(--shadow-sm);
 }
-.ap-card-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-.ap-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}
-.ap-tag {
-  font-size: 10.5px;
+.ap-card-cat {
+  font-size: 11px;
   font-weight: 600;
-  padding: 2px 7px;
-  border-radius: 4px;
-  border: 1px solid;
-  letter-spacing: .04em;
+  color: var(--brand);
+  letter-spacing: .03em;
+  text-transform: uppercase;
 }
 .ap-name {
   font-size: 14.5px;
@@ -3389,6 +3607,119 @@ body.theme-dark .bar-btn-approval.is-full {
   font-size: 12px;
   color: var(--text-secondary);
   line-height: 1.55;
+}
+
+/* 新建任务 Modal */
+.ap-modal {
+  width: min(520px, 92vw);
+  max-height: 85vh;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.ap-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.ap-modal-head h3 {
+  font-size: 15px;
+  font-weight: 600;
+  margin: 0;
+  color: var(--text);
+}
+.ap-modal-body {
+  padding: 18px 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  overflow-y: auto;
+}
+.ap-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ap-field.half {
+  flex: 1;
+}
+.ap-field-row {
+  display: flex;
+  gap: 14px;
+}
+.ap-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+.ap-input {
+  padding: 8px 12px;
+  font-size: 13px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  outline: none;
+  transition: border-color .15s;
+  width: 100%;
+  box-sizing: border-box;
+}
+.ap-input:focus {
+  border-color: var(--brand);
+}
+.ap-textarea {
+  resize: vertical;
+  min-height: 64px;
+  line-height: 1.5;
+  font-family: inherit;
+}
+.ap-trigger-row {
+  display: flex;
+  gap: 10px;
+}
+.ap-trigger-row select {
+  flex: 0 0 130px;
+}
+.ap-seg {
+  display: flex;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 3px;
+}
+.ap-seg-btn {
+  padding: 5px 14px;
+  font-size: 12.5px;
+  font-weight: 500;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all .12s;
+}
+.ap-seg-btn:hover {
+  color: var(--text);
+}
+.ap-seg-btn.on {
+  background: var(--bg-hover);
+  color: var(--text);
+  box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+}
+.ap-modal-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 20px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-surface);
+  flex-shrink: 0;
 }
 
 /* sb-menu-item active state */
