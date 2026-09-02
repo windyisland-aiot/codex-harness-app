@@ -328,6 +328,11 @@ export default function App() {
     Array<{ ts: number; text: string; stream?: "stdout" | "stderr" | "meta" }>
   >([]);
   const [logOpen, setLogOpen] = useState(false);
+  const [confirmDel, setConfirmDel] = useState<{ open: boolean; id: string; title: string }>({ open: false, id: "", title: "" });
+  const [accessMode, setAccessMode] = useState<"auto" | "full">("auto");
+  const [promptBarOpen, setPromptBarOpen] = useState(false);
+  const [automationOpen, setAutomationOpen] = useState(false);
+  const systemPrompt = "你是 Harness Agent，一个专注于广告脚本生成和内容创作的 AI 助手。回答前先思考，执行命令前先审批。请用中文回答。";
 
   // ------- Refs 用于 timer 里拿最新值 -------
   const threadProviderRef = useRef<string | null>(null);
@@ -784,6 +789,26 @@ export default function App() {
     setLastError(null); threadProviderRef.current = null;
   }
 
+  function requestDelete(id: string, title: string) {
+    setConfirmDel({ open: true, id, title });
+  }
+
+  async function confirmDeleteSession() {
+    const { id, title } = confirmDel;
+    setConfirmDel({ open: false, id: "", title: "" });
+    try {
+      await codex.sessionDelete(codexHome, id);
+      setSessions((prev) => prev.filter((x) => x.id !== id));
+      if (id === activeThread) {
+        setActiveThread("");
+        setMessages([]);
+      }
+      setStatus(`已删除「${title}」`);
+    } catch (err) {
+      setStatus(`删除失败：${err}`);
+    }
+  }
+
   function handleLoadSession(d: codex.SessionDetail) {
     setActiveThread(d.meta.id);
     threadProviderRef.current = d.meta.provider ?? null;
@@ -912,7 +937,7 @@ export default function App() {
               </span>
               <span>模板库</span>
             </button>
-            <button className="sb-menu-item" onClick={() => setStatus("自动化：敬请期待（v0.2）")}>
+            <button className={`sb-menu-item ${automationOpen ? "active" : ""}`} onClick={() => setAutomationOpen((v) => !v)}>
               <span className="ic-wrap yl">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
               </span>
@@ -979,15 +1004,7 @@ export default function App() {
                       className="s-del-btn"
                       onClick={(e) => {
                         e.stopPropagation();
-                        if (!confirm(`删除任务「${s.title}」？`)) return;
-                        codex.sessionDelete(codexHome, s.id).then(() => {
-                          setSessions((prev) => prev.filter((x) => x.id !== s.id));
-                          if (isActive) {
-                            setActiveThread("");
-                            setMessages([]);
-                          }
-                          setStatus("已删除");
-                        }).catch((err) => setStatus(`删除失败：${err}`));
+                        requestDelete(s.id, s.title);
                       }}
                       title="删除此任务"
                       aria-label="删除任务"
@@ -1041,6 +1058,76 @@ export default function App() {
             </div>
           </div>
 
+          {/* ============ 自动化面板（codex 原功能：skill 列表 + 运行） ============ */}
+          {automationOpen ? (
+            <div className="automation-panel">
+              <div className="ap-head">
+                <h2>自动化 & Skills</h2>
+                <span className="ap-sub">点击卡片在新会话中运行对应的自动化 Skill</span>
+              </div>
+              <div className="ap-grid">
+                {[
+                  { key: "talk-script", name: "广告脚本生成", desc: "RAG 检索品牌话术 → LLM 生成口播稿 → 飞书审批", tag: "Skill", color: "#EF4444" },
+                  { key: "feishu-bot", name: "飞书多维表格同步", desc: "定时从飞书 Base 拉取数据，入库并触发脚本生成", tag: "Skill", color: "#3B82F6" },
+                  { key: "video-analyze", name: "视频转写与脚本分析", desc: "Whisper 转写 → 结构化脚本分析，输出钩子/卖点/CTA", tag: "Automation", color: "#8B5CF6" },
+                  { key: "yingdao-hook", name: "影刀 Webhook 触发", desc: "后台配置影刀任务模板，Webhook 一键触发", tag: "Automation", color: "#059669" },
+                  { key: "daily-report", name: "每日数据简报", desc: "抓取投放数据 → 生成简报 → 飞书群推送", tag: "Automation", color: "#F59E0B" },
+                  { key: "custom-skill", name: "自定义 Skill", desc: "从云端插件市场导入或本地编写 SKILL.md", tag: "Skill", color: "#6B7280" },
+                ].map((s) => (
+                  <button
+                    key={s.key}
+                    className="ap-card"
+                    onClick={() => {
+                      setAutomationOpen(false);
+                      newChat();
+                      setInput(`运行 ${s.name} skill`);
+                      setStatus(`正在准备「${s.name}」…`);
+                    }}
+                  >
+                    <div className="ap-card-top">
+                      <div className="ap-dot" style={{ background: s.color }} />
+                      <span className="ap-tag" style={{ borderColor: s.color, color: s.color }}>{s.tag}</span>
+                    </div>
+                    <div className="ap-name">{s.name}</div>
+                    <div className="ap-desc">{s.desc}</div>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (<>
+
+          {/* 系统提示词固定在顶端 */}
+          <div className="system-prompt-bar" onClick={() => setPromptBarOpen((v) => !v)}>
+            <span className="spb-tag">PROMPT</span>
+            <span className="spb-text">{systemPrompt}</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={{ transform: promptBarOpen ? "rotate(180deg)" : "none", transition: "transform .15s" }}>
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </div>
+          {promptBarOpen && (
+            <div style={{ padding: "12px 18px", fontSize: 12.5, color: "var(--text-secondary)", lineHeight: 1.7, borderBottom: "1px solid var(--border)", background: "var(--bg-surface)", whiteSpace: "pre-wrap" }}>
+              {systemPrompt}
+            </div>
+          )}
+
+          {/* 有审批待处理且在自动模式时 → 审批界面替代对话框 */}
+          {approvals.length > 0 && accessMode === "auto" ? (
+            <section className="msglist" style={{ display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 24px" }}>
+              <div style={{ width: "100%", maxWidth: 560 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: 4, background: "#F59E0B", display: "inline-block", animation: "pulse 1.4s infinite" }} />
+                  等待审批（{approvals.length} 条）
+                </div>
+                <ApprovalPanel
+                  approvals={approvals}
+                  onRespond={(id, dec) => respondApproval(id, dec)}
+                />
+                <div style={{ marginTop: 16, fontSize: 12, color: "var(--text-muted)" }}>
+                  提示：想让后续操作自动执行？点击左下角的「自动审批」切换为「完全访问」模式。
+                </div>
+              </div>
+            </section>
+          ) : (
           <section className="msglist" ref={msgsListRef}>
             {messages.length === 0 ? (
               <div className="placeholder">
@@ -1092,6 +1179,7 @@ export default function App() {
               </>
             )}
           </section>
+          )}
 
           {/* 发送器 composer · v0.6.0 新布局 */}
           <footer className="composer">
@@ -1108,23 +1196,26 @@ export default function App() {
                   {IconPlus}
                 </button>
 
-                {/* 手动审批 下拉按钮 */}
+                {/* 访问模式切换：自动审批 ↔ 完全访问 */}
                 <div className="bar-btn-approval-wrap">
                   <button
-                    className="bar-btn-approval"
-                    onClick={() => setApprovalOpen(true)}
-                    title={approvals.length > 0 ? `有 ${approvals.length} 条待审批` : "手动审批"}
+                    className={`bar-btn-approval ${accessMode === "full" ? "is-full" : ""}`}
+                    onClick={() => {
+                      const next: "auto" | "full" = accessMode === "auto" ? "full" : "auto";
+                      setAccessMode(next);
+                      setStatus(next === "full" ? "已切换为完全访问模式" : "已切换回自动审批模式");
+                    }}
+                    title={accessMode === "auto" ? "当前：自动审批（有操作时会弹窗请你批准）" : "当前：完全访问（自动批准所有操作）"}
                   >
                     {IconApproval}
                     <span>
-                      {approvals.length > 0
-                        ? `${approvals.length} 条待审`
-                        : "手动审批"}
+                      {accessMode === "full" ? "完全访问" : (
+                        approvals.length > 0 ? `${approvals.length} 条待审` : "自动审批"
+                      )}
                     </span>
-                    {approvals.length > 0 && (
+                    {accessMode !== "full" && approvals.length > 0 && (
                       <span className="approval-count-badge">{approvals.length}</span>
                     )}
-                    {IconCaretDown}
                   </button>
                 </div>
               </div>
@@ -1265,6 +1356,8 @@ export default function App() {
               </div>
             )}
           </footer>
+          </>
+          )}
         </main>
 
         {/* 右栏：完全删除（原 ToolPanel / 审批/会话/终端/浏览器/画布/快捷键 Tabs 整体移除） */}
@@ -1494,6 +1587,32 @@ export default function App() {
               >
                 登录
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============ 删除确认弹窗（图一样式：暗色警告 + 红按钮） ============ */}
+      {confirmDel.open && (
+        <div className="modal-backdrop" onClick={() => setConfirmDel({ open: false, id: "", title: "" })}>
+          <div className="confirm-delete" onClick={(e) => e.stopPropagation()}>
+            <div className="cd-head">
+              <div className="cd-icon">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                  <line x1="12" y1="9" x2="12" y2="13" />
+                  <line x1="12" y1="17" x2="12.01" y2="17" />
+                </svg>
+              </div>
+              <span className="cd-title">确认删除</span>
+              <button className="cd-close" onClick={() => setConfirmDel({ open: false, id: "", title: "" })}>×</button>
+            </div>
+            <div className="cd-body">
+              删除后，这个会话及其所有内容将从本地或云端移除，包括聊天记录和代码，且无法恢复。
+            </div>
+            <div className="cd-foot">
+              <button className="cd-btn ghost" onClick={() => setConfirmDel({ open: false, id: "", title: "" })}>取消</button>
+              <button className="cd-btn danger" onClick={confirmDeleteSession}>删除</button>
             </div>
           </div>
         </div>
