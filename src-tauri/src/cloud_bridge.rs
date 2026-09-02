@@ -34,7 +34,13 @@ pub type CloudHandle = Arc<Mutex<CloudConfig>>;
 
 pub fn managed_state() -> CloudHandle {
     Arc::new(Mutex::new(CloudConfig {
-        api_base: "http://118.31.107.214/api/v1".to_string(),
+        // base 不带 /api/v1 前缀（与 HARNESS_BACKEND_API.md §1 约定一致），
+        // auth/login、codex/chat、codex/health、plugins/sync 均直接拼接；
+        // plugins 模块的 market 端点自行拼 /api/v1。
+        api_base: "http://118.31.107.214".to_string(),
+        // 云端服务端已验证可用，默认启用云端模式（开箱即用）。
+        // 用户首次启动会被引导登录；登录后自动获得 token 即可对话。
+        enabled: true,
         ..Default::default()
     }))
 }
