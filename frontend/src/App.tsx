@@ -742,8 +742,21 @@ export default function App() {
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         if (!cancelled) {
-          setLastError(msg);
-          setStatus(`初始化失败: ${msg}`);
+          // 浏览器开发环境 fallback（无 Tauri 运行时）
+          const isTauri = typeof (window as any).__TAURI__ !== "undefined";
+          if (!isTauri) {
+            setPaths({
+              codexHome: "/tmp/harness-dev/codex-home",
+              codexBin: "/usr/bin/codex",
+              defaultCwd: "/tmp/harness-dev/workspace",
+            });
+            setConnected(true);
+            setCloudMode(false);
+            setStatus("浏览器开发模式（mock）");
+          } else {
+            setLastError(msg);
+            setStatus(`初始化失败: ${msg}`);
+          }
         }
       }
     })();
@@ -986,6 +999,33 @@ export default function App() {
     if (!codexHome) { setStatus("运行路径尚未就绪，请稍后"); return; }
     if (cloudMode && !cloudConnected) { setCloudLoginOpen(true); setStatus("请先登录云端"); return; }
     if (!cloudMode && !connected) { setStatus("本地 codex 尚未就绪，请稍后"); return; }
+
+    // ---- 浏览器开发 mock 模式 ----
+    const isTauriEnv = typeof (window as any).__TAURI__ !== "undefined";
+    if (!isTauriEnv) {
+      setPending(true); setInput(""); setLastError(null);
+      const next = [...msgsRef.current, { role: "user" as const, text }];
+      setMessages(next);
+      setTerminalLines((prev) => [
+        ...prev, { ts: Date.now(), text: `[mock user]: ${text.slice(0, 160)}`, stream: "meta" as const },
+      ].slice(-500));
+
+      setTimeout(() => {
+        const reply = `（浏览器 mock 模式）你说："${text.slice(0, 80)}${text.length > 80 ? "…" : ""}"
+
+这是一个模拟的 AI 回复。在真实 Tauri 桌面应用中，这里会显示由 codex app-server 生成的真实响应。
+
+当前运行于 **浏览器开发环境**（非 Tauri 桌面），所有 Tauri invoke 调用不可用，因此用 mock 逻辑替代。`;
+        setMessages((prev) => [...prev, { role: "assistant" as const, text: reply }]);
+        setTerminalLines((prev) => [
+          ...prev, { ts: Date.now(), text: `[mock assistant] 回复已生成`, stream: "meta" as const },
+        ].slice(-500));
+        setPending(false);
+        setStatus("mock 回复完成");
+      }, 600);
+      return;
+    }
+
     setPending(true); setInput(""); setLastError(null);
 
     const next = [...msgsRef.current, { role: "user" as const, text }];
