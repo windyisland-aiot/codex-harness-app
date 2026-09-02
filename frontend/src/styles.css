@@ -3727,3 +3727,37 @@ body.theme-dark .bar-btn-approval.is-full {
   background: var(--bg-active);
   color: var(--text);
 }
+
+/* 空状态 */
+.ap-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 60px 24px;
+  color: var(--text-muted);
+  gap: 12px;
+  height: 100%;
+  box-sizing: border-box;
+}
+.ap-empty-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--bg-hover);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+.ap-empty-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+}
+.ap-empty-desc {
+  font-size: 12.5px;
+  max-width: 320px;
+  line-height: 1.55;
+}

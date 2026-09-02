@@ -1084,96 +1084,39 @@ export default function App() {
               {/* ---- 已配置 ---- */}
               {autoTab === "configured" && (
                 <div className="ap-list">
-                  {[
-                    { id: "t1", name: "每日数据简报", trigger: "每天 09:00", next: "今天 09:00 · 2h 后", env: "云端", mode: "Work", on: true, lastRun: "2 小时前" },
-                    { id: "t2", name: "飞书多维表格同步", trigger: "每 30 分钟", next: "18:30 · 12 分钟后", env: "云端", mode: "Code", on: true, lastRun: "30 分钟前" },
-                    { id: "t3", name: "竞品投放监控", trigger: "工作日 10:00 / 15:00", next: "今天 15:00 · 6h 后", env: "云端", mode: "Work", on: false, lastRun: "昨天" },
-                    { id: "t4", name: "影刀日终数据拉取", trigger: "每天 23:00", next: "今天 23:00 · 14h 后", env: "本地", mode: "Code", on: true, lastRun: "昨天 23:00" },
-                    { id: "t5", name: "广告脚本周报", trigger: "每周一 08:30", next: "周一 08:30 · 3d 后", env: "云端", mode: "Work", on: true, lastRun: "上周一" },
-                  ].map((t) => (
-                    <div key={t.id} className="ap-row">
-                      <div className="ap-row-main">
-                        <div className="ap-row-title">
-                          <span className={`ap-status-dot ${t.on ? "on" : "off"}`} />
-                          {t.name}
-                        </div>
-                        <div className="ap-row-meta">
-                          <span>⏱ {t.trigger}</span>
-                          <span>📦 {t.env}</span>
-                          <span className={`ap-mode ap-mode-${t.mode.toLowerCase()}`}>{t.mode}</span>
-                        </div>
-                      </div>
-                      <div className="ap-row-right">
-                        <div className="ap-row-next">
-                          <div className="ap-row-next-label">下次执行</div>
-                          <div className="ap-row-next-val">{t.next}</div>
-                        </div>
-                        <div className="ap-row-last">上次：{t.lastRun}</div>
-                        <div className="ap-row-ops">
-                          <button className="ap-row-btn" title="立即运行">▶</button>
-                          <button className="ap-row-btn" title="编辑">✎</button>
-                          <button className="ap-row-btn danger" title="删除">×</button>
-                        </div>
-                        <label className={`ap-switch ${t.on ? "on" : ""}`}>
-                          <input type="checkbox" defaultChecked={t.on} />
-                          <span className="ap-switch-track" />
-                        </label>
-                      </div>
+                  <div className="ap-empty">
+                    <div className="ap-empty-icon">
+                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                     </div>
-                  ))}
+                    <div className="ap-empty-title">暂无自动化任务</div>
+                    <div className="ap-empty-desc">点击右上角「手动新建」或「在对话中创建」来添加你的第一个定时任务</div>
+                  </div>
                 </div>
               )}
 
               {/* ---- 任务模板 ---- */}
               {autoTab === "templates" && (
-                <div className="ap-grid">
-                  {[
-                    { name: "代码安全扫描", desc: "每天自动扫描代码库，发现潜在漏洞并生成报告", cat: "研发效能" },
-                    { name: "投放数据日报", desc: "定时抓取各渠道投放数据，自动生成日报并推送飞书", cat: "运营" },
-                    { name: "竞品舆情监控", desc: "每天定时采集竞品动态、新品发布、社媒热帖", cat: "市场" },
-                    { name: "脚本生成自动化", desc: "定时读取品牌知识库，生成广告脚本初稿并送审", cat: "内容" },
-                    { name: "代码变更周报", desc: "每周一汇总代码仓库变更，生成周报发团队", cat: "研发效能" },
-                    { name: "服务器巡检", desc: "每 2 小时巡检核心服务状态，异常自动告警", cat: "运维" },
-                    { name: "客户反馈汇总", desc: "每天收集应用商店 / 社区反馈，整理摘要发飞书", cat: "产品" },
-                    { name: "影刀任务触发", desc: "按时间或 Webhook 触发影刀 RPA 任务", cat: "自动化" },
-                  ].map((tmpl) => (
-                    <button key={tmpl.name} className="ap-card" onClick={() => setStatus(`从模板「${tmpl.name}」创建（v0.2 接入调度后端）`)}>
-                      <div className="ap-card-cat">{tmpl.cat}</div>
-                      <div className="ap-name">{tmpl.name}</div>
-                      <div className="ap-desc">{tmpl.desc}</div>
-                    </button>
-                  ))}
+                <div className="ap-list">
+                  <div className="ap-empty">
+                    <div className="ap-empty-icon">
+                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    </div>
+                    <div className="ap-empty-title">暂无可用模板</div>
+                    <div className="ap-empty-desc">后续会把脚本生成、飞书同步、影刀触发等高频场景做成内置模板</div>
+                  </div>
                 </div>
               )}
 
               {/* ---- 执行历史 ---- */}
               {autoTab === "history" && (
                 <div className="ap-list">
-                  {[
-                    { name: "每日数据简报", time: "今天 09:00", status: "success", dur: "2m 14s", trigger: "定时触发" },
-                    { name: "飞书多维表格同步", time: "今天 08:30", status: "success", dur: "42s", trigger: "定时触发" },
-                    { name: "竞品投放监控", time: "昨天 15:00", status: "failed", dur: "8s", trigger: "定时触发" },
-                    { name: "影刀日终数据拉取", time: "昨天 23:00", status: "success", dur: "5m 30s", trigger: "定时触发" },
-                    { name: "广告脚本周报", time: "上周一 08:30", status: "success", dur: "3m 05s", trigger: "定时触发" },
-                    { name: "每日数据简报", time: "昨天 09:00", status: "success", dur: "1m 58s", trigger: "定时触发" },
-                  ].map((h, i) => (
-                    <div key={i} className="ap-row ap-row-history">
-                      <div className="ap-row-main">
-                        <div className="ap-row-title">
-                          <span className={`ap-badge ${h.status}`}>{h.status === "success" ? "✓ 成功" : "✕ 失败"}</span>
-                          {h.name}
-                        </div>
-                        <div className="ap-row-meta">
-                          <span>{h.time}</span>
-                          <span>⏱ {h.dur}</span>
-                          <span>🎯 {h.trigger}</span>
-                        </div>
-                      </div>
-                      <div className="ap-row-right">
-                        <button className="ap-row-btn" title="查看结果">查看</button>
-                      </div>
+                  <div className="ap-empty">
+                    <div className="ap-empty-icon">
+                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><polyline points="12 7 12 12 15 15"/></svg>
                     </div>
-                  ))}
+                    <div className="ap-empty-title">暂无执行记录</div>
+                    <div className="ap-empty-desc">运行过的定时任务会在这里留下历史记录</div>
+                  </div>
                 </div>
               )}
 
@@ -1204,26 +1147,6 @@ export default function App() {
                       <label className="ap-field">
                         <span className="ap-label">任务内容</span>
                         <textarea className="ap-input ap-textarea" rows={3} placeholder="用自然语言描述这个任务要做什么，或直接引用 Skill 名称"></textarea>
-                      </label>
-                      <div className="ap-field-row">
-                        <label className="ap-field half">
-                          <span className="ap-label">运行模式</span>
-                          <div className="ap-seg">
-                            <button className="ap-seg-btn on">Work</button>
-                            <button className="ap-seg-btn">Code</button>
-                          </div>
-                        </label>
-                        <label className="ap-field half">
-                          <span className="ap-label">运行环境</span>
-                          <div className="ap-seg">
-                            <button className="ap-seg-btn on">云端</button>
-                            <button className="ap-seg-btn">本地</button>
-                          </div>
-                        </label>
-                      </div>
-                      <label className="ap-field">
-                        <span className="ap-label">输出存储位置</span>
-                        <input className="ap-input" placeholder="例如：/workspace/outputs/" defaultValue="/workspace/outputs/" />
                       </label>
                     </div>
                     <div className="ap-modal-foot">
