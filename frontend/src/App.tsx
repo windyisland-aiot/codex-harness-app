@@ -486,6 +486,17 @@ export default function App() {
   const [autoTab, setAutoTab] = useState<"configured" | "templates" | "history">("configured");
   const [showNewTaskModal, setShowNewTaskModal] = useState(false);
 
+  // ESC 快捷键：退出自动化面板 / 关闭 modal
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key !== "Escape") return;
+      if (showNewTaskModal) { setShowNewTaskModal(false); return; }
+      if (automationOpen) { setAutomationOpen(false); return; }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [automationOpen, showNewTaskModal]);
+
   // ---------- 自动化任务状态（localStorage 持久化） ----------
   const AUTO_TASKS_KEY = "harness.auto.tasks.v1";
   const AUTO_HISTORY_KEY = "harness.auto.history.v1";
@@ -1411,18 +1422,24 @@ export default function App() {
           {automationOpen ? (
             <div className="automation-panel">
               <div className="ap-top">
-                <div className="ap-tabs">
-                  {([
-                    ["configured", "已配置"],
-                    ["templates", "任务模板"],
-                    ["history", "执行历史"],
-                  ] as const).map(([k, label]) => (
-                    <button
-                      key={k}
-                      className={`ap-tab ${autoTab === k ? "on" : ""}`}
-                      onClick={() => setAutoTab(k)}
-                    >{label}</button>
-                  ))}
+                <div className="ap-top-left">
+                  <button className="ap-back-btn" onClick={() => setAutomationOpen(false)} title="返回对话 (Esc)">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+                    <span>返回对话</span>
+                  </button>
+                  <div className="ap-tabs">
+                    {([
+                      ["configured", "已配置"],
+                      ["templates", "任务模板"],
+                      ["history", "执行历史"],
+                    ] as const).map(([k, label]) => (
+                      <button
+                        key={k}
+                        className={`ap-tab ${autoTab === k ? "on" : ""}`}
+                        onClick={() => setAutoTab(k)}
+                      >{label}</button>
+                    ))}
+                  </div>
                 </div>
                 <div className="ap-actions">
                   <button className="ap-btn ghost" onClick={() => setStatus("从对话中创建：输入需求即可")}>在对话中创建</button>

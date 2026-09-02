@@ -3319,6 +3319,36 @@ body.theme-dark .bar-btn-approval.is-full {
   border-bottom: 1px solid var(--border);
   background: var(--bg-surface);
   flex-shrink: 0;
+  gap: 16px;
+}
+.ap-top-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+.ap-back-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px 7px 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all .15s;
+  flex-shrink: 0;
+}
+.ap-back-btn:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+  border-color: var(--border);
+}
+.ap-back-btn svg {
+  flex-shrink: 0;
 }
 .ap-tabs {
   display: flex;
