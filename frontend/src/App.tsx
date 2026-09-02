@@ -81,6 +81,158 @@ interface SessionExt {
   model?: string;
 }
 
+// ---------- 自动化任务 ----------
+type TriggerKind = "daily" | "interval" | "weekday" | "weekly";
+interface AutoTask {
+  id: string;
+  name: string;
+  kind: TriggerKind;
+  trigger: string;          // 原始触发描述，如 "每天 09:00" / "每 30 分钟"
+  cronExpr: string;         // 供计算用的内部表达式
+  content: string;          // 要执行的任务内容
+  outputPath: string;       // 输出文件存储路径
+  on: boolean;
+  nextRun: number;          // 下一次执行的时间戳（ms）
+  lastRun?: number;
+  lastStatus?: "success" | "failed";
+}
+interface AutoHistoryItem {
+  id: string;
+  taskId: string;
+  taskName: string;
+  time: number;
+  status: "success" | "failed";
+  durMs: number;
+  trigger: "定时触发" | "手动触发";
+  note?: string;
+}
+
+/**
+ * 简易 cron 解析器：计算下一次运行时间。
+ * 支持：
+ *   - 每天 HH:MM            → kind=daily    expr="HH:MM"
+ *   - 每 N 分钟              → kind=interval expr="N"
+ *   - 工作日 HH:MM          → kind=weekday  expr="HH:MM"
+ *   - 每周 N HH:MM          → kind=weekly   expr="N HH:MM"   (N=1..7, 1=周一)
+ *   - 多个时间点             → expr 里用 "|" 分隔，如 "10:00|15:00"
+ */
+function computeNextRun(kind: TriggerKind, cronExpr: string, fromTs = Date.now()): number {
+  const base = new Date(fromTs);
+  const makeAt = (h: number, m: number, d = new Date()) => {
+    const x = new Date(d);
+    x.setHours(h, m, 0, 0);
+    return x.getTime();
+  };
+
+  if (kind === "interval") {
+    const minutes = Math.max(1, parseInt(cronExpr, 10) || 30);
+    return fromTs + minutes * 60 * 1000;
+  }
+
+  const times = cronExpr.split("|").map((s) => s.trim()).filter(Boolean);
+  const candidates: number[] = [];
+
+  if (kind === "daily" || kind === "weekday") {
+    for (const t of times) {
+      const [h, m] = t.split(":").map((x) => parseInt(x, 10));
+      if (isNaN(h) || isNaN(m)) continue;
+      // 今天
+      let ts = makeAt(h, m, base);
+      if (kind === "weekday") {
+        // 若是周末则跳到周一
+        while (new Date(ts).getDay() === 0 || new Date(ts).getDay() === 6) {
+          ts += 24 * 3600 * 1000;
+        }
+      }
+      if (ts <= fromTs) {
+        ts += 24 * 3600 * 1000;
+        if (kind === "weekday") {
+          while (new Date(ts).getDay() === 0 || new Date(ts).getDay() === 6) {
+            ts += 24 * 3600 * 1000;
+          }
+        }
+      }
+      candidates.push(ts);
+    }
+  } else if (kind === "weekly") {
+    for (const t of times) {
+      const [n, hm] = t.split(/\s+/);
+      const dayNum = Math.max(1, Math.min(7, parseInt(n, 10) || 1));
+      const [h, m] = (hm || "").split(":").map((x) => parseInt(x, 10));
+      if (isNaN(h) || isNaN(m)) continue;
+      const targetDow = dayNum === 7 ? 0 : dayNum; // 1=周一 → 1, 7=周日 → 0
+      let ts = makeAt(h, m, base);
+      let curDow = new Date(ts).getDay();
+      let diff = targetDow - curDow;
+      if (diff < 0) diff += 7;
+      ts += diff * 24 * 3600 * 1000;
+      if (ts <= fromTs) ts += 7 * 24 * 3600 * 1000;
+      candidates.push(ts);
+    }
+  }
+
+  if (candidates.length === 0) return fromTs + 3600 * 1000;
+  return Math.min(...candidates);
+}
+
+/** 解析用户输入的触发描述（中文自然语言）→ { kind, cronExpr }  */
+function parseTriggerInput(text: string): { kind: TriggerKind; cronExpr: string; display: string } {
+  const t = text.trim();
+  // 每 N 分钟 / 小时
+  const mInterval = t.match(/每\s*(\d+)\s*(分钟|小时)/);
+  if (mInterval) {
+    let min = parseInt(mInterval[1], 10);
+    if (mInterval[2] === "小时") min *= 60;
+    return { kind: "interval", cronExpr: String(min), display: t };
+  }
+  // 工作日 HH:MM
+  const mWeekday = t.match(/工作日\s*(.+)/);
+  if (mWeekday) {
+    const times = mWeekday[1].split(/[,，/、]/).map((s) => s.trim()).filter(Boolean);
+    return { kind: "weekday", cronExpr: times.join("|"), display: t };
+  }
+  // 每周 N HH:MM  /  每周 N
+  const mWeekly = t.match(/每周\s*([一二三四五六日天1-7]+)\s*(.+)?/);
+  if (mWeekly) {
+    const dayMap: Record<string, number> = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 日: 7, 天: 7 };
+    let n: number | null = null;
+    if (/[1-7]/.test(mWeekly[1])) n = parseInt(mWeekly[1], 10);
+    else n = dayMap[mWeekly[1]] ?? 1;
+    const rest = (mWeekly[2] || "09:00").trim();
+    const times = rest.split(/[,，/、]/).map((s) => s.trim()).filter(Boolean);
+    const expr = times.map((tm) => `${n} ${tm}`).join("|");
+    return { kind: "weekly", cronExpr: expr, display: t };
+  }
+  // 每天
+  const mDaily = t.match(/每天\s*(.+)/);
+  if (mDaily) {
+    const times = mDaily[1].split(/[,，/、]/).map((s) => s.trim()).filter(Boolean);
+    return { kind: "daily", cronExpr: times.join("|"), display: t };
+  }
+  // 兜底：每天一次
+  return { kind: "daily", cronExpr: "09:00", display: t || "每天 09:00" };
+}
+
+function formatNextRun(ts: number): string {
+  const diffMin = Math.round((ts - Date.now()) / 60000);
+  const d = new Date(ts);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const abs = `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  if (diffMin <= 0) return `${abs}（到期）`;
+  if (diffMin < 60) return `${abs} · ${diffMin} 分钟后`;
+  if (diffMin < 60 * 24) return `${abs} · ${Math.round(diffMin / 60)} 小时后`;
+  return `${abs} · ${Math.round(diffMin / 1440)} 天后`;
+}
+function formatTimeAgo(ts?: number): string {
+  if (!ts) return "—";
+  const diffMin = Math.round((Date.now() - ts) / 60000);
+  if (diffMin < 0) return "—";
+  if (diffMin < 1) return "刚刚";
+  if (diffMin < 60) return `${diffMin} 分钟前`;
+  if (diffMin < 60 * 24) return `${Math.round(diffMin / 60)} 小时前`;
+  return `${Math.round(diffMin / 1440)} 天前`;
+}
+
 const POLL_MS = 200;
 const ONBOARDING_KEY = "harness.onboarding.v1";
 
@@ -334,9 +486,151 @@ export default function App() {
   const [autoTab, setAutoTab] = useState<"configured" | "templates" | "history">("configured");
   const [showNewTaskModal, setShowNewTaskModal] = useState(false);
 
+  // ---------- 自动化任务状态（localStorage 持久化） ----------
+  const AUTO_TASKS_KEY = "harness.auto.tasks.v1";
+  const AUTO_HISTORY_KEY = "harness.auto.history.v1";
+  const [autoTasks, setAutoTasks] = useState<AutoTask[]>(() => {
+    try {
+      const raw = window.localStorage.getItem(AUTO_TASKS_KEY);
+      return raw ? (JSON.parse(raw) as AutoTask[]) : [];
+    } catch { return []; }
+  });
+  const [autoHistory, setAutoHistory] = useState<AutoHistoryItem[]>(() => {
+    try {
+      const raw = window.localStorage.getItem(AUTO_HISTORY_KEY);
+      return raw ? (JSON.parse(raw) as AutoHistoryItem[]) : [];
+    } catch { return []; }
+  });
+  useEffect(() => {
+    try { window.localStorage.setItem(AUTO_TASKS_KEY, JSON.stringify(autoTasks)); } catch {}
+  }, [autoTasks]);
+  useEffect(() => {
+    try { window.localStorage.setItem(AUTO_HISTORY_KEY, JSON.stringify(autoHistory.slice(-200))); } catch {}
+  }, [autoHistory]);
+
+  /** ticker：每秒检查到期任务（同时从 localStorage 读最新状态，防止 React state 同步延迟） */
+  const autoLastFireRef = useRef<Record<string, number>>({});
+  useEffect(() => {
+    const iv = window.setInterval(() => {
+      const now = Date.now();
+      // 优先从 localStorage 读最新的任务列表
+      let liveTasks = autoTasks;
+      try {
+        const raw = window.localStorage.getItem(AUTO_TASKS_KEY);
+        if (raw) liveTasks = JSON.parse(raw) as AutoTask[];
+      } catch {}
+      let changed = false;
+      const updated = liveTasks.map((t) => {
+        if (!t.on) return t;
+        if (now >= t.nextRun) {
+          const lastFire = autoLastFireRef.current[t.id] || 0;
+          if (now - lastFire < 1000) return t;
+          autoLastFireRef.current[t.id] = now;
+          changed = true;
+          runAutoTask(t, "定时触发");
+          const next = computeNextRun(t.kind, t.cronExpr, now + 1000);
+          return { ...t, lastRun: now, nextRun: next };
+        }
+        return t;
+      });
+      if (changed) {
+        // 写回 localStorage 并触发 React 重渲染
+        try { window.localStorage.setItem(AUTO_TASKS_KEY, JSON.stringify(updated)); } catch {}
+        setAutoTasks(updated);
+      }
+    }, 1000);
+    return () => window.clearInterval(iv);
+  }, []);
+
+  /** 执行一个自动化任务：创建新会话 + 发送任务内容 + 把输出路径拼到输入里 */
+  function runAutoTask(task: AutoTask, trigger: "定时触发" | "手动触发") {
+    const start = Date.now();
+    // 记录一次历史（先插入一条 running，再在下方 on 里替换）
+    const histId = `h_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    setAutoHistory((prev) => [
+      { id: histId, taskId: task.id, taskName: task.name, time: start, status: "success", durMs: 0, trigger, note: "执行中…" },
+      ...prev,
+    ]);
+    try {
+      // 在输入里带上输出路径，让 agent 知道要存哪
+      const contentWithPath = task.outputPath
+        ? `${task.content}\n\n> 请将所有输出文件保存到：${task.outputPath}`
+        : task.content;
+      // 调用现有的 newChat + setInput + send 序列
+      newChat();
+      setTimeout(() => {
+        setInput(contentWithPath);
+        setTimeout(() => {
+          send();
+          // 异步等待：每 2 秒轮询 msgs 是否还有 assistant 在工作，最多 5 分钟
+          const pollStart = Date.now();
+          const pollIv = window.setInterval(() => {
+            const now = Date.now();
+            if (now - pollStart > 5 * 60 * 1000) {
+              window.clearInterval(pollIv);
+              finalize("执行超时");
+              return;
+            }
+            const last = msgsRef.current[msgsRef.current.length - 1];
+            if (!last || last.role !== "assistant") return;
+            // 如果 pending 为 false 且 session 不再 running，视为完成
+            if (!pendingRef.current) {
+              window.clearInterval(pollIv);
+              finalize();
+            }
+          }, 2000);
+
+          function finalize(note?: string) {
+            setAutoHistory((prev) => prev.map((h) => h.id === histId
+              ? { ...h, status: "success", durMs: Date.now() - start, note }
+              : h));
+            setAutoTasks((prev) => prev.map((t) => t.id === task.id ? { ...t, lastStatus: "success" } : t));
+          }
+        }, 120);
+      }, 200);
+    } catch (e) {
+      setAutoHistory((prev) => prev.map((h) => h.id === histId
+        ? { ...h, status: "failed", durMs: Date.now() - start, note: String(e) }
+        : h));
+      setAutoTasks((prev) => prev.map((t) => t.id === task.id ? { ...t, lastStatus: "failed" } : t));
+    }
+  }
+
+  function addAutoTask(name: string, triggerText: string, content: string, outputPath: string) {
+    const parsed = parseTriggerInput(triggerText);
+    const id = `t_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const nextRun = computeNextRun(parsed.kind, parsed.cronExpr);
+    setAutoTasks((prev) => [
+      ...prev,
+      {
+        id,
+        name: name.trim() || "未命名任务",
+        kind: parsed.kind,
+        trigger: parsed.display,
+        cronExpr: parsed.cronExpr,
+        content: content.trim(),
+        outputPath: outputPath.trim(),
+        on: true,
+        nextRun,
+      },
+    ]);
+  }
+  function toggleAutoTask(id: string) {
+    setAutoTasks((prev) => prev.map((t) => t.id === id ? { ...t, on: !t.on } : t));
+  }
+  function deleteAutoTask(id: string) {
+    setAutoTasks((prev) => prev.filter((t) => t.id !== id));
+    setAutoHistory((prev) => prev.filter((h) => h.taskId !== id));
+  }
+  function runAutoTaskNow(id: string) {
+    const t = autoTasks.find((x) => x.id === id);
+    if (t) runAutoTask(t, "手动触发");
+  }
+
   // ------- Refs 用于 timer 里拿最新值 -------
   const threadProviderRef = useRef<string | null>(null);
   const runningRef = useRef(false);
+  const pendingRef = useRef(false);
   const activeThreadRef = useRef<string | null>(null);
   const msgsRef = useRef<Msg[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -344,7 +638,22 @@ export default function App() {
   const termRef = useRef(terminalLines);
   const msgsListRef = useRef<HTMLDivElement>(null);
   const lastErrMergeRef = useRef<{ text: string; count: number } | null>(null);
+  // Modal 表单状态（放在顶层 hooks 区，不放进 IIFE）
+  const [mName, setMName] = useState("");
+  const [mTrigger, setMTrigger] = useState("每天 09:00");
+  const [mContent, setMContent] = useState("");
+  const [mOutput, setMOutput] = useState("");
+  // 每次打开 modal 时重置表单
+  useEffect(() => {
+    if (showNewTaskModal) {
+      setMName("");
+      setMTrigger("每天 09:00");
+      setMContent("");
+      setMOutput("");
+    }
+  }, [showNewTaskModal]);
   useEffect(() => { runningRef.current = running; }, [running]);
+  useEffect(() => { pendingRef.current = pending; }, [pending]);
   useEffect(() => { activeThreadRef.current = activeThread; }, [activeThread]);
   useEffect(() => { msgsRef.current = messages; }, [messages]);
   useEffect(() => { approvalsRef.current = approvals; }, [approvals]);
@@ -1084,13 +1393,44 @@ export default function App() {
               {/* ---- 已配置 ---- */}
               {autoTab === "configured" && (
                 <div className="ap-list">
-                  <div className="ap-empty">
-                    <div className="ap-empty-icon">
-                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                  {autoTasks.length === 0 ? (
+                    <div className="ap-empty">
+                      <div className="ap-empty-icon">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                      </div>
+                      <div className="ap-empty-title">暂无自动化任务</div>
+                      <div className="ap-empty-desc">点击右上角「手动新建」或「在对话中创建」来添加你的第一个定时任务</div>
                     </div>
-                    <div className="ap-empty-title">暂无自动化任务</div>
-                    <div className="ap-empty-desc">点击右上角「手动新建」或「在对话中创建」来添加你的第一个定时任务</div>
-                  </div>
+                  ) : autoTasks.map((t) => (
+                    <div key={t.id} className="ap-row">
+                      <div className="ap-row-main">
+                        <div className="ap-row-title">
+                          <span className={`ap-status-dot ${t.on ? "on" : "off"}`} />
+                          {t.name}
+                        </div>
+                        <div className="ap-row-meta">
+                          <span>⏱ {t.trigger}</span>
+                          {t.outputPath && <span>📁 {t.outputPath}</span>}
+                          {t.lastStatus && <span className={`ap-status-chip ${t.lastStatus}`}>{t.lastStatus === "success" ? "✓ 最近成功" : "✕ 最近失败"}</span>}
+                        </div>
+                      </div>
+                      <div className="ap-row-right">
+                        <div className="ap-row-next">
+                          <div className="ap-row-next-label">下次执行</div>
+                          <div className="ap-row-next-val">{formatNextRun(t.nextRun)}</div>
+                        </div>
+                        <div className="ap-row-last">上次：{formatTimeAgo(t.lastRun)}</div>
+                        <div className="ap-row-ops">
+                          <button className="ap-row-btn" title="立即运行" onClick={() => runAutoTaskNow(t.id)}>▶</button>
+                          <button className="ap-row-btn danger" title="删除" onClick={() => deleteAutoTask(t.id)}>×</button>
+                        </div>
+                        <label className={`ap-switch ${t.on ? "on" : ""}`}>
+                          <input type="checkbox" checked={t.on} onChange={() => toggleAutoTask(t.id)} />
+                          <span className="ap-switch-track" />
+                        </label>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
 
@@ -1110,13 +1450,36 @@ export default function App() {
               {/* ---- 执行历史 ---- */}
               {autoTab === "history" && (
                 <div className="ap-list">
-                  <div className="ap-empty">
-                    <div className="ap-empty-icon">
-                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><polyline points="12 7 12 12 15 15"/></svg>
+                  {autoHistory.length === 0 ? (
+                    <div className="ap-empty">
+                      <div className="ap-empty-icon">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><polyline points="12 7 12 12 15 15"/></svg>
+                      </div>
+                      <div className="ap-empty-title">暂无执行记录</div>
+                      <div className="ap-empty-desc">运行过的定时任务会在这里留下历史记录</div>
                     </div>
-                    <div className="ap-empty-title">暂无执行记录</div>
-                    <div className="ap-empty-desc">运行过的定时任务会在这里留下历史记录</div>
-                  </div>
+                  ) : autoHistory.map((h) => {
+                    const d = new Date(h.time);
+                    const pad = (n: number) => String(n).padStart(2, "0");
+                    const timeStr = `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                    const durStr = h.note ? h.note : `${Math.max(0, Math.round(h.durMs / 1000))}s`;
+                    return (
+                      <div key={h.id} className="ap-row ap-row-history">
+                        <div className="ap-row-main">
+                          <div className="ap-row-title">
+                            <span className={`ap-badge ${h.status}`}>{h.status === "success" ? "✓ 成功" : h.status === "failed" ? "✕ 失败" : "… 执行中"}</span>
+                            {h.taskName}
+                          </div>
+                          <div className="ap-row-meta">
+                            <span>{timeStr}</span>
+                            <span>⏱ {durStr}</span>
+                            <span>🎯 {h.trigger}</span>
+                            {h.note && h.status === "success" && <span>📁 {h.note}</span>}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 
@@ -1131,27 +1494,34 @@ export default function App() {
                     <div className="ap-modal-body">
                       <label className="ap-field">
                         <span className="ap-label">任务名称</span>
-                        <input className="ap-input" placeholder="例如：每日投放数据简报" />
+                        <input className="ap-input" value={mName} onChange={(e) => setMName(e.target.value)} placeholder="例如：每日投放数据简报" autoFocus />
                       </label>
                       <label className="ap-field">
-                        <span className="ap-label">触发时间</span>
-                        <div className="ap-trigger-row">
-                          <select className="ap-input">
-                            <option>固定时间</option>
-                            <option>间隔触发</option>
-                            <option>自定义（自然语言）</option>
-                          </select>
-                          <input className="ap-input" placeholder="每天 09:00" />
-                        </div>
+                        <span className="ap-label">触发时间（自然语言）</span>
+                        <input className="ap-input" value={mTrigger} onChange={(e) => setMTrigger(e.target.value)} placeholder="每天 09:00 / 每 30 分钟 / 工作日 10:00" />
+                        <div className="ap-hint">支持：每天 HH:MM、每 N 分钟/小时、工作日 HH:MM、每周 N HH:MM</div>
                       </label>
                       <label className="ap-field">
                         <span className="ap-label">任务内容</span>
-                        <textarea className="ap-input ap-textarea" rows={3} placeholder="用自然语言描述这个任务要做什么，或直接引用 Skill 名称"></textarea>
+                        <textarea className="ap-input ap-textarea" rows={3} value={mContent} onChange={(e) => setMContent(e.target.value)} placeholder="用自然语言描述这个任务要做什么，或直接引用 Skill 名称"></textarea>
+                      </label>
+                      <label className="ap-field">
+                        <span className="ap-label">输出文件存储路径（可选）</span>
+                        <input className="ap-input" value={mOutput} onChange={(e) => setMOutput(e.target.value)} placeholder="例如：/workspace/outputs/daily-brief/" />
+                        <div className="ap-hint">留空则输出由 Agent 自行决定。支持绝对路径或项目内相对路径。</div>
                       </label>
                     </div>
                     <div className="ap-modal-foot">
                       <button className="ap-btn ghost" onClick={() => setShowNewTaskModal(false)}>取消</button>
-                      <button className="ap-btn primary" onClick={() => { setShowNewTaskModal(false); setStatus("定时任务创建成功（v0.2 接入调度后端）"); }}>创建</button>
+                      <button
+                        className="ap-btn primary"
+                        disabled={!mName.trim() || !mTrigger.trim() || !mContent.trim()}
+                        onClick={() => {
+                          addAutoTask(mName, mTrigger, mContent, mOutput);
+                          setShowNewTaskModal(false);
+                          setStatus("定时任务已创建 ✅");
+                        }}
+                      >创建</button>
                     </div>
                   </div>
                 </div>

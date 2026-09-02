@@ -3761,3 +3761,28 @@ body.theme-dark .bar-btn-approval.is-full {
   max-width: 320px;
   line-height: 1.55;
 }
+
+/* ap-hint / ap-status-chip */
+.ap-hint {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+.ap-status-chip {
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 4px;
+}
+.ap-status-chip.success {
+  background: rgba(16, 185, 129, 0.12);
+  color: #10B981;
+}
+.ap-status-chip.failed {
+  background: rgba(239, 68, 68, 0.12);
+  color: #EF4444;
+}
+.ap-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
