@@ -8,11 +8,15 @@
 //! 也可通过环境变量 `HARNESS_DATA_DIR=<path>` 覆盖，便于便携部署和避免权限冲突。
 
 mod appserver;
+mod approval_feishu;
+mod base;
+mod cloud_bridge;
 mod config;
 mod feishu;
 mod fs;
 mod oauth;
 mod plugins;
+mod rag;
 mod router;
 mod search;
 mod sessions;
@@ -128,6 +132,7 @@ pub fn run() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
         .manage(appserver::managed_state())
+        .manage(cloud_bridge::managed_state())
         .setup(|_app| Ok(()))
         .invoke_handler(tauri::generate_handler![
             greet,
@@ -153,9 +158,22 @@ pub fn run() {
             plugins::plugins_list,
             plugins::plugins_apply,
             plugins::plugins_add_skill_dir,
+            // v0.6.0 云端市场 & 本地导入
+            plugins::plugins_cloud_health,
+            plugins::plugins_cloud_list,
+            plugins::plugins_cloud_install,
+            plugins::plugins_import_local,
             search::search_execute,
             search::search_register_mcp,
             search::search_status,
+            rag::rag_register,
+            rag::rag_status,
+            rag::rag_health,
+            rag::rag_search,
+            base::base_register_mcp,
+            base::base_status,
+            base::base_health,
+            approval_feishu::approval_send_to_feishu,
             sessions::session_save,
             sessions::session_list,
             sessions::session_search,
@@ -166,6 +184,14 @@ pub fn run() {
             fs::fs_read_file,
             fs::fs_write_file,
             harness_resolve_paths,
+            // B2 云端 codex 执行桥
+            cloud_bridge::cloud_login,
+            cloud_bridge::cloud_mode_set,
+            cloud_bridge::cloud_mode_get,
+            cloud_bridge::cloud_health,
+            cloud_bridge::cloud_thread_start,
+            cloud_bridge::cloud_turn_start,
+            cloud_bridge::cloud_skills_sync,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

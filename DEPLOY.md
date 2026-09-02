@@ -1,12 +1,111 @@
 # Harness 企业内部 Agent — 部署文档
 
-> 版本：v0.2.0（P1 阶段 · Trae Work 风格 UI 重构）
-> 目标平台：Windows 10 / Windows 11 x64
+> 版本：v0.6.0（选项 C 迁移 · 云端 harness-service + 本地瘦壳）
+> 发布类型：架构迁移
+> 目标平台：Windows 10 / Windows 11 x64（本地前端壳）+ 云端 harness-service
 > 源码仓库：`windyisland-aiot/codex-harness-app`（私有）
 
 ---
 
-## 〇、v0.2.0 版更新要点（What's New）
+## 〇、v0.6.0 架构迁移（选项 C：云 agent + 本地瘦壳）
+
+把 bibike-script-platform 改造扩展为云端 harness-service，本地 Harness 退化为前端壳。
+
+### 决策（已确认）
+- **用户信息继承**：账号/凭据数据从旧库迁移到云端
+- **会话不保留**：旧会话历史/消息/脚本版本表清空，只迁账号
+- **Agent 重写为 Skill**：bibike 的 Python Agent prompt → `talk-script/SKILL.md`，由云端 codex 执行
+- **RAG 保留**：bibike 的 Chroma 六模块 + 金句库作为脚本 skill 专属知识库
+- **其余 bibike 模块不复用**：前端、Celery、禁用词、视频等移除
+
+### 目标架构
+```
+本地 Harness（瘦壳）                     云端 harness-service
+─────────────────                      ─────────────────────
+前端 UI（对话/设置/插件/模板库）    HTTP  ─▶ FastAPI（bibike 改造）
+skill 触发词（本地 SKILL.md）   /SSE  ◀─     · RAG（Chroma 知识库）
+网络层调云端，不起本地 codex                  · codex app-server 执行引擎
+                                             · 账号/认证 · 会话 · 审批
+```
+
+### Agent → Skill 提示词重写对照
+| bibike Python Agent | 重写位置 | 内容 |
+|---|---|---|
+| BriefIntakeAgent（需求补充） | `talk-script` 🅰 | 追问规则、最多 5 轮、促销区分 |
+| KnowledgeRetriever（检索） | `talk-script` 🅱 + 云端 /retrieve | 6 模块检索、mode 过滤 |
+| 主生成/润色 Agent | `talk-script` 🅲 C1-C4 | 编导/去AI味/转化/促销组合令 |
+| ProductFactGuard + 风险审查 | `talk-script` 🅳 | 稳定规则表（block/warn），不阻断交付 |
+
+### 分阶段
+- **A 云端 harness-service 骨架**：保留 RAG + /retrieve + 认证（先 API key 后 OAuth2）
+- **B 云端接 codex**：搬 skills + app-server 执行 + SSE 进度
+- **C 本地瘦身**：codexClient 改调云端，不起本地 codex
+- **D 数据迁移**：账号继承、会话清空
+- **E 联调收尾**：飞书联动（Base 写入/审批）是否保留待确认
+
+---
+
+## 〇、What's New v0.5.4 版更新要点
+
+让 codex 子进程默认读取正确的 skill 路径：启动时自动把内置 skills 同步到 `$CODEX_HOME/skills/`。
+
+| 分类 | 变更内容 | 对应计划项 |
+|------|----------|------------|
+| 🧠 skill 路径自动同步 | `appserver_start` 在拉起 codex 子进程前，把安装包资源目录的内置 skills 物理同步到 `<codex_home>/skills/`（codex 原生只扫 `$CODEX_HOME/skills`，而安装包资源路径是动态的） | P2-T10 |
+| 🧠 规则自动合并 | 同步后若 config.toml 没有该 skill 的规则，自动追加 `[[skills.config]] path=<dir> enabled=true`（首次默认启用）；已有规则不动，尊重用户在插件面板的开关选择 | P2-T10 |
+| 🧪 测试 | 新增同步逻辑单测 2 条（递归拷贝幂等 + 规则合并不重复） | P2-T10 |
+| 📦 打包 & CI | 版本号统一升到 0.5.4 | P2-T10 |
+
+## 〇-1、v0.5.3 版更新要点（What's New）
+
+本版本集中修复用户反馈的 4 个 UI 问题：插件管理独立页面、按钮悬浮消失、蓝紫主色改黑白、飞书 SKILL 检测不到。
+
+| 分类 | 变更内容 | 对应计划项 |
+|------|----------|------------|
+| 🧩 插件管理独立页面 | 「插件管理」按钮改为打开独立 PluginsPanel 模态（App.tsx `pluginsOpen` state），设置面板移除「插件/Skill」tab；补齐此前完全缺失的 `cfg-*` 面板样式（面板此前无样式裸渲染） | P2-T10 |
+| 🎨 按钮悬浮消失修复 | 移除所有 `filter: brightness()` hover（WebView2 在 backdrop-filter 祖先内的渲染 bug 元凶），改用 background 变更 | P2-T8 |
+| 🎨 黑白主色 | 品牌色从蓝紫（#6366F1→#8B5CF6）全面改为黑白（#1F2328→#111827），覆盖 CSS 全部硬编码蓝紫残留（按钮/头像/导航/气泡/图标） | P2-T8 |
+| 📐 弹窗拉伸修复 | 模型编辑弹窗用 `createPortal` 渲染到 `document.body`，脱离设置面板 transform/filter 祖先（固定定位失效根因） | P2-T8 |
+| 🧠 飞书 SKILL 检测 | 内置 skills 打进安装包（`src-tauri/resources/skills/` + tauri.conf.json bundle.resources + .gitignore 放行）；Rust `plugins_list` 自动附加默认扫描根（resource_dir/skills + codex_home/skills + 开发兜底），前端去掉硬编码 `/workspace/...` 沙箱路径；skill 清单新增 `source` 字段分组展示 | P2-T10 |
+| 🧪 测试 | 修复 `backend_backend_integration.rs` 缺 `use std::time::Duration` 编译错误；UI 修复结构断言 22 项全 GREEN；tsc + vite build + cargo test 全通过 | P2-T10 |
+| 📦 打包 & CI | 版本号统一升到 0.5.3（Cargo.toml / tauri.conf.json / approval_feishu.rs / SettingsPanel 顶部 & 关于页 & DEPLOY.md） | P2-T10 |
+
+## 〇-1、v0.5.2 版更新要点（What's New）
+
+在 v0.5.1 基础上补上 **UI 可用性缺口**：解决用户反馈"模型配置对话框拉伸错误"和"没有 Skill 使用界面"两个问题，并把飞书 Skill 默认启用加入插件管理界面，让终端用户开箱即可在对话里调用 feishu-bot。
+
+| 分类 | 变更内容 | 对应计划项 |
+|------|----------|------------|
+| 🎨 UI 修复 | 设置面板「编辑模型 / 新增模型」对话框从 560px 扩到 680px；`.sp-hint` / `.sp-hint code` 新增 `overflow-wrap: anywhere` + `word-break: break-all`，长 Base URL 提示不再撑破卡片边界溢出外部 | P2-T8 |
+| 🧩 插件/Skill 面板 | SettingsPanel 左侧新增「插件/Skill」tab（SectionPlugins）：状态条、扫描根目录可编辑、刷新、全局开关、分组 checkbox 即时写回、自添加 Skill 目录输入框 | T14 + P2-T10 |
+| 🧩 插件/Skill 面板 | 自动扫描 `.codex/skills`，对匹配 `feishu / 飞书 / lark / feishu-bot` 的 Skill 默认启用，列表中显示"飞书"与"启用"tag，对话里直接触发 feishu-bot SKILL 执行 | P2-T10 |
+| 🧩 插件/Skill 面板 | 样式对齐 sp- 系列：新增 `.sp-h2`、`.sp-clickable`、`.sp-tag` 3 个视觉类，风格与账号/模型/MCP 等 tab 完全一致 | P2-T10 |
+| 📦 打包 & CI | 版本号统一升到 0.5.2（Cargo.toml / tauri.conf.json / approval_feishu.rs / SettingsPanel 顶部 & 关于页 & DEPLOY.md） | P2-T10 |
+| 🧪 测试 | 新增设置面板 Skill UI 断言（10 项）→ 6 项 RED → 10 项 GREEN；tsc + vite build 全通过 | P2-T10 |
+
+## 〇-1、v0.5.1 版更新要点（What's New）
+
+本版本是**企业内多 Agent 协同（广告脚本生成）能力落地**的里程碑测试发布，同时把知识库 RAG、飞书多维表格（Base/Bitable）、飞书审批直连 3 条关键数据链路从后端贯通到前端 UI。
+
+| 分类 | 变更内容 | 对应计划项 |
+|------|----------|------------|
+| 📚 知识库 RAG | 新增 `crates/harness-rag`：Chroma HTTP 客户端、`chunk_markdown`、`embed`、`RagMcpConfig`；14 条 RED→GREEN 集成测试 | T18 / P2-T1 |
+| 📚 知识库 RAG | Tauri 命令：`rag_register` / `rag_status` / `rag_health` / `rag_search`；脱敏 + 幂等写入 config.toml | T18 / P2-T3 |
+| 📚 知识库 RAG | 设置面板 MCP tab：+ 启用 RAG 按钮、Chroma 健康卡、入库分块预览 + 检索测试框（top-k / query / 结果列表） | T20 / P2-T5 |
+| 🗂️ 飞书多维表格 | Tauri 命令：`base_register_mcp` / `base_status` / `base_health`；默认命令 `lark-openapi-mcp --mode=stdio --enable-bitable` | T19 / P2-T3 |
+| 🗂️ 飞书多维表格 | 设置面板 MCP tab：+ 启用 Base 按钮、健康卡（校验 `FEISHU_*` 3 个 env 存在） | T19 / P2-T4 |
+| 🎬 广告脚本多 Agent | 新增 `harness-plugins::ad_script::AdScriptWorkflow`：5 步编排 `RagSearch → LlmGenerate(×2) → BaseInsert → FeishuApprovalSubmit`，4 条用例含关键词断言 | T21 / P2-T2 |
+| 🎬 广告脚本多 Agent | 左栏模板库：点「模板库」弹出广告脚本 5 步模板，一键填入输入框；同时附带周报模板 | T21 / P2-T6 |
+| 📨 飞书审批直连 | Tauri 命令：`approval_send_to_feishu`；HTTP 返回脱敏不泄漏 token；instance_code + applink 生成 | T22 / P2-T3 |
+| 📨 飞书审批直连 | 审批面板每张卡片加「提交至飞书审批」按钮 → 提单 loading/ok/error 状态 + 飞书打开链接 | T22 / P2-T4 |
+| 📦 打包 & CI | 版本号统一升到 0.5.0（Cargo.toml / tauri.conf.json / 设置面板头部 & 关于页） | P2-T7 |
+| 📦 打包 & CI | workflow 新增：`actions/cache@v4` 缓存 `%LOCALAPPDATA%\tauri-bundler`（NSIS/WiX 二次下载抗 504）；Tee-Object 记录每次 attempt 日志 | P2-T7 |
+| 📦 打包 & CI | workflow 新增：构建结束 always() 收集 attempt 日志 + target/*.log + bundler-cache.txt，上传独立 artifact `Harness-BuildLogs-<ver>` | P2-T7 |
+| 🧪 测试 | `cargo test --workspace --exclude harness-app` 全通过；tsc + vite build 全通过；glib 失败仅影响非目标 Linux | P2-T8 |
+
+---
+
+## 〇-1、v0.2.0 版更新要点（历史 What's New · Trae Work 风格 UI 重构）
 
 本版本是**界面与交互重构的里程碑版本**，整体风格向 Trae Work 对齐，同时修复 P0 级的 LLM 调用故障。
 
@@ -43,8 +142,8 @@
 
 | 格式 | 下载链接 | 体积 | 适用场景 |
 |------|----------|------|----------|
-| MSI | [Harness_0.2.0_x64_en-US.msi](https://github.com/windyisland-aiot/codex-harness-app/releases/download/v0.2.0/Harness_0.2.0_x64_en-US.msi) | ≈ 6 MB | 企业 IT 批量部署、组策略管理 |
-| NSIS (EXE) | [Harness_0.2.0_x64-setup.exe](https://github.com/windyisland-aiot/codex-harness-app/releases/download/v0.2.0/Harness_0.2.0_x64-setup.exe) | ≈ 4.5 MB | 个人开发者本地双击安装 |
+| MSI | [Harness_0.5.1_x64_en-US.msi](https://github.com/windyisland-aiot/codex-harness-app/releases/download/v0.5.1/Harness_0.5.1_x64_en-US.msi) | ≈ 6 MB | 企业 IT 批量部署、组策略管理 |
+| NSIS (EXE) | [Harness_0.5.1_x64-setup.exe](https://github.com/windyisland-aiot/codex-harness-app/releases/download/v0.5.1/Harness_0.5.1_x64-setup.exe) | ≈ 4.5 MB | 个人开发者本地双击安装 |
 
 安装步骤：
 1. 双击安装包（如被 SmartScreen 拦截，点「更多信息」→「仍要运行」）。
@@ -387,7 +486,7 @@ cargo test -p appserver     # JSON-RPC 客户端
 
 ## 八、参考链接
 
-- GitHub Release: https://github.com/windyisland-aiot/codex-harness-app/releases/tag/v0.2.0
+- GitHub Release: https://github.com/windyisland-aiot/codex-harness-app/releases/tag/v0.5.1
 - CI Workflow: `.github/workflows/build-windows-release.yml`
 - 任务清单: [TASKS.md](TASKS.md)
 - Tauri 2.x 文档: https://v2.tauri.app/

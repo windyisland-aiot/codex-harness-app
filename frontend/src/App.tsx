@@ -8,6 +8,7 @@
 import { useEffect, useRef, useState } from "react";
 import Markdown from "./components/Markdown";
 import SettingsPanel from "./components/SettingsPanel";
+import PluginsPanel from "./components/PluginsPanel";
 import ApprovalPanel from "./components/ApprovalPanel";
 import * as codex from "./codexClient";
 import type {
@@ -15,6 +16,7 @@ import type {
   ResolvedPaths,
   SessionMeta,
 } from "./codexClient";
+import { MODEL_GROUPS, logoForModel } from "./models";
 
 // 窗口控制：Tauri 2.x 下优先用 @tauri-apps/api/window 的 getCurrentWindow() 实例方法。
 // 如果 `toggleMaximize` 在个别运行时不存在，退化为 maximize/unmaximize；
@@ -79,6 +81,158 @@ interface SessionExt {
   model?: string;
 }
 
+// ---------- 自动化任务 ----------
+type TriggerKind = "daily" | "interval" | "weekday" | "weekly";
+interface AutoTask {
+  id: string;
+  name: string;
+  kind: TriggerKind;
+  trigger: string;          // 原始触发描述，如 "每天 09:00" / "每 30 分钟"
+  cronExpr: string;         // 供计算用的内部表达式
+  content: string;          // 要执行的任务内容
+  outputPath: string;       // 输出文件存储路径
+  on: boolean;
+  nextRun: number;          // 下一次执行的时间戳（ms）
+  lastRun?: number;
+  lastStatus?: "success" | "failed";
+}
+interface AutoHistoryItem {
+  id: string;
+  taskId: string;
+  taskName: string;
+  time: number;
+  status: "success" | "failed";
+  durMs: number;
+  trigger: "定时触发" | "手动触发";
+  note?: string;
+}
+
+/**
+ * 简易 cron 解析器：计算下一次运行时间。
+ * 支持：
+ *   - 每天 HH:MM            → kind=daily    expr="HH:MM"
+ *   - 每 N 分钟              → kind=interval expr="N"
+ *   - 工作日 HH:MM          → kind=weekday  expr="HH:MM"
+ *   - 每周 N HH:MM          → kind=weekly   expr="N HH:MM"   (N=1..7, 1=周一)
+ *   - 多个时间点             → expr 里用 "|" 分隔，如 "10:00|15:00"
+ */
+function computeNextRun(kind: TriggerKind, cronExpr: string, fromTs = Date.now()): number {
+  const base = new Date(fromTs);
+  const makeAt = (h: number, m: number, d = new Date()) => {
+    const x = new Date(d);
+    x.setHours(h, m, 0, 0);
+    return x.getTime();
+  };
+
+  if (kind === "interval") {
+    const minutes = Math.max(1, parseInt(cronExpr, 10) || 30);
+    return fromTs + minutes * 60 * 1000;
+  }
+
+  const times = cronExpr.split("|").map((s) => s.trim()).filter(Boolean);
+  const candidates: number[] = [];
+
+  if (kind === "daily" || kind === "weekday") {
+    for (const t of times) {
+      const [h, m] = t.split(":").map((x) => parseInt(x, 10));
+      if (isNaN(h) || isNaN(m)) continue;
+      // 今天
+      let ts = makeAt(h, m, base);
+      if (kind === "weekday") {
+        // 若是周末则跳到周一
+        while (new Date(ts).getDay() === 0 || new Date(ts).getDay() === 6) {
+          ts += 24 * 3600 * 1000;
+        }
+      }
+      if (ts <= fromTs) {
+        ts += 24 * 3600 * 1000;
+        if (kind === "weekday") {
+          while (new Date(ts).getDay() === 0 || new Date(ts).getDay() === 6) {
+            ts += 24 * 3600 * 1000;
+          }
+        }
+      }
+      candidates.push(ts);
+    }
+  } else if (kind === "weekly") {
+    for (const t of times) {
+      const [n, hm] = t.split(/\s+/);
+      const dayNum = Math.max(1, Math.min(7, parseInt(n, 10) || 1));
+      const [h, m] = (hm || "").split(":").map((x) => parseInt(x, 10));
+      if (isNaN(h) || isNaN(m)) continue;
+      const targetDow = dayNum === 7 ? 0 : dayNum; // 1=周一 → 1, 7=周日 → 0
+      let ts = makeAt(h, m, base);
+      let curDow = new Date(ts).getDay();
+      let diff = targetDow - curDow;
+      if (diff < 0) diff += 7;
+      ts += diff * 24 * 3600 * 1000;
+      if (ts <= fromTs) ts += 7 * 24 * 3600 * 1000;
+      candidates.push(ts);
+    }
+  }
+
+  if (candidates.length === 0) return fromTs + 3600 * 1000;
+  return Math.min(...candidates);
+}
+
+/** 解析用户输入的触发描述（中文自然语言）→ { kind, cronExpr }  */
+function parseTriggerInput(text: string): { kind: TriggerKind; cronExpr: string; display: string } {
+  const t = text.trim();
+  // 每 N 分钟 / 小时
+  const mInterval = t.match(/每\s*(\d+)\s*(分钟|小时)/);
+  if (mInterval) {
+    let min = parseInt(mInterval[1], 10);
+    if (mInterval[2] === "小时") min *= 60;
+    return { kind: "interval", cronExpr: String(min), display: t };
+  }
+  // 工作日 HH:MM
+  const mWeekday = t.match(/工作日\s*(.+)/);
+  if (mWeekday) {
+    const times = mWeekday[1].split(/[,，/、]/).map((s) => s.trim()).filter(Boolean);
+    return { kind: "weekday", cronExpr: times.join("|"), display: t };
+  }
+  // 每周 N HH:MM  /  每周 N
+  const mWeekly = t.match(/每周\s*([一二三四五六日天1-7]+)\s*(.+)?/);
+  if (mWeekly) {
+    const dayMap: Record<string, number> = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 日: 7, 天: 7 };
+    let n: number | null = null;
+    if (/[1-7]/.test(mWeekly[1])) n = parseInt(mWeekly[1], 10);
+    else n = dayMap[mWeekly[1]] ?? 1;
+    const rest = (mWeekly[2] || "09:00").trim();
+    const times = rest.split(/[,，/、]/).map((s) => s.trim()).filter(Boolean);
+    const expr = times.map((tm) => `${n} ${tm}`).join("|");
+    return { kind: "weekly", cronExpr: expr, display: t };
+  }
+  // 每天
+  const mDaily = t.match(/每天\s*(.+)/);
+  if (mDaily) {
+    const times = mDaily[1].split(/[,，/、]/).map((s) => s.trim()).filter(Boolean);
+    return { kind: "daily", cronExpr: times.join("|"), display: t };
+  }
+  // 兜底：每天一次
+  return { kind: "daily", cronExpr: "09:00", display: t || "每天 09:00" };
+}
+
+function formatNextRun(ts: number): string {
+  const diffMin = Math.round((ts - Date.now()) / 60000);
+  const d = new Date(ts);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const abs = `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  if (diffMin <= 0) return `${abs}（到期）`;
+  if (diffMin < 60) return `${abs} · ${diffMin} 分钟后`;
+  if (diffMin < 60 * 24) return `${abs} · ${Math.round(diffMin / 60)} 小时后`;
+  return `${abs} · ${Math.round(diffMin / 1440)} 天后`;
+}
+function formatTimeAgo(ts?: number): string {
+  if (!ts) return "—";
+  const diffMin = Math.round((Date.now() - ts) / 60000);
+  if (diffMin < 0) return "—";
+  if (diffMin < 1) return "刚刚";
+  if (diffMin < 60) return `${diffMin} 分钟前`;
+  if (diffMin < 60 * 24) return `${Math.round(diffMin / 60)} 小时前`;
+  return `${Math.round(diffMin / 1440)} 天前`;
+}
+
 const POLL_MS = 200;
 const ONBOARDING_KEY = "harness.onboarding.v1";
 
@@ -114,11 +268,11 @@ const STARTER_CHIPS = [
 /* =============================================================
    内联 SVG 图标（Trae Work 极简 linear 风格，避免 emoji）
    ============================================================= */
+/* 左上角 sidebar toggle：圆角深色方块 + 白色竖条（Trae Work 图一样式） */
 const IconHamburger = (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <line x1="3" y1="6" x2="21" y2="6" />
-    <line x1="3" y1="12" x2="21" y2="12" />
-    <line x1="3" y1="18" x2="21" y2="18" />
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+    <rect x="3" y="3" width="18" height="18" rx="5" className="tbtn-shell" />
+    <rect x="10.5" y="7" width="3" height="10" rx="1.5" className="tbtn-bar" />
   </svg>
 );
 const IconSearch = (
@@ -191,6 +345,16 @@ const IconPlus = (
     <line x1="5" y1="12" x2="19" y2="12" />
   </svg>
 );
+const IconApproval = (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M20 6L9 17l-5-5" />
+  </svg>
+);
+const IconCaretDown = (
+  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="6 9 12 15 18 9" />
+  </svg>
+);
 
 export default function App() {
   // ------- 运行时路径 -------
@@ -201,9 +365,12 @@ export default function App() {
   // ------- 默认模型 -------
   const [model, setModel] = useState("ark-code-latest");
   const [provider, setProvider] = useState("volcengine-ark");
+  const [autoModeOpen, setAutoModeOpen] = useState(false);
 
   // ------- 设置面板开关（v0.3.0 统一成单个 SettingsPanel） -------
   const [settingsOpen, setSettingsOpen] = useState(false);
+  // ------- 插件管理：独立页面（v0.5.3 起不再挂在设置面板里） -------
+  const [pluginsOpen, setPluginsOpen] = useState(false);
   const [approvalOpen, setApprovalOpen] = useState(false);
 
   // ------- 连接 & 状态 -------
@@ -242,16 +409,228 @@ export default function App() {
   const [oboUsername, setOboUsername] = useState("");
   const [oboKey, setOboKey] = useState("");
 
+  // ------- B2 云端 codex 桥 -------
+  const [cloudMode, setCloudMode] = useState(false);
+  const [cloudConnected, setCloudConnected] = useState(false);
+  const [cloudLoginOpen, setCloudLoginOpen] = useState(false);
+  const [cloudUser, setCloudUser] = useState("");
+  const [cloudPass, setCloudPass] = useState("");
+  const [cloudStage, setCloudStage] = useState<string | null>(null);
+  const cloudSessionRef = useRef<string | null>(null);
+
+  // ------- T6 模板库抽屉（广告脚本 5 步模板） -------
+  const [templateOpen, setTemplateOpen] = useState(false);
+  type TemplateId = "ad_script" | "manual_summarize_weekly";
+  const TEMPLATES: Array<{
+    id: TemplateId;
+    icon: string;
+    title: string;
+    subtitle: string;
+    prompt: string;
+    tag?: string;
+  }> = [
+    {
+      id: "ad_script",
+      icon: "🎬",
+      title: "广告脚本生成（RAG → LLM × 2 → Bitable → 飞书审批）",
+      subtitle: "5 步协同工作流：品牌话术检索 → 初稿 → 润色 → 写 Bitable → 提单审批",
+      tag: "T21 · AdScriptWorkflow",
+      prompt: [
+        "【广告脚本生成工作流 · 5 步】",
+        "",
+        "【第 1 步 · 检索知识库】请调用 RAG 检索：品牌话术、竞品分析、历史脚本案例，关键词提取自 brief（品牌 / 品类 / 卖点）。",
+        "",
+        "【第 2 步 · 生成初稿】基于 brief + 第 1 步检索到的参考片段，输出 3 套广告脚本（每条 <= 180 字，包含：Hook、卖点、CTA）。",
+        "",
+        "【第 3 步 · 润色定稿】挑出最佳的 1 条，按品牌语气进行润色；输出「脚本标题 / 最终稿 / 可选 B 版 / 拍摄建议」四段结构。",
+        "",
+        "【第 4 步 · 写入飞书多维表格】把第 3 步结果写入多维表格：字段 = {品牌、品类、脚本标题、脚本正文、拍摄建议、创建时间、状态=draft}。",
+        "",
+        "【第 5 步 · 飞书审批提单】对上述脚本执行「提交飞书审批」：审批说明包含脚本标题与正文预览；审批通过后状态置 approved。",
+        "",
+        "请开始执行工作流。",
+      ].join("\n"),
+    },
+    {
+      id: "manual_summarize_weekly",
+      icon: "📊",
+      title: "周报/总结助手",
+      subtitle: "通用工作周报模板，按：本周产出 / 风险与阻塞 / 下周计划 三段输出",
+      prompt: [
+        "请帮我生成一份本周工作周报，按三段结构整理：",
+        "1. 本周产出（3-8 条，动宾开头）",
+        "2. 风险与阻塞（如无则写「无」）",
+        "3. 下周计划（3-5 条）",
+        "以下是我的本周零散记录（可补充具体条目）：",
+        "……",
+      ].join("\n"),
+    },
+  ];
+  const applyTemplate = (id: TemplateId) => {
+    const t = TEMPLATES.find((x) => x.id === id);
+    if (!t) return;
+    setInput((prev) => (prev.trim() ? `${prev}\n\n${t.prompt}` : t.prompt));
+    setTemplateOpen(false);
+    setStatus(`已应用模板：${t.title}`);
+  };
+
   // ------- Trae Work v5：左栏 collapsed、终端输出、浏览器 URL -------
   const [collapsed, setCollapsed] = useState(false);
   const [terminalLines, setTerminalLines] = useState<
     Array<{ ts: number; text: string; stream?: "stdout" | "stderr" | "meta" }>
   >([]);
   const [logOpen, setLogOpen] = useState(false);
+  const [confirmDel, setConfirmDel] = useState<{ open: boolean; id: string; title: string }>({ open: false, id: "", title: "" });
+  const [accessMode, setAccessMode] = useState<"auto" | "full">("auto");
+  const [automationOpen, setAutomationOpen] = useState(false);
+  const [autoTab, setAutoTab] = useState<"configured" | "templates" | "history">("configured");
+  const [showNewTaskModal, setShowNewTaskModal] = useState(false);
+
+  // ---------- 自动化任务状态（localStorage 持久化） ----------
+  const AUTO_TASKS_KEY = "harness.auto.tasks.v1";
+  const AUTO_HISTORY_KEY = "harness.auto.history.v1";
+  const [autoTasks, setAutoTasks] = useState<AutoTask[]>(() => {
+    try {
+      const raw = window.localStorage.getItem(AUTO_TASKS_KEY);
+      return raw ? (JSON.parse(raw) as AutoTask[]) : [];
+    } catch { return []; }
+  });
+  const [autoHistory, setAutoHistory] = useState<AutoHistoryItem[]>(() => {
+    try {
+      const raw = window.localStorage.getItem(AUTO_HISTORY_KEY);
+      return raw ? (JSON.parse(raw) as AutoHistoryItem[]) : [];
+    } catch { return []; }
+  });
+  useEffect(() => {
+    try { window.localStorage.setItem(AUTO_TASKS_KEY, JSON.stringify(autoTasks)); } catch {}
+  }, [autoTasks]);
+  useEffect(() => {
+    try { window.localStorage.setItem(AUTO_HISTORY_KEY, JSON.stringify(autoHistory.slice(-200))); } catch {}
+  }, [autoHistory]);
+
+  /** ticker：每秒检查到期任务（同时从 localStorage 读最新状态，防止 React state 同步延迟） */
+  const autoLastFireRef = useRef<Record<string, number>>({});
+  useEffect(() => {
+    const iv = window.setInterval(() => {
+      const now = Date.now();
+      // 优先从 localStorage 读最新的任务列表
+      let liveTasks = autoTasks;
+      try {
+        const raw = window.localStorage.getItem(AUTO_TASKS_KEY);
+        if (raw) liveTasks = JSON.parse(raw) as AutoTask[];
+      } catch {}
+      let changed = false;
+      const updated = liveTasks.map((t) => {
+        if (!t.on) return t;
+        if (now >= t.nextRun) {
+          const lastFire = autoLastFireRef.current[t.id] || 0;
+          if (now - lastFire < 1000) return t;
+          autoLastFireRef.current[t.id] = now;
+          changed = true;
+          runAutoTask(t, "定时触发");
+          const next = computeNextRun(t.kind, t.cronExpr, now + 1000);
+          return { ...t, lastRun: now, nextRun: next };
+        }
+        return t;
+      });
+      if (changed) {
+        // 写回 localStorage 并触发 React 重渲染
+        try { window.localStorage.setItem(AUTO_TASKS_KEY, JSON.stringify(updated)); } catch {}
+        setAutoTasks(updated);
+      }
+    }, 1000);
+    return () => window.clearInterval(iv);
+  }, []);
+
+  /** 执行一个自动化任务：创建新会话 + 发送任务内容 + 把输出路径拼到输入里 */
+  function runAutoTask(task: AutoTask, trigger: "定时触发" | "手动触发") {
+    const start = Date.now();
+    // 记录一次历史（先插入一条 running，再在下方 on 里替换）
+    const histId = `h_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    setAutoHistory((prev) => [
+      { id: histId, taskId: task.id, taskName: task.name, time: start, status: "success", durMs: 0, trigger, note: "执行中…" },
+      ...prev,
+    ]);
+    try {
+      // 在输入里带上输出路径，让 agent 知道要存哪
+      const contentWithPath = task.outputPath
+        ? `${task.content}\n\n> 请将所有输出文件保存到：${task.outputPath}`
+        : task.content;
+      // 调用现有的 newChat + setInput + send 序列
+      newChat();
+      setTimeout(() => {
+        setInput(contentWithPath);
+        setTimeout(() => {
+          send();
+          // 异步等待：每 2 秒轮询 msgs 是否还有 assistant 在工作，最多 5 分钟
+          const pollStart = Date.now();
+          const pollIv = window.setInterval(() => {
+            const now = Date.now();
+            if (now - pollStart > 5 * 60 * 1000) {
+              window.clearInterval(pollIv);
+              finalize("执行超时");
+              return;
+            }
+            const last = msgsRef.current[msgsRef.current.length - 1];
+            if (!last || last.role !== "assistant") return;
+            // 如果 pending 为 false 且 session 不再 running，视为完成
+            if (!pendingRef.current) {
+              window.clearInterval(pollIv);
+              finalize();
+            }
+          }, 2000);
+
+          function finalize(note?: string) {
+            setAutoHistory((prev) => prev.map((h) => h.id === histId
+              ? { ...h, status: "success", durMs: Date.now() - start, note }
+              : h));
+            setAutoTasks((prev) => prev.map((t) => t.id === task.id ? { ...t, lastStatus: "success" } : t));
+          }
+        }, 120);
+      }, 200);
+    } catch (e) {
+      setAutoHistory((prev) => prev.map((h) => h.id === histId
+        ? { ...h, status: "failed", durMs: Date.now() - start, note: String(e) }
+        : h));
+      setAutoTasks((prev) => prev.map((t) => t.id === task.id ? { ...t, lastStatus: "failed" } : t));
+    }
+  }
+
+  function addAutoTask(name: string, triggerText: string, content: string, outputPath: string) {
+    const parsed = parseTriggerInput(triggerText);
+    const id = `t_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+    const nextRun = computeNextRun(parsed.kind, parsed.cronExpr);
+    setAutoTasks((prev) => [
+      ...prev,
+      {
+        id,
+        name: name.trim() || "未命名任务",
+        kind: parsed.kind,
+        trigger: parsed.display,
+        cronExpr: parsed.cronExpr,
+        content: content.trim(),
+        outputPath: outputPath.trim(),
+        on: true,
+        nextRun,
+      },
+    ]);
+  }
+  function toggleAutoTask(id: string) {
+    setAutoTasks((prev) => prev.map((t) => t.id === id ? { ...t, on: !t.on } : t));
+  }
+  function deleteAutoTask(id: string) {
+    setAutoTasks((prev) => prev.filter((t) => t.id !== id));
+    setAutoHistory((prev) => prev.filter((h) => h.taskId !== id));
+  }
+  function runAutoTaskNow(id: string) {
+    const t = autoTasks.find((x) => x.id === id);
+    if (t) runAutoTask(t, "手动触发");
+  }
 
   // ------- Refs 用于 timer 里拿最新值 -------
   const threadProviderRef = useRef<string | null>(null);
   const runningRef = useRef(false);
+  const pendingRef = useRef(false);
   const activeThreadRef = useRef<string | null>(null);
   const msgsRef = useRef<Msg[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -259,7 +638,22 @@ export default function App() {
   const termRef = useRef(terminalLines);
   const msgsListRef = useRef<HTMLDivElement>(null);
   const lastErrMergeRef = useRef<{ text: string; count: number } | null>(null);
+  // Modal 表单状态（放在顶层 hooks 区，不放进 IIFE）
+  const [mName, setMName] = useState("");
+  const [mTrigger, setMTrigger] = useState("每天 09:00");
+  const [mContent, setMContent] = useState("");
+  const [mOutput, setMOutput] = useState("");
+  // 每次打开 modal 时重置表单
+  useEffect(() => {
+    if (showNewTaskModal) {
+      setMName("");
+      setMTrigger("每天 09:00");
+      setMContent("");
+      setMOutput("");
+    }
+  }, [showNewTaskModal]);
   useEffect(() => { runningRef.current = running; }, [running]);
+  useEffect(() => { pendingRef.current = pending; }, [pending]);
   useEffect(() => { activeThreadRef.current = activeThread; }, [activeThread]);
   useEffect(() => { msgsRef.current = messages; }, [messages]);
   useEffect(() => { approvalsRef.current = approvals; }, [approvals]);
@@ -278,7 +672,7 @@ export default function App() {
     }
   }, [messages, running, lastError]);
 
-  // ------- 启动首步：解析路径 + 连接 app-server + 加载历史会话 -------
+  // ------- 启动首步：解析路径 + 检查云端模式 + 连接 -------
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -288,10 +682,36 @@ export default function App() {
         setPaths(p);
         setStatus("路径就绪");
 
-        const ua = await codex.start({ codexBin: p.codexBin, codexHome: p.codexHome });
-        if (cancelled) return;
-        setConnected(true);
-        setStatus(`已连接 · ${ua}`);
+        // 检查云端模式状态
+        let isCloud = false;
+        try {
+          const cs = await codex.cloudModeGet();
+          if (cs.enabled) {
+            setCloudMode(true);
+            isCloud = true;
+            if (cs.hasToken) {
+              setCloudConnected(true);
+              setStatus("云端模式 · 已登录");
+              // 健康检查
+              try {
+                const h = await codex.cloudHealth();
+                if (h.ok) setStatus(`云端模式 · 已连接 (${h.latencyMs}ms)`);
+                else setStatus("云端模式 · 连接失败");
+              } catch { /* */ }
+            } else {
+              setStatus("云端模式 · 请登录");
+              setCloudLoginOpen(true);
+            }
+          }
+        } catch { /* cloud_mode_get 不可用（首次安装） */ }
+
+        // 非云端模式：启动本地 codex app-server
+        if (!isCloud) {
+          const ua = await codex.start({ codexBin: p.codexBin, codexHome: p.codexHome });
+          if (cancelled) return;
+          setConnected(true);
+          setStatus(`已连接 · ${ua}`);
+        }
 
         try {
           const cfg = await codex.configRead(p.codexHome);
@@ -322,8 +742,21 @@ export default function App() {
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         if (!cancelled) {
-          setLastError(msg);
-          setStatus(`初始化失败: ${msg}`);
+          // 浏览器开发环境 fallback（无 Tauri 运行时）
+          const isTauri = typeof (window as any).__TAURI__ !== "undefined";
+          if (!isTauri) {
+            setPaths({
+              codexHome: "/tmp/harness-dev/codex-home",
+              codexBin: "/usr/bin/codex",
+              defaultCwd: "/tmp/harness-dev/workspace",
+            });
+            setConnected(true);
+            setCloudMode(false);
+            setStatus("浏览器开发模式（mock）");
+          } else {
+            setLastError(msg);
+            setStatus(`初始化失败: ${msg}`);
+          }
         }
       }
     })();
@@ -372,6 +805,65 @@ export default function App() {
         const events = await codex.pollEvents();
         const termAccum: Array<{ ts: number; text: string; stream?: "stdout" | "stderr" | "meta" }> = [];
         for (const e of events) {
+          // ===== B2 云端事件处理 =====
+          if (e.method === "cloud/turn_completed") {
+            setRunning(false); setLastError(null);
+            setCloudStage(null);
+            continue;
+          }
+          if (e.method === "cloud/error") {
+            const msg = codex.cloudError(e) ?? "云端错误";
+            setLastError(msg);
+            termAccum.push({ ts: Date.now(), text: `[CLOUD-ERROR] ${msg}`, stream: "stderr" });
+            setRunning(false);
+            continue;
+          }
+          const stage = codex.cloudStatusStage(e);
+          if (stage) {
+            setCloudStage(stage);
+            const stageLabel: Record<string, string> = {
+              intake: "需求采集",
+              retrieving: "知识检索",
+              generating: "脚本生成",
+              guard: "风险守卫",
+            };
+            setStatus(`云端 · ${stageLabel[stage] || stage}…`);
+            continue;
+          }
+          const intakeQ = codex.cloudIntakeQuestion(e);
+          if (intakeQ) {
+            const cur = msgsRef.current;
+            setMessages([...cur, { role: "assistant", text: `📋 **${intakeQ.question}**\n\n_原因：${intakeQ.reason}_` }]);
+            setCloudStage("intake");
+            continue;
+          }
+          const result = codex.cloudResult(e);
+          if (result) {
+            const cur = msgsRef.current;
+            let resultText = result.script;
+            if (result.creative_notes) resultText += `\n\n---\n**创意备注**\n${result.creative_notes}`;
+            if (result.issues && result.issues.length > 0) {
+              const issueLines = result.issues.map((i, idx) => {
+                const sev = i.severity ? `[${i.severity}] ` : "";
+                return `${idx + 1}. ${sev}${i.message}`;
+              });
+              resultText += `\n\n---\n**⚠️ 守卫提醒（不阻断）**\n` + issueLines.join("\n");
+            }
+            if (result.suggestions) {
+              const sugArr = typeof result.suggestions === "string"
+                ? [result.suggestions]
+                : (result.suggestions as string[]);
+              if (sugArr.length > 0) {
+                resultText += `\n\n---\n**优化建议**\n` + sugArr.map((s, idx) => `${idx + 1}. ${s}`).join("\n");
+              }
+            }
+            setMessages([...cur, { role: "assistant", text: resultText }]);
+            setTerminalLines((prev) => [
+              ...prev, { ts: Date.now(), text: `[cloud/result] 脚本已生成（${result.script.length} 字，mode=${result.mode ?? "standard"}）`, stream: "meta" as const },
+            ].slice(-500));
+            continue;
+          }
+          // ===== 本地 codex 事件处理（原有逻辑） =====
           if (e.method === "turn/completed") {
             setRunning(false); setLastError(null);
             lastErrMergeRef.current = null;
@@ -472,10 +964,68 @@ export default function App() {
     } catch (e) { setStatus(`审批回复失败: ${e}`); }
   }
 
+  // ------- B2 云端登录 -------
+  async function handleCloudLogin() {
+    try {
+      setStatus("云端登录中…");
+      const result = await codex.cloudLogin({
+        username: cloudUser,
+        password: cloudPass,
+      });
+      if (result.ok && result.token) {
+        setCloudConnected(true);
+        setCloudMode(true);
+        setCloudLoginOpen(false);
+        setStatus("云端模式 · 已登录");
+        // 健康检查
+        try {
+          const h = await codex.cloudHealth();
+          if (h.ok) setStatus(`云端模式 · 已连接 (${h.latencyMs}ms)`);
+        } catch { /* */ }
+      } else {
+        setStatus("登录失败：请检查用户名和密码");
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setLastError(msg);
+      setStatus(`云端登录失败: ${msg}`);
+    }
+  }
+
+  // ------- 发送消息 -------
   async function send() {
     const text = input.trim();
     if (!text || pending) return;
-    if (!connected || !codexHome) { setStatus("运行路径尚未就绪，请稍后"); return; }
+    if (!codexHome) { setStatus("运行路径尚未就绪，请稍后"); return; }
+    if (cloudMode && !cloudConnected) { setCloudLoginOpen(true); setStatus("请先登录云端"); return; }
+    if (!cloudMode && !connected) { setStatus("本地 codex 尚未就绪，请稍后"); return; }
+
+    // ---- 浏览器开发 mock 模式 ----
+    const isTauriEnv = typeof (window as any).__TAURI__ !== "undefined";
+    if (!isTauriEnv) {
+      setPending(true); setInput(""); setLastError(null);
+      const next = [...msgsRef.current, { role: "user" as const, text }];
+      setMessages(next);
+      setTerminalLines((prev) => [
+        ...prev, { ts: Date.now(), text: `[mock user]: ${text.slice(0, 160)}`, stream: "meta" as const },
+      ].slice(-500));
+
+      setTimeout(() => {
+        const reply = `（浏览器 mock 模式）你说："${text.slice(0, 80)}${text.length > 80 ? "…" : ""}"
+
+这是一个模拟的 AI 回复。在真实 Tauri 桌面应用中，这里会显示由 codex app-server 生成的真实响应。
+
+当前运行于 **浏览器开发环境**（非 Tauri 桌面），所有 Tauri invoke 调用不可用，因此用 mock 逻辑替代。`;
+        setMessages((prev) => [...prev, { role: "assistant" as const, text: reply }]);
+        setTerminalLines((prev) => [
+          ...prev, { ts: Date.now(), text: `[mock assistant] 回复已生成`, stream: "meta" as const },
+        ].slice(-500));
+        setPending(false);
+        setStatus("mock 回复完成");
+      }, 600);
+      return;
+    }
+
     setPending(true); setInput(""); setLastError(null);
 
     const next = [...msgsRef.current, { role: "user" as const, text }];
@@ -486,6 +1036,47 @@ export default function App() {
 
     try {
       const promptText = text;
+
+      // ===== B2 云端模式分支 =====
+      if (cloudMode && cloudConnected) {
+        setStatus("云端发送中…");
+        try {
+          // 创建或复用云端 session
+          if (!cloudSessionRef.current) {
+            const sid = await codex.cloudThreadStart();
+            cloudSessionRef.current = sid;
+            setActiveThread(sid);
+            setSessions((s) => [...s, {
+              id: sid,
+              title: text.slice(0, 24) + (text.length > 24 ? "…" : ""),
+              provider: "cloud", model, status: "running",
+            }]);
+            setTerminalLines((prev) => [
+              ...prev, { ts: Date.now(), text: `[cloud/session] → ${sid}`, stream: "meta" as const },
+            ].slice(-500));
+          }
+
+          // 发送到云端 codex 桥（SSE 在后台消费）
+          await codex.cloudTurnStart({
+            sessionId: cloudSessionRef.current,
+            text: promptText,
+          });
+          setTerminalLines((prev) => [
+            ...prev, { ts: Date.now(), text: `[cloud/turn] ok，等待 SSE 回流…`, stream: "meta" as const },
+          ].slice(-500));
+          setRunning(true);
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          setLastError(msg);
+          setStatus(`云端发送失败: ${msg}`);
+          setTerminalLines((prev) => [
+            ...prev, { ts: Date.now(), text: `[cloud/turn] 失败: ${msg}`, stream: "stderr" as const },
+          ].slice(-500));
+        }
+        return;
+      }
+
+      // ===== 本地 codex 模式（原有逻辑） =====
 
       // --- 阶段 1：建线程（如果需要） ---
       let threadId = activeThreadRef.current;
@@ -547,6 +1138,26 @@ export default function App() {
     setLastError(null); threadProviderRef.current = null;
   }
 
+  function requestDelete(id: string, title: string) {
+    setConfirmDel({ open: true, id, title });
+  }
+
+  async function confirmDeleteSession() {
+    const { id, title } = confirmDel;
+    setConfirmDel({ open: false, id: "", title: "" });
+    try {
+      await codex.sessionDelete(codexHome, id);
+      setSessions((prev) => prev.filter((x) => x.id !== id));
+      if (id === activeThread) {
+        setActiveThread("");
+        setMessages([]);
+      }
+      setStatus(`已删除「${title}」`);
+    } catch (err) {
+      setStatus(`删除失败：${err}`);
+    }
+  }
+
   function handleLoadSession(d: codex.SessionDetail) {
     setActiveThread(d.meta.id);
     threadProviderRef.current = d.meta.provider ?? null;
@@ -593,10 +1204,10 @@ export default function App() {
       {/* ============ 顶部栏 (42px) ============ */}
       <header className="topbar" style={{ "-webkit-app-region": "drag" } as React.CSSProperties}>
         <button
-          className="tb-icon-btn"
+          className="tb-icon-btn tb-sidebar-toggle"
           data-tauri-drag-region="false"
           onClick={() => setCollapsed((c) => !c)}
-          title="切换侧栏"
+          title={collapsed ? "显示任务栏" : "隐藏任务栏"}
         >
           {IconHamburger}
         </button>
@@ -663,19 +1274,19 @@ export default function App() {
               <span className="ic-wrap">{IconPlus}</span>
               <span>新建任务</span>
             </button>
-            <button className="sb-menu-item" onClick={() => setSettingsOpen(true)}>
+            <button className="sb-menu-item" onClick={() => setPluginsOpen(true)}>
               <span className="ic-wrap gr">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8.11 2.79a3 3 0 0 1 4.24 4.24 3 3 0 0 1 4.24 4.24 3 3 0 0 1 4.62 4.62z"/></svg>
               </span>
-              <span>插件市场</span>
+              <span>插件管理</span>
             </button>
-            <button className="sb-menu-item" onClick={() => setStatus("模板库：敬请期待（v0.2）")}>
+            <button className="sb-menu-item" onClick={() => setTemplateOpen(true)}>
               <span className="ic-wrap bl">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>
               </span>
               <span>模板库</span>
             </button>
-            <button className="sb-menu-item" onClick={() => setStatus("自动化：敬请期待（v0.2）")}>
+            <button className={`sb-menu-item ${automationOpen ? "active" : ""}`} onClick={() => setAutomationOpen((v) => !v)}>
               <span className="ic-wrap yl">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
               </span>
@@ -738,6 +1349,17 @@ export default function App() {
                   <div className="s-meta">
                     <span className={`badge ${st}`}>{BADGE_LABEL[st]}</span>
                     <span style={{ marginLeft: "auto" }}>{dayLabel}</span>
+                    <button
+                      className="s-del-btn"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        requestDelete(s.id, s.title);
+                      }}
+                      title="删除此任务"
+                      aria-label="删除任务"
+                    >
+                      ×
+                    </button>
                   </div>
                 </li>
               );
@@ -785,6 +1407,186 @@ export default function App() {
             </div>
           </div>
 
+          {/* ============ 自动化面板（Trae Work 风格：定时任务管理） ============ */}
+          {automationOpen ? (
+            <div className="automation-panel">
+              <div className="ap-top">
+                <div className="ap-tabs">
+                  {([
+                    ["configured", "已配置"],
+                    ["templates", "任务模板"],
+                    ["history", "执行历史"],
+                  ] as const).map(([k, label]) => (
+                    <button
+                      key={k}
+                      className={`ap-tab ${autoTab === k ? "on" : ""}`}
+                      onClick={() => setAutoTab(k)}
+                    >{label}</button>
+                  ))}
+                </div>
+                <div className="ap-actions">
+                  <button className="ap-btn ghost" onClick={() => setStatus("从对话中创建：输入需求即可")}>在对话中创建</button>
+                  <button className="ap-btn primary" onClick={() => setShowNewTaskModal(true)}>+ 手动新建</button>
+                </div>
+              </div>
+
+              {/* ---- 已配置 ---- */}
+              {autoTab === "configured" && (
+                <div className="ap-list">
+                  {autoTasks.length === 0 ? (
+                    <div className="ap-empty">
+                      <div className="ap-empty-icon">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                      </div>
+                      <div className="ap-empty-title">暂无自动化任务</div>
+                      <div className="ap-empty-desc">点击右上角「手动新建」或「在对话中创建」来添加你的第一个定时任务</div>
+                    </div>
+                  ) : autoTasks.map((t) => (
+                    <div key={t.id} className="ap-row">
+                      <div className="ap-row-main">
+                        <div className="ap-row-title">
+                          <span className={`ap-status-dot ${t.on ? "on" : "off"}`} />
+                          {t.name}
+                        </div>
+                        <div className="ap-row-meta">
+                          <span>⏱ {t.trigger}</span>
+                          {t.outputPath && <span>📁 {t.outputPath}</span>}
+                          {t.lastStatus && <span className={`ap-status-chip ${t.lastStatus}`}>{t.lastStatus === "success" ? "✓ 最近成功" : "✕ 最近失败"}</span>}
+                        </div>
+                      </div>
+                      <div className="ap-row-right">
+                        <div className="ap-row-next">
+                          <div className="ap-row-next-label">下次执行</div>
+                          <div className="ap-row-next-val">{formatNextRun(t.nextRun)}</div>
+                        </div>
+                        <div className="ap-row-last">上次：{formatTimeAgo(t.lastRun)}</div>
+                        <div className="ap-row-ops">
+                          <button className="ap-row-btn" title="立即运行" onClick={() => runAutoTaskNow(t.id)}>▶</button>
+                          <button className="ap-row-btn danger" title="删除" onClick={() => deleteAutoTask(t.id)}>×</button>
+                        </div>
+                        <label className={`ap-switch ${t.on ? "on" : ""}`}>
+                          <input type="checkbox" checked={t.on} onChange={() => toggleAutoTask(t.id)} />
+                          <span className="ap-switch-track" />
+                        </label>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* ---- 任务模板 ---- */}
+              {autoTab === "templates" && (
+                <div className="ap-list">
+                  <div className="ap-empty">
+                    <div className="ap-empty-icon">
+                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    </div>
+                    <div className="ap-empty-title">暂无可用模板</div>
+                    <div className="ap-empty-desc">后续会把脚本生成、飞书同步、影刀触发等高频场景做成内置模板</div>
+                  </div>
+                </div>
+              )}
+
+              {/* ---- 执行历史 ---- */}
+              {autoTab === "history" && (
+                <div className="ap-list">
+                  {autoHistory.length === 0 ? (
+                    <div className="ap-empty">
+                      <div className="ap-empty-icon">
+                        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><polyline points="12 7 12 12 15 15"/></svg>
+                      </div>
+                      <div className="ap-empty-title">暂无执行记录</div>
+                      <div className="ap-empty-desc">运行过的定时任务会在这里留下历史记录</div>
+                    </div>
+                  ) : autoHistory.map((h) => {
+                    const d = new Date(h.time);
+                    const pad = (n: number) => String(n).padStart(2, "0");
+                    const timeStr = `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+                    const durStr = h.note ? h.note : `${Math.max(0, Math.round(h.durMs / 1000))}s`;
+                    return (
+                      <div key={h.id} className="ap-row ap-row-history">
+                        <div className="ap-row-main">
+                          <div className="ap-row-title">
+                            <span className={`ap-badge ${h.status}`}>{h.status === "success" ? "✓ 成功" : h.status === "failed" ? "✕ 失败" : "… 执行中"}</span>
+                            {h.taskName}
+                          </div>
+                          <div className="ap-row-meta">
+                            <span>{timeStr}</span>
+                            <span>⏱ {durStr}</span>
+                            <span>🎯 {h.trigger}</span>
+                            {h.note && h.status === "success" && <span>📁 {h.note}</span>}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* ---- 新建定时任务 Modal ---- */}
+              {showNewTaskModal && (
+                <div className="modal-backdrop" onClick={() => setShowNewTaskModal(false)}>
+                  <div className="ap-modal" onClick={(e) => e.stopPropagation()}>
+                    <div className="ap-modal-head">
+                      <h3>新建自动化任务</h3>
+                      <button className="ap-row-btn" onClick={() => setShowNewTaskModal(false)}>×</button>
+                    </div>
+                    <div className="ap-modal-body">
+                      <label className="ap-field">
+                        <span className="ap-label">任务名称</span>
+                        <input className="ap-input" value={mName} onChange={(e) => setMName(e.target.value)} placeholder="例如：每日投放数据简报" autoFocus />
+                      </label>
+                      <label className="ap-field">
+                        <span className="ap-label">触发时间（自然语言）</span>
+                        <input className="ap-input" value={mTrigger} onChange={(e) => setMTrigger(e.target.value)} placeholder="每天 09:00 / 每 30 分钟 / 工作日 10:00" />
+                        <div className="ap-hint">支持：每天 HH:MM、每 N 分钟/小时、工作日 HH:MM、每周 N HH:MM</div>
+                      </label>
+                      <label className="ap-field">
+                        <span className="ap-label">任务内容</span>
+                        <textarea className="ap-input ap-textarea" rows={3} value={mContent} onChange={(e) => setMContent(e.target.value)} placeholder="用自然语言描述这个任务要做什么，或直接引用 Skill 名称"></textarea>
+                      </label>
+                      <label className="ap-field">
+                        <span className="ap-label">输出文件存储路径（可选）</span>
+                        <input className="ap-input" value={mOutput} onChange={(e) => setMOutput(e.target.value)} placeholder="例如：/workspace/outputs/daily-brief/" />
+                        <div className="ap-hint">留空则输出由 Agent 自行决定。支持绝对路径或项目内相对路径。</div>
+                      </label>
+                    </div>
+                    <div className="ap-modal-foot">
+                      <button className="ap-btn ghost" onClick={() => setShowNewTaskModal(false)}>取消</button>
+                      <button
+                        className="ap-btn primary"
+                        disabled={!mName.trim() || !mTrigger.trim() || !mContent.trim()}
+                        onClick={() => {
+                          addAutoTask(mName, mTrigger, mContent, mOutput);
+                          setShowNewTaskModal(false);
+                          setStatus("定时任务已创建 ✅");
+                        }}
+                      >创建</button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (<>
+
+          {/* 有审批待处理且在自动模式时 → 审批界面替代对话框 */}
+          {approvals.length > 0 && accessMode === "auto" ? (
+            <section className="msglist" style={{ display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 24px" }}>
+              <div style={{ width: "100%", maxWidth: 560 }}>
+                <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: 4, background: "#F59E0B", display: "inline-block", animation: "pulse 1.4s infinite" }} />
+                  等待审批（{approvals.length} 条）
+                </div>
+                <ApprovalPanel
+                  approvals={approvals}
+                  onRespond={(id, dec) => respondApproval(id, dec)}
+                />
+                <div style={{ marginTop: 16, fontSize: 12, color: "var(--text-muted)" }}>
+                  提示：想让后续操作自动执行？点击左下角的「自动审批」切换为「完全访问」模式。
+                </div>
+              </div>
+            </section>
+          ) : (
           <section className="msglist" ref={msgsListRef}>
             {messages.length === 0 ? (
               <div className="placeholder">
@@ -836,38 +1638,115 @@ export default function App() {
               </>
             )}
           </section>
+          )}
 
-          {/* 发送器 composer */}
+          {/* 发送器 composer · v0.6.0 新布局 */}
           <footer className="composer">
-            <div className="composer-inner">
-              <div className="composer-tools-left">
-                <button className="ctool" title="附件（敬请期待 v0.2）" onClick={() => setStatus("附件：v0.2 支持上传/拖拽")}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+            {/* 主输入栏：左工具 + textarea + 右发送 */}
+            <div className="composer-bar">
+              {/* 左侧：+ 导入文件 / 手动审批 / 插件图标 */}
+              <div className="bar-left">
+                {/* + 导入文件 */}
+                <button
+                  className="bar-btn-plus"
+                  title="导入本地文件（skill / 插件 / 配置）"
+                  onClick={() => setPluginsOpen(true)}
+                >
+                  {IconPlus}
                 </button>
-                <button className="ctool" title="媒体（敬请期待 v0.2）" onClick={() => setStatus("媒体：v0.2 支持图片/音视频")}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
-                </button>
-                <button className="ctool" title="设计工具（敬请期待 v0.2）" onClick={() => setStatus("设计：v0.2 接入 Seedance/Seedream")}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="13.5" cy="6.5" r=".5"/><circle cx="17.5" cy="10.5" r=".5"/><circle cx="8.5" cy="7.5" r=".5"/><circle cx="6.5" cy="12.5" r=".5"/><path d="M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10c.926 0 1.648-.746 1.648-1.688 0-.437-.18-.835-.437-1.125-.29-.289-.438-.652-.438-1.125a1.64 1.64 0 0 1 1.668-1.668h1.996c3.051 0 5.555-2.503 5.555-5.554C21.965 6.012 17.461 2 12 2z"/></svg>
-                </button>
-                <button className="ctool" title="MCP 工具（敬请期待 v0.2）" onClick={() => setStatus("MCP 工具：运行中即可使用")}>
-                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="7" width="20" height="14" rx="2" ry="2"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/></svg>
-                </button>
+
+                {/* 访问模式切换：自动审批 ↔ 完全访问 */}
+                <div className="bar-btn-approval-wrap">
+                  <button
+                    className={`bar-btn-approval ${accessMode === "full" ? "is-full" : ""}`}
+                    onClick={() => {
+                      const next: "auto" | "full" = accessMode === "auto" ? "full" : "auto";
+                      setAccessMode(next);
+                      setStatus(next === "full" ? "已切换为完全访问模式" : "已切换回自动审批模式");
+                    }}
+                    title={accessMode === "auto" ? "当前：自动审批（有操作时会弹窗请你批准）" : "当前：完全访问（自动批准所有操作）"}
+                  >
+                    {IconApproval}
+                    <span>
+                      {accessMode === "full" ? "完全访问" : (
+                        approvals.length > 0 ? `${approvals.length} 条待审` : "自动审批"
+                      )}
+                    </span>
+                    {accessMode !== "full" && approvals.length > 0 && (
+                      <span className="approval-count-badge">{approvals.length}</span>
+                    )}
+                  </button>
+                </div>
               </div>
+
+              {/* textarea 主输入 */}
               <textarea
                 rows={1}
                 value={input}
                 onChange={(e) => {
                   setInput(e.target.value);
                   e.target.style.height = "auto";
-                  e.target.style.height = Math.min(e.target.scrollHeight, 180) + "px";
+                  e.target.style.height = Math.min(e.target.scrollHeight, 200) + "px";
                 }}
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
                 placeholder="告诉 Harness 你想做什么，用自然语言下达任务"
                 disabled={pending || running || !paths}
                 className="composer-input"
               />
-              <div className="composer-send-wrap">
+
+              {/* 右侧：Auto Mode 模型选择 + 发送按钮 */}
+              <div className="bar-right">
+                {/* Auto Mode 模型选择下拉 */}
+                <div className="auto-mode-pill-wrap">
+                  <button
+                    className="auto-mode-pill"
+                    onClick={() => setAutoModeOpen((v) => !v)}
+                    title="切换模型（所有模型统一走火山方舟）"
+                  >
+                    <span className="auto-logo">
+                      <img src={logoForModel(model).logoUrl} alt="" className="auto-logo-img" />
+                    </span>
+                    <span className="auto-label">Auto Mode</span>
+                    <span className="caret" style={{ transform: autoModeOpen ? "rotate(180deg)" : "none", transition: "transform .15s" }}>
+                      {IconCaretDown}
+                    </span>
+                  </button>
+                  {/* 下拉浮层 */}
+                  {autoModeOpen && (
+                    <>
+                      <div className="auto-mode-backdrop" onClick={() => setAutoModeOpen(false)} />
+                      <div className="auto-mode-menu">
+                        {MODEL_GROUPS.map((g) => (
+                          <div key={g.label} className="auto-group">
+                            <div className="auto-group-label">{g.label}</div>
+                            {g.models.map((m) => {
+                              const logo = logoForModel(m);
+                              const isActive = m === model;
+                              return (
+                                <button
+                                  key={m}
+                                  className={`auto-item ${isActive ? "active" : ""}`}
+                                  onClick={() => {
+                                    setModel(m);
+                                    setAutoModeOpen(false);
+                                  }}
+                                >
+                                  <span className="auto-item-logo">
+                                    <img src={logo.logoUrl} alt="" className="auto-item-logo-img" />
+                                  </span>
+                                  <span className="auto-item-name">{m}</span>
+                                  {isActive && <span className="auto-item-check">✓</span>}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* 发送按钮 */}
                 <button
                   className="btn-send"
                   disabled={pending || running || !paths || !input.trim()}
@@ -879,18 +1758,25 @@ export default function App() {
               </div>
             </div>
 
+            {/* 薄状态栏：左状态 / 右日志 + 语音 */}
             <div className="composer-meta">
               <div className="meta-left">
-                <span className="auto-mode-pill" title="当前使用的模型（设置 → 通用里修改）">
-                  <span className="pill-label">模型</span>
-                  <span className="pill-val">{provider}/{model}</span>
-                </span>
                 <span className="status-chip" title={status}>{status}</span>
+                {cloudStage && (
+                  <span className="cloud-stage-chip" title={`云端阶段：${cloudStage}`}>
+                    {cloudStage === "intake" ? "📋 采集" : cloudStage === "retrieving" ? "🔍 检索" : cloudStage === "generating" ? "✍️ 生成" : cloudStage === "guard" ? "🛡️ 守卫" : cloudStage}
+                  </span>
+                )}
+                {errCount > 0 && (
+                  <span className="err-chip" title="有错误，点击日志查看详情">
+                    ⚠ {errCount}
+                  </span>
+                )}
               </div>
               <div className="meta-right">
                 <button className={`log-toggle ${errCount > 0 ? "has-err" : ""}`} onClick={() => setLogOpen((v) => !v)}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 17l6-6-6-6M12 19h8"/></svg>
-                  <span>日志</span>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 17l6-6-6-6M12 19h8"/></svg>
+                  <span>{logOpen ? "收起" : "日志"}</span>
                   {errCount > 0 && <span className="log-badge">{errCount}</span>}
                 </button>
                 <button className="tb-icon-btn tiny" title="语音输入（v0.2 占位）" onClick={() => setStatus("语音：敬请期待（v0.2）")}>
@@ -899,7 +1785,7 @@ export default function App() {
               </div>
             </div>
 
-            {/* 可折叠错误/日志面板（stderr 高亮） */}
+            {/* 可折叠错误/日志面板 */}
             {logOpen && (
               <div className="log-pane">
                 <div className="log-pane-head">
@@ -929,6 +1815,8 @@ export default function App() {
               </div>
             )}
           </footer>
+          </>
+          )}
         </main>
 
         {/* 右栏：完全删除（原 ToolPanel / 审批/会话/终端/浏览器/画布/快捷键 Tabs 整体移除） */}
@@ -955,17 +1843,24 @@ export default function App() {
         </div>
       )}
 
-      {/* ============ ApprovalPanel modal 版 ============ */}
+      {/* ============ 审批弹窗（Trae Work 图一风格，直接嵌入 styled ApprovalPanel） ============ */}
       {approvalOpen && (
         <div className="modal-backdrop" onClick={() => setApprovalOpen(false)}>
-          <div className="modal-card" onClick={(e) => e.stopPropagation()} style={{ width: "min(720px, 92vw)" }}>
-            <div className="modal-head">
-              <h3>审批请求</h3>
-              <button className="modal-close" onClick={() => setApprovalOpen(false)}>×</button>
-            </div>
-            <div className="modal-body">
-              <ApprovalPanel approvals={approvals} onRespond={(id, dec) => respondApproval(id, dec)} />
-            </div>
+          <div
+            className="approval-modal-wrap"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              className="approval-modal-close"
+              onClick={() => setApprovalOpen(false)}
+              title="稍后处理（保留 toast 通知）"
+              aria-label="close"
+            >×</button>
+            <ApprovalPanel
+              approvals={approvals}
+              codexHome={paths?.codexHome}
+              onRespond={(id, dec) => respondApproval(id, dec)}
+            />
           </div>
         </div>
       )}
@@ -975,6 +1870,47 @@ export default function App() {
 
 
 
+
+      {/* ============ T6 模板库抽屉 ============ */}
+      {templateOpen && (
+        <div className="modal-backdrop" onClick={() => setTemplateOpen(false)}>
+          <div className="tpl-panel" onClick={(e) => e.stopPropagation()}>
+            <div className="tpl-head">
+              <h2>模板库</h2>
+              <button className="sp-close" onClick={() => setTemplateOpen(false)}>×</button>
+            </div>
+            <p className="sp-desc" style={{ marginTop: 0 }}>
+              选一个模板填入输入框，直接开始任务。
+            </p>
+            <div className="tpl-grid">
+              {TEMPLATES.map((t) => (
+                <div key={t.id} className="tpl-card">
+                  <div className="tpl-card-title">
+                    <span className="tpl-icon">{t.icon}</span>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: "#111827" }}>{t.title}</div>
+                      <div style={{ fontSize: 12, color: "#6B7280", marginTop: 4 }}>{t.subtitle}</div>
+                    </div>
+                    {t.tag && <span className="tpl-tag">{t.tag}</span>}
+                  </div>
+                  <pre className="tpl-preview">
+                    {t.prompt.length > 280 ? `${t.prompt.slice(0, 280)}…` : t.prompt}
+                  </pre>
+                  <div className="tpl-actions">
+                    <button className="sp-btn sp-btn-ghost" onClick={() => {
+                      navigator.clipboard?.writeText(t.prompt).catch(() => {});
+                      setStatus(`已复制「${t.title}」到剪贴板`);
+                    }}>复制</button>
+                    <button className="sp-btn sp-btn-primary" onClick={() => applyTemplate(t.id)}>
+                      填入输入框
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ============ 首次启动向导 ============ */}
       {onboardingOpen && (
@@ -1067,6 +2003,79 @@ export default function App() {
         }}
         onStatus={setStatus}
       />
+
+      {/* 插件管理：独立模态页面（v0.5.3 起与设置面板解耦） */}
+      <PluginsPanel
+        open={pluginsOpen}
+        onClose={() => setPluginsOpen(false)}
+        codexHome={codexHome}
+        onStatus={setStatus}
+      />
+
+      {/* ============ B2 云端登录弹窗 ============ */}
+      {cloudLoginOpen && (
+        <div className="cloud-login-overlay" onClick={() => setCloudLoginOpen(false)}>
+          <div className="cloud-login-modal" onClick={(e) => e.stopPropagation()}>
+            <h2>登录云端 Codex 服务</h2>
+            <p className="cloud-login-hint">
+              连接到 bibike 云端脚本生成平台（118.31.107.214），
+              使用你的 bibike 账号登录后即可使用 talk-script 脚本生成 skill。
+            </p>
+            <input
+              className="cloud-login-input"
+              type="text"
+              placeholder="用户名"
+              value={cloudUser}
+              onChange={(e) => setCloudUser(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") handleCloudLogin(); }}
+            />
+            <input
+              className="cloud-login-input"
+              type="password"
+              placeholder="密码"
+              value={cloudPass}
+              onChange={(e) => setCloudPass(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") handleCloudLogin(); }}
+            />
+            <div className="cloud-login-actions">
+              <button onClick={() => setCloudLoginOpen(false)}>取消</button>
+              <button
+                className="primary"
+                onClick={handleCloudLogin}
+                disabled={!cloudUser || !cloudPass}
+              >
+                登录
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============ 删除确认弹窗（图一样式：暗色警告 + 红按钮） ============ */}
+      {confirmDel.open && (
+        <div className="modal-backdrop" onClick={() => setConfirmDel({ open: false, id: "", title: "" })}>
+          <div className="confirm-delete" onClick={(e) => e.stopPropagation()}>
+            <div className="cd-head">
+              <div className="cd-icon">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                  <line x1="12" y1="9" x2="12" y2="13" />
+                  <line x1="12" y1="17" x2="12.01" y2="17" />
+                </svg>
+              </div>
+              <span className="cd-title">确认删除</span>
+              <button className="cd-close" onClick={() => setConfirmDel({ open: false, id: "", title: "" })}>×</button>
+            </div>
+            <div className="cd-body">
+              删除后，这个会话及其所有内容将从本地或云端移除，包括聊天记录和代码，且无法恢复。
+            </div>
+            <div className="cd-foot">
+              <button className="cd-btn ghost" onClick={() => setConfirmDel({ open: false, id: "", title: "" })}>取消</button>
+              <button className="cd-btn danger" onClick={confirmDeleteSession}>删除</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

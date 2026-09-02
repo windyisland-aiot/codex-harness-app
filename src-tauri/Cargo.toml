@@ -1,6 +1,6 @@
 [package]
 name = "harness-app"
-version = "0.4.0"
+version = "0.5.4"
 description = "企业内部 Agent 桌面应用（Windows 目标）"
 edition = "2021"
 
@@ -18,6 +18,8 @@ tauri-plugin-fs = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 ureq = { version = "2", features = ["json"] }
+regex = "1"
+zip = "2"
 harness-auth = { path = "../crates/auth" }
 harness-appserver = { path = "../crates/appserver" }
 harness-config = { path = "../crates/harness-config" }
@@ -26,3 +28,4 @@ harness-feishu-oauth = { path = "../crates/feishu-oauth" }
 harness-plugins = { path = "../crates/harness-plugins" }
 harness-search = { path = "../crates/harness-search" }
 harness-sessions = { path = "../crates/harness-sessions" }
+harness-rag = { path = "../crates/harness-rag" }

@@ -132,6 +132,7 @@ fn load_provider_env(codex_home: &str) -> HashMap<String, String> {
 ///    取出值，注入 codex 子进程环境。此前这一步缺失 → 401 → 对话完全静默失败。
 #[tauri::command]
 pub async fn appserver_start(
+    app: tauri::AppHandle,
     state: State<'_, CodexHandle>,
     codex_bin: String,
     codex_home: String,
@@ -156,9 +157,54 @@ pub async fn appserver_start(
 
         log(&format!("▶ appserver_start: bin={codex_bin}, home={codex_home_log}"));
 
+        // --- v0.5.4：同步内置 skills 到 <codex_home>/skills/ ---
+        // codex 子进程只扫 $CODEX_HOME/skills；安装包资源路径是动态的，
+        // 必须物理拷贝过去才能让 codex 进程原生读到（feishu-bot 等）。
+        // 失败不阻断启动（skill 缺失只影响对应能力，对话本身照常）。
+        match crate::plugins::sync_bundled_skills(&app, &codex_home_log) {
+            Ok(n) if n > 0 => log(&format!("  ✅ 内置 skills 已同步到 $CODEX_HOME/skills（{n} 个）")),
+            Ok(_) => log("  内置 skills：无（跳过同步）"),
+            Err(e) => log(&format!("  ⚠️ 内置 skills 同步失败：{e}")),
+        }
+
         // 读 config（会自动迁移 wire_api/base_url/provider_type 等）
         let cfg = harness_config::read(&codex_home_log)
             .map_err(|e| format!("config 迁移失败: {e}"))?;
+
+        // --- v0.6.0：强制覆盖 base_url 为统一的方舟 plan/v3 ---
+        // 所有 provider 都走 plan/v3（之前可能是旧的 coding/v3 或手动填的），
+        // 启动时写回 config.toml，后续不再迁移。
+        const HARDCODED_BASE_URL: &str = "https://ark.cn-beijing.volces.com/api/plan/v3";
+        let cfg_mutated = {
+            let mut c = cfg.clone();
+            let mut changed = false;
+            for p in &mut c.model_providers {
+                if p.base_url != HARDCODED_BASE_URL {
+                    log(&format!("  ⚠️ provider {} base_url={} → 强制覆盖为 {}",
+                        p.id, p.base_url, HARDCODED_BASE_URL));
+                    p.base_url = HARDCODED_BASE_URL.to_string();
+                    changed = true;
+                }
+                // 确保 env_key 正确
+                if p.env_key != "VOLCENGINE_ARK_API_KEY" {
+                    p.env_key = "VOLCENGINE_ARK_API_KEY".to_string();
+                    changed = true;
+                }
+                // 确保 wire_api 为 responses
+                if !p.wire_api.is_empty() && p.wire_api != "responses" {
+                    p.wire_api = "responses".to_string();
+                    changed = true;
+                }
+            }
+            if changed {
+                let _ = harness_config::write(&codex_home_log, &c)
+                    .map_err(|e| log(&format!("  ⚠️ config 写回失败: {e}")));
+                log("  ✅ config.toml base_url/env_key/wire_api 已强制对齐 v0.6.0 规范");
+            }
+            c
+        };
+        // cfg_mutated 用于后续读取
+        let cfg = cfg_mutated;
 
         log(&format!("  config: model={}, modelProvider={}, providers={}",
             cfg.model, cfg.model_provider, cfg.model_providers.len()));
@@ -169,23 +215,50 @@ pub async fn appserver_start(
         let mut child_env = HashMap::new();
         child_env.insert("CODEX_HOME".to_string(), codex_home_log.clone());
 
-        // --- 按 config.toml 的 provider.env_key 注入 API key ---
-        let creds = load_provider_env(&codex_home_log);
-        log(&format!("  creds loaded: {} keys", creds.len()));
+        // --- Harness 固定注入：飞书企业机器人凭据 ---
+        // 硬编码 App ID/Secret，随应用启动自动写入 .env-provider + 子进程 env。
+        // 用户不需要在 UI 里手动填任何飞书凭据。
+        const FEISHU_APP_ID: &str = "cli_aa0eb9626ae29bda";
+        const FEISHU_APP_SECRET: &str = "6ytcKVZLLnRkk854P3PcqbbFnzPsnK21";
 
-        for p in &cfg.model_providers {
-            let ek = p.env_key.trim();
-            if ek.is_empty() { continue; }
-            match creds.get(ek).filter(|v| !v.is_empty()) {
-                Some(v) => {
-                    child_env.entry(ek.to_string()).or_insert_with(|| v.clone());
-                    log(&format!("  ✅ 注入 env {ek}=***({})", v.len()));
+        child_env.insert("FEISHU_APP_ID".to_string(), FEISHU_APP_ID.to_string());
+        child_env.insert("FEISHU_APP_SECRET".to_string(), FEISHU_APP_SECRET.to_string());
+        log(&format!("  ✅ 注入 FEISHU_APP_ID (len={}), FEISHU_APP_SECRET (len={})",
+            FEISHU_APP_ID.len(), FEISHU_APP_SECRET.len()));
+
+        // 同时写入 .env-provider，方便 lark-openapi-mcp 读取
+        {
+            let env_path = std::path::Path::new(&codex_home_log).join(".env-provider");
+            let mut existing = std::fs::read_to_string(&env_path).unwrap_or_default();
+            for (key, val) in [
+                ("FEISHU_APP_ID", FEISHU_APP_ID),
+                ("FEISHU_APP_SECRET", FEISHU_APP_SECRET),
+            ] {
+                let line = format!("{key}={val}");
+                if existing.contains(&format!("{key}=")) {
+                    // 替换已有行
+                    let new_lines: Vec<String> = existing
+                        .lines()
+                        .map(|l| if l.starts_with(&format!("{key}=")) { line.clone() } else { l.to_string() })
+                        .collect();
+                    existing = new_lines.join("\n");
+                } else if !existing.is_empty() && !existing.ends_with('\n') {
+                    existing.push('\n');
+                    existing.push_str(&line);
+                } else {
+                    existing.push_str(&line);
                 }
-                None => {
-                    log(&format!("  ⚠️ provider {} 的 env_key={ek} 未配置 API key → 该 provider 调用会 401", p.id));
-                }
+                existing.push('\n');
             }
+            let _ = std::fs::write(&env_path, &existing);
+            log(&format!("  ✅ 飞书凭据已写入 {}", env_path.display()));
         }
+
+        // --- v0.6.0：硬编码注入 Volcengine Ark API Key ---
+        // 不再从 .env-provider 读取，统一使用 Harness 内置 key。
+        const ARK_API_KEY: &str = "ark-504d682a-6c53-4ee5-9c63-6ce31ffb8fa3-fd87a";
+        child_env.insert("VOLCENGINE_ARK_API_KEY".to_string(), ARK_API_KEY.to_string());
+        log(&format!("  ✅ 硬编码注入 VOLCENGINE_ARK_API_KEY (len={})", ARK_API_KEY.len()));
 
         // 前端传的额外 env
         if let Some(extra) = env {

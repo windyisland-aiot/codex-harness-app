@@ -206,6 +206,9 @@ export interface SkillInfo {
   description: string;
   dir: string;
   enabled: boolean;
+  version?: string;
+  /** 来源：bundled（随安装包分发）/ codex-home / custom（v0.5.3） */
+  source?: "bundled" | "codex-home" | "custom" | string;
 }
 export interface PluginInfo {
   id: string;
@@ -213,6 +216,7 @@ export interface PluginInfo {
   description: string;
   dir: string;
   enabled: boolean;
+  version?: string;
 }
 export interface PluginsList {
   skills: SkillInfo[];
@@ -261,6 +265,69 @@ export function pluginsAddSkillDir(
     codexHome,
     dir,
     enabled,
+  });
+}
+
+// --- T20 云端市场 & 本地导入（v0.6.0） ---
+
+export interface CloudMarketItem {
+  id: string;
+  name: string;
+  type: "skill" | "plugin";
+  version: string;
+  author?: string;
+  description: string;
+  tags?: string[];
+  downloadUrl: string;
+  size?: number;
+  updatedAt?: string;
+}
+export interface CloudMarketResponse {
+  ok: boolean;
+  items: CloudMarketItem[];
+  message?: string;
+}
+export interface CloudHealth {
+  ok: boolean;
+  baseUrl: string;
+  message: string;
+  latencyMs?: number;
+}
+
+/** 云端服务器健康检查（云服务器 118.31.107.214）。 */
+export function pluginsCloudHealth(baseUrl?: string): Promise<CloudHealth> {
+  return invoke<CloudHealth>("plugins_cloud_health", { baseUrl: baseUrl ?? null });
+}
+
+/** 拉取云端市场可下载的插件/技能清单。 */
+export function pluginsCloudList(baseUrl?: string): Promise<CloudMarketResponse> {
+  return invoke<CloudMarketResponse>("plugins_cloud_list", { baseUrl: baseUrl ?? null });
+}
+
+/** 从云端下载并安装单个插件/skill 到 codex_home 下对应目录。 */
+export function pluginsCloudInstall(input: {
+  codexHome: string;
+  itemId: string;
+  baseUrl?: string;
+}): Promise<{ ok: boolean; installedDir: string; message?: string }> {
+  return invoke("plugins_cloud_install", {
+    codexHome: input.codexHome,
+    itemId: input.itemId,
+    baseUrl: input.baseUrl ?? null,
+  });
+}
+
+/** 打开本地文件选择器，导入 SKILL.md 目录或 plugin.toml 插件（ZIP/文件夹）。 */
+export function pluginsImportLocal(input: {
+  codexHome: string;
+  /** 为空时打开文件对话框让用户选 */
+  sourcePath?: string;
+  kind?: "skill" | "plugin" | "auto";
+}): Promise<{ ok: boolean; installedDir: string; message?: string }> {
+  return invoke("plugins_import_local", {
+    codexHome: input.codexHome,
+    sourcePath: input.sourcePath ?? null,
+    kind: input.kind ?? "auto",
   });
 }
 
@@ -477,4 +544,295 @@ export function credsWrite(
 export async function restart(opts: { codexBin: string; codexHome: string; env?: Record<string, string> }): Promise<string> {
   try { await stop(); } catch { /* 初次启动时本来就没跑 */ }
   return start(opts);
+}
+
+// --- T18 知识库 RAG ---
+
+export interface RagStatus {
+  registered: boolean;
+  enabled: boolean;
+  baseUrl?: string;
+  collection?: string;
+  command?: string;
+}
+export interface RagHealth {
+  ok: boolean;
+  baseUrl: string;
+  message: string;
+  hint?: string;
+}
+
+/** 一键注册 `[mcp_servers.rag]`；默认 base/collection 为空时由后端使用预设。 */
+export function ragRegister(opts: {
+  codexHome: string;
+  baseUrl?: string;
+  defaultCollection?: string;
+  envVars?: string[];
+}): Promise<RagStatus> {
+  return invoke<RagStatus>("rag_register", {
+    codexHome: opts.codexHome,
+    baseUrl: opts.baseUrl ?? null,
+    defaultCollection: opts.defaultCollection ?? null,
+    envVars: opts.envVars ?? null,
+  });
+}
+
+/** 回读 RAG 注册状态。 */
+export function ragStatus(codexHome: string): Promise<RagStatus> {
+  return invoke<RagStatus>("rag_status", { codexHome });
+}
+
+/** 检查 Chroma 服务存活；不传 baseUrl 时回退到默认值。 */
+export function ragHealth(baseUrl?: string): Promise<RagHealth> {
+  return invoke<RagHealth>("rag_health", { baseUrl: baseUrl ?? null });
+}
+
+export interface RagSearchHit {
+  id: string;
+  document: string;
+  distance: number;
+  metadata?: unknown;
+}
+export interface RagSearchResult {
+  collection: string;
+  query: string;
+  hits: RagSearchHit[];
+}
+/** 直接调用 Chroma 相似度检索（用于前端做检索预嗅/入库校验）。 */
+export function ragSearch(opts: {
+  codexHome?: string;
+  baseUrl?: string;
+  collection?: string;
+  query: string;
+  topK?: number;
+}): Promise<RagSearchResult> {
+  return invoke<RagSearchResult>("rag_search", {
+    codexHome: opts.codexHome ?? null,
+    baseUrl: opts.baseUrl ?? null,
+    collection: opts.collection ?? null,
+    query: opts.query,
+    topK: opts.topK ?? null,
+  });
+}
+
+// --- T19 飞书多维表格 Base MCP ---
+
+export interface BaseStatus {
+  registered: boolean;
+  enabled: boolean;
+  command?: string;
+}
+export interface BaseHealth {
+  ok: boolean;
+  message: string;
+  hint?: string;
+}
+/** 一键注册 `[mcp_servers.base]`；默认启用 lark-openapi-mcp + bitable。 */
+export function baseRegisterMcp(opts: {
+  codexHome: string;
+  command?: string;
+  args?: string[];
+  envVars?: string[];
+}): Promise<BaseStatus> {
+  return invoke<BaseStatus>("base_register_mcp", {
+    codexHome: opts.codexHome,
+    command: opts.command ?? null,
+    args: opts.args ?? null,
+    envVars: opts.envVars ?? null,
+  });
+}
+export function baseStatus(codexHome: string): Promise<BaseStatus> {
+  return invoke<BaseStatus>("base_status", { codexHome });
+}
+export function baseHealth(): Promise<BaseHealth> {
+  return invoke<BaseHealth>("base_health");
+}
+
+// --- T22 审批 → 飞书审批直连 ---
+
+export interface ApprovalFeishuResult {
+  ok: boolean;
+  instanceCode: string;
+  link?: string;
+  /** 若飞书侧返回错误代码，这里透传。 */
+  code?: number;
+  message: string;
+}
+/**
+ * 把一条等待审批的 codex 内部审批请求，直接走飞书「提交审批实例」API 提单，
+ * 便于审批人在飞书统一处理。返回审批实例 instance_code 和 applink 链接。
+ */
+export function approvalSendToFeishu(opts: {
+  codexHome?: string;
+  requestId: number;
+  /** 审批定义 code；空串时走默认 "HarnessApproval"（后端兜底）。 */
+  approvalCode?: string;
+  /** 审批说明（Markdown 纯文本）。 */
+  description: string;
+  /** 审批单据关键字段（用于飞书审批表单/列表筛选）。 */
+  fields?: Record<string, string>;
+  /** 审批 UUID（幂等键）；不传后端用 requestId 兜底。 */
+  uuid?: string;
+}): Promise<ApprovalFeishuResult> {
+  return invoke<ApprovalFeishuResult>("approval_send_to_feishu", {
+    codexHome: opts.codexHome ?? null,
+    requestId: opts.requestId,
+    approvalCode: opts.approvalCode ?? null,
+    description: opts.description,
+    fields: opts.fields ?? null,
+    uuid: opts.uuid ?? null,
+  });
+}
+
+// --- B2 云端 codex 执行桥 ---
+
+export interface CloudModeStatus {
+  enabled: boolean;
+  hasToken: boolean;
+  apiBase: string;
+  sessionId: string | null;
+}
+
+export interface CloudLoginResult {
+  ok: boolean;
+  token: string;
+  user?: { id: string; username: string; role?: string };
+}
+
+export interface CloudHealthResult {
+  ok: boolean;
+  reachable: boolean;
+  latencyMs?: number;
+  message?: string;
+  data?: unknown;
+}
+
+export interface CloudBrief {
+  target_audience?: string;
+  primary_selling_point?: string;
+  duration_seconds?: number;
+  script_mode?: string;
+  promotion_context?: string;
+}
+
+/** 登录 bibike 云端，获取 Bearer token。 */
+export function cloudLogin(input: {
+  apiBase?: string;
+  username: string;
+  password: string;
+}): Promise<CloudLoginResult> {
+  return invoke<CloudLoginResult>("cloud_login", {
+    apiBase: input.apiBase ?? null,
+    username: input.username,
+    password: input.password,
+  });
+}
+
+/** 开关云端模式。 */
+export function cloudModeSet(enabled: boolean): Promise<void> {
+  return invoke("cloud_mode_set", { enabled });
+}
+
+/** 读取云端模式状态。 */
+export function cloudModeGet(): Promise<CloudModeStatus> {
+  return invoke<CloudModeStatus>("cloud_mode_get");
+}
+
+/** 云端健康检查。 */
+export function cloudHealth(): Promise<CloudHealthResult> {
+  return invoke<CloudHealthResult>("cloud_health");
+}
+
+/** 创建云端会话（返回 session_id）。 */
+export function cloudThreadStart(): Promise<string> {
+  return invoke<string>("cloud_thread_start");
+}
+
+/**
+ * 发送消息到云端 codex 桥。
+ * SSE 流在 Rust 后台线程消费，事件推入 pollEvents() 队列。
+ * 事件 method 前缀 `cloud/`：
+ * - cloud/status          → { stage: "intake|retrieving|generating|guard" }
+ * - cloud/intake_question  → { question, reason }
+ * - cloud/result           → { script, creative_notes, suggestions, issues, references, mode, brief }
+ * - cloud/turn_completed   → 本轮结束
+ * - cloud/error            → { message }
+ */
+export function cloudTurnStart(input: {
+  sessionId: string;
+  text: string;
+  brief?: CloudBrief;
+}): Promise<void> {
+  return invoke("cloud_turn_start", {
+    sessionId: input.sessionId,
+    text: input.text,
+    brief: input.brief ?? null,
+  });
+}
+
+/** 从云端同步 skill 列表。 */
+export function cloudSkillsSync(): Promise<{ ok: boolean; synced?: string[] }> {
+  return invoke("cloud_skills_sync");
+}
+
+// --- 云端 SSE 事件解析辅助 ---
+
+/** 从 pollEvents() 返回的事件中提取云端状态更新。 */
+export function cloudStatusStage(e: AppEvent): string | null {
+  if (e.method === "cloud/status") {
+    const stage = e.params?.stage;
+    return typeof stage === "string" ? stage : null;
+  }
+  return null;
+}
+
+/** 从事件中提取 intake 提问（需要编导回答后继续发消息）。 */
+export function cloudIntakeQuestion(e: AppEvent): { question: string; reason: string } | null {
+  if (e.method === "cloud/intake_question") {
+    const q = e.params?.question;
+    const r = e.params?.reason;
+    if (typeof q === "string") {
+      return { question: q, reason: typeof r === "string" ? r : "" };
+    }
+  }
+  return null;
+}
+
+/** 从事件中提取脚本生成结果。 */
+export function cloudResult(e: AppEvent): {
+  script: string;
+  creative_notes?: string;
+  suggestions?: string | string[];
+  issues?: Array<{ severity: string; message: string; evidence?: string }>;
+  references?: unknown[];
+  mode?: string;
+} | null {
+  if (e.method === "cloud/result") {
+    const script = e.params?.script;
+    if (typeof script === "string") {
+      return {
+        script,
+        creative_notes: e.params?.creative_notes as string | undefined,
+        suggestions: e.params?.suggestions as string | string[] | undefined,
+        issues: e.params?.issues as Array<{ severity: string; message: string; evidence?: string }> | undefined,
+        references: e.params?.references as unknown[] | undefined,
+        mode: e.params?.mode as string | undefined,
+      };
+    }
+  }
+  return null;
+}
+
+/** 云端事件：本轮完成。 */
+export function isCloudTurnCompleted(e: AppEvent): boolean {
+  return e.method === "cloud/turn_completed";
+}
+
+/** 云端事件：错误。 */
+export function cloudError(e: AppEvent): string | null {
+  if (e.method === "cloud/error") {
+    const msg = e.params?.message;
+    return typeof msg === "string" ? msg : null;
+  }
+  return null;
 }

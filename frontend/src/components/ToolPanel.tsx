@@ -46,6 +46,7 @@ export default function ToolPanel({
   onTerminalInput,
   browserUrl,
   onBrowserUrlChange,
+  codexHome,
 }: {
   approvals: ApprovalRequest[];
   onRespond: (id: number, decision: string) => void;
@@ -57,6 +58,8 @@ export default function ToolPanel({
   /** 浏览器占位地址。 */
   browserUrl?: string;
   onBrowserUrlChange?: (url: string) => void;
+  /** 传给 ApprovalPanel 用于飞书审批。 */
+  codexHome?: string;
 }) {
   const [tab, setTab] = useState<TabId>("approvals");
   const [collapsed, setCollapsed] = useState(false);
@@ -100,7 +103,7 @@ export default function ToolPanel({
       {!collapsed && (
         <div className="tool-body" role="tabpanel">
           {tab === "approvals" && (
-            <ApprovalPanel hideHeader approvals={approvals} onRespond={onRespond} />
+            <ApprovalPanel hideHeader codexHome={codexHome} approvals={approvals} onRespond={onRespond} />
           )}
           {tab === "session" && <SessionDetail s={session} />}
           {tab === "terminal" && (
