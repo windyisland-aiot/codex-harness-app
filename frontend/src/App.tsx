@@ -16,7 +16,7 @@ import type {
   ResolvedPaths,
   SessionMeta,
 } from "./codexClient";
-import { MODEL_GROUPS, logoForModel } from "./models";
+import { ALL_MODELS, modelInfo } from "./models";
 
 // 窗口控制：Tauri 2.x 下优先用 @tauri-apps/api/window 的 getCurrentWindow() 实例方法。
 // 如果 `toggleMaximize` 在个别运行时不存在，退化为 maximize/unmaximize；
@@ -366,6 +366,44 @@ export default function App() {
   const [model, setModel] = useState("ark-code-latest");
   const [provider, setProvider] = useState("volcengine-ark");
   const [autoModeOpen, setAutoModeOpen] = useState(false);
+
+  // ------- 附件（多模态文件上传） -------
+  interface Attachment { name: string; size: number; kind: "image" | "video" | "doc"; preview?: string; }
+  const [attachments, setAttachments] = useState<Attachment[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  function openFilePicker() {
+    const current = modelInfo(model);
+    if (!current.multiModal) {
+      setStatus(`⚠ 模型 ${current.name} 不支持图片/视频/文档，请先切换到多模态模型`);
+      setLastError(`当前模型「${current.name}」是纯文本模型，不支持多模态输入。请在右侧切换到支持多模态的模型（如 doubao-seed-2.0-lite / deepseek-v4-flash 等）后再上传文件。`);
+      return;
+    }
+    fileInputRef.current?.click();
+  }
+
+  function onFilesPicked(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    if (files.length === 0) return;
+    const newItems: Attachment[] = files.map((f) => {
+      const isImage = f.type.startsWith("image/");
+      const isVideo = f.type.startsWith("video/");
+      return {
+        name: f.name,
+        size: f.size,
+        kind: isImage ? "image" : isVideo ? "video" : "doc",
+        preview: isImage ? URL.createObjectURL(f) : undefined,
+      };
+    });
+    setAttachments((prev) => [...prev, ...newItems]);
+    setStatus(`已附加 ${newItems.length} 个文件，发送时一并提交`);
+    // reset 以便下次选同一文件也能触发 change
+    e.target.value = "";
+  }
+
+  function removeAttachment(idx: number) {
+    setAttachments((prev) => prev.filter((_, i) => i !== idx));
+  }
 
   // ------- 设置面板开关（v0.3.0 统一成单个 SettingsPanel） -------
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -1661,16 +1699,24 @@ export default function App() {
           <footer className="composer">
             {/* 主输入栏：左工具 + textarea + 右发送 */}
             <div className="composer-bar">
-              {/* 左侧：+ 导入文件 / 手动审批 / 插件图标 */}
+              {/* 左侧：📎 多模态附件 / 手动审批 / Auto Mode */}
               <div className="bar-left">
-                {/* + 导入文件 */}
+                {/* 📎 多模态附件：图片 / 视频 / 文档 */}
                 <button
                   className="bar-btn-plus"
-                  title="导入本地文件（skill / 插件 / 配置）"
-                  onClick={() => setPluginsOpen(true)}
+                  title={modelInfo(model).multiModal ? "上传图片 / 视频 / 文档" : `⚠ 当前模型不支持多模态（${modelInfo(model).name}）`}
+                  onClick={() => openFilePicker()}
                 >
-                  {IconPlus}
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
                 </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  multiple
+                  accept="image/*,video/*,.pdf,.doc,.docx,.txt,.md,.csv,.xlsx,.json,.zip"
+                  style={{ display: "none" }}
+                  onChange={onFilesPicked}
+                />
 
                 {/* 访问模式切换：自动审批 ↔ 完全访问 */}
                 <div className="bar-btn-approval-wrap">
@@ -1720,10 +1766,7 @@ export default function App() {
                     onClick={() => setAutoModeOpen((v) => !v)}
                     title="切换模型（所有模型统一走火山方舟）"
                   >
-                    <span className="auto-logo">
-                      <img src={logoForModel(model).logoUrl} alt="" className="auto-logo-img" />
-                    </span>
-                    <span className="auto-label">Auto Mode</span>
+                    <span className="auto-label">{modelInfo(model).name}</span>
                     <span className="caret" style={{ transform: autoModeOpen ? "rotate(180deg)" : "none", transition: "transform .15s" }}>
                       {IconCaretDown}
                     </span>
@@ -1733,31 +1776,23 @@ export default function App() {
                     <>
                       <div className="auto-mode-backdrop" onClick={() => setAutoModeOpen(false)} />
                       <div className="auto-mode-menu">
-                        {MODEL_GROUPS.map((g) => (
-                          <div key={g.label} className="auto-group">
-                            <div className="auto-group-label">{g.label}</div>
-                            {g.models.map((m) => {
-                              const logo = logoForModel(m);
-                              const isActive = m === model;
-                              return (
-                                <button
-                                  key={m}
-                                  className={`auto-item ${isActive ? "active" : ""}`}
-                                  onClick={() => {
-                                    setModel(m);
-                                    setAutoModeOpen(false);
-                                  }}
-                                >
-                                  <span className="auto-item-logo">
-                                    <img src={logo.logoUrl} alt="" className="auto-item-logo-img" />
-                                  </span>
-                                  <span className="auto-item-name">{m}</span>
-                                  {isActive && <span className="auto-item-check">✓</span>}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        ))}
+                        {ALL_MODELS.map((m) => {
+                          const isActive = m.id === model;
+                          return (
+                            <button
+                              key={m.id}
+                              className={`auto-item ${isActive ? "active" : ""}`}
+                              onClick={() => {
+                                setModel(m.id);
+                                setAutoModeOpen(false);
+                              }}
+                            >
+                              <span className="auto-item-name">{m.name}</span>
+                              {m.multiModal && <span className="auto-mm-tag" title="支持图片 / 视频 / 文档">多模态</span>}
+                              {isActive && <span className="auto-item-check">✓</span>}
+                            </button>
+                          );
+                        })}
                       </div>
                     </>
                   )}
@@ -1774,6 +1809,25 @@ export default function App() {
                 </button>
               </div>
             </div>
+
+            {/* 附件预览条（多模态文件） */}
+            {attachments.length > 0 && (
+              <div className="attach-bar">
+                {attachments.map((a, i) => (
+                  <div key={i} className={`attach-chip attach-${a.kind}`}>
+                    {a.kind === "image" && a.preview
+                      ? <img src={a.preview} alt="" className="attach-thumb" />
+                      : <span className="attach-ico">{a.kind === "video" ? "🎬" : "📄"}</span>}
+                    <div className="attach-info">
+                      <div className="attach-name">{a.name}</div>
+                      <div className="attach-size">{(a.size / 1024).toFixed(1)} KB</div>
+                    </div>
+                    <button className="attach-remove" onClick={() => removeAttachment(i)} title="移除">×</button>
+                  </div>
+                ))}
+                <button className="attach-add" onClick={() => openFilePicker()}>+ 继续添加</button>
+              </div>
+            )}
 
             {/* 薄状态栏：左状态 / 右日志 + 语音 */}
             <div className="composer-meta">
