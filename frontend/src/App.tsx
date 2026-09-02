@@ -203,23 +203,6 @@ const IconCaretDown = (
     <polyline points="6 9 12 15 18 9" />
   </svg>
 );
-const IconFeishu = (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <rect x="3" y="3" width="18" height="18" rx="3"/>
-    <path d="M8 14l4-4 4 4"/>
-  </svg>
-);
-const IconRAG = (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
-    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
-  </svg>
-);
-const IconSparkle = (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 2l2 6 6 2-6 2-2 6-2-6-6-2 6-2z"/>
-  </svg>
-);
 
 export default function App() {
   // ------- 运行时路径 -------
@@ -850,7 +833,7 @@ export default function App() {
           className="tb-icon-btn"
           data-tauri-drag-region="false"
           onClick={() => setCollapsed((c) => !c)}
-          title="切换侧栏"
+          title={collapsed ? "显示任务栏" : "隐藏任务栏"}
         >
           {IconHamburger}
         </button>
@@ -1142,38 +1125,6 @@ export default function App() {
                       <span className="approval-count-badge">{approvals.length}</span>
                     )}
                     {IconCaretDown}
-                  </button>
-                </div>
-
-                {/* 插件 / skill 功能图标（保持现有图标：飞书、RAG、设计、MCP 等） */}
-                <div className="skill-icons">
-                  <button
-                    className="sicon"
-                    title="飞书集成（多维表格 / 审批 / 文档）"
-                    onClick={() => setStatus("飞书集成：运行 codex 时自动可用，支持多维表格读写、审批提单、文档操作")}
-                  >
-                    {IconFeishu}
-                  </button>
-                  <button
-                    className="sicon"
-                    title="RAG 知识库（本地 / 云端）"
-                    onClick={() => setStatus("RAG：对话时自动检索知识库，增强回答质量")}
-                  >
-                    {IconRAG}
-                  </button>
-                  <button
-                    className="sicon"
-                    title="设计工具（Seedance 视频 / Seedream 图片）"
-                    onClick={() => setStatus("设计工具：v0.2 接入 Seedance/Seedream")}
-                  >
-                    {IconSparkle}
-                  </button>
-                  <button
-                    className="sicon"
-                    title="附件（v0.2 上传 / 拖拽）"
-                    onClick={() => setStatus("附件：v0.2 支持上传/拖拽")}
-                  >
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
                   </button>
                 </div>
               </div>

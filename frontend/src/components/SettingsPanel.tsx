@@ -1,14 +1,14 @@
 //! v0.3.0 统一设置面板 — Trae Work 风格左侧 nav + 右侧内容。
-//! 覆盖：账号 | 通用 | 模型 | MCP | 会话 | 搜索 | 关于
+//! 覆盖：账号 | 通用 | MCP | 会话 | 搜索 | 关于
 //! （插件/Skill 管理已移至独立的 PluginsPanel，v0.5.3）
-//! 全部改动实时写 config.toml + .env-provider，保存后提示重启 codex 生效。
+//! （模型板块已移除，v0.7.0 — URL/API Key 在后台硬编码注入）
+//! 全部改动实时写 config.toml，保存后提示重启 codex 生效。
 
 import { useEffect, useState } from "react";
-import { createPortal } from "react-dom";
 import * as codex from "../codexClient";
-import type { AppConfig, ProviderConfig, McpServerConfig, SessionMeta } from "../codexClient";
+import type { AppConfig, McpServerConfig, SessionMeta } from "../codexClient";
 
-type NavKey = "account" | "general" | "models" | "mcp" | "sessions" | "search" | "about";
+type NavKey = "account" | "general" | "mcp" | "sessions" | "search" | "about";
 
 interface NavItem {
   key: NavKey;
@@ -23,7 +23,6 @@ const I = (path: JSX.Element) => (
 const NAV: NavItem[] = [
   { key: "account",  label: "账号",   icon: I(<><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0 1 16 0v1"/></>) },
   { key: "general",  label: "通用",   icon: I(<><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></>) },
-  { key: "models",   label: "模型",   icon: I(<><path d="M4 7h16M4 12h16M4 17h10"/></>) },
   { key: "search",   label: "搜索",   icon: I(<><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></>) },
   { key: "sessions", label: "会话流", icon: I(<><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></>) },
   { key: "about",    label: "关于",   icon: I(<><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></>) },
@@ -42,21 +41,15 @@ export default function SettingsPanel({
 }) {
   const [nav, setNav] = useState<NavKey>("general");
   const [cfg, setCfg] = useState<AppConfig | null>(null);
-  const [creds, setCreds] = useState<Record<string, string>>({});
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [showKey, setShowKey] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (!open || !codexHome) return;
     (async () => {
       try {
-        const [c, k] = await Promise.all([
-          codex.configRead(codexHome).catch(() => null as AppConfig | null),
-          codex.credsRead(codexHome).catch(() => ({} as Record<string, string>)),
-        ]);
+        const c = await codex.configRead(codexHome).catch(() => null as AppConfig | null);
         setCfg(c ?? null);
-        setCreds(k);
         setDirty(false);
       } catch (e) {
         onStatus(`读取设置失败：${e}`);
@@ -77,7 +70,6 @@ export default function SettingsPanel({
     setSaving(true);
     try {
       await codex.configWrite(codexHome, cfg);
-      await codex.credsWrite(codexHome, creds);
       setDirty(false);
       try {
         await codex.restart({ codexBin, codexHome });
@@ -95,76 +87,6 @@ export default function SettingsPanel({
 
   const patchCfg = (p: Partial<AppConfig>) => {
     setCfg((c) => ({ ...(c ?? defaultCfg()), ...p }));
-    setDirty(true);
-  };
-
-  const updateProvider = (i: number, patch: Partial<ProviderConfig>) => {
-    setCfg((c) => {
-      const cur = c ?? defaultCfg();
-      const next = cur.modelProviders.slice();
-      next[i] = { ...next[i], ...patch };
-      return { ...cur, modelProviders: next };
-    });
-    setDirty(true);
-  };
-
-  const addProvider = () => {
-    setCfg((c) => {
-      const cur = c ?? defaultCfg();
-      const next = cur.modelProviders.slice();
-      const isFirst = next.length === 0;
-      // 生成唯一的 envKey（避免冲突）
-      let envKey = "ARK_API_KEY";
-      let counter = 1;
-      while (next.some((p) => p.envKey === envKey)) {
-        envKey = `ARK_API_KEY_${counter++}`;
-      }
-      const newProvider: ProviderConfig = {
-        id: `p-${Date.now()}`,
-        name: "新模型",
-        type: "Custom",
-        baseUrl: "https://ark.cn-beijing.volces.com/api/coding/v3",
-        envKey,
-        wireApi: "responses",
-      };
-      next.push(newProvider);
-      // 如果是第一个 provider，自动设为默认
-      return {
-        ...cur,
-        modelProviders: next,
-        modelProvider: isFirst ? newProvider.id : cur.modelProvider || newProvider.id,
-        model: cur.model || "ark-code-latest",
-      };
-    });
-    setDirty(true);
-  };
-
-  const delProvider = (i: number) => {
-    setCfg((c) => {
-      const cur = c ?? defaultCfg();
-      const removed = cur.modelProviders[i];
-      const next = cur.modelProviders.filter((_, k) => k !== i);
-      // 如果删除的是当前默认 provider，自动切到第一个剩余的
-      let newDefaultProvider = cur.modelProvider;
-      if (removed && cur.modelProvider === removed.id && next.length > 0) {
-        newDefaultProvider = next[0].id;
-      }
-      return {
-        ...cur,
-        modelProviders: next,
-        modelProvider: newDefaultProvider,
-      };
-    });
-    setDirty(true);
-  };
-
-  const selectAsDefault = (i: number) => {
-    setCfg((c) => {
-      const cur = c ?? defaultCfg();
-      const p = cur.modelProviders[i];
-      if (!p) return cur;
-      return { ...cur, modelProvider: p.id };
-    });
     setDirty(true);
   };
 
@@ -284,14 +206,6 @@ export default function SettingsPanel({
           {!cfg && <div className="sp-loading">加载中…</div>}
           {cfg && nav === "account" && <SectionAccount />}
           {cfg && nav === "general" && <SectionGeneral cfg={cfg} patch={patchCfg} />}
-          {cfg && nav === "models" && (
-            <SectionModels
-              cfg={cfg} creds={creds} setCreds={(k) => { setCreds(k); setDirty(true); }}
-              showKey={showKey} setShowKey={setShowKey}
-              updateProvider={updateProvider} addProvider={addProvider}
-              delProvider={delProvider} selectAsDefault={selectAsDefault}
-            />
-          )}
           {cfg && nav === "mcp" && (
             <SectionMcp
               cfg={cfg} patch={patchCfg} updateMcp={updateMcp}
@@ -338,18 +252,8 @@ function SectionGeneral({ cfg, patch }: { cfg: AppConfig; patch: (p: Partial<App
   return (
     <div className="sp-section">
       <h2 className="sp-h">通用</h2>
-      <p className="sp-desc">默认模型名用于与默认供应商配合调用 LLM。审批策略控制 codex 执行命令/写文件前是否弹窗确认。</p>
+      <p className="sp-desc">审批策略控制 codex 执行命令/写文件前是否弹窗确认。</p>
       <div className="sp-card">
-        <div className="sp-row">
-          <label className="sp-label">默认模型名</label>
-          <input
-            className="sp-input"
-            value={cfg.model}
-            onChange={(e) => patch({ model: e.target.value })}
-            placeholder="ark-code-latest"
-          />
-          <span className="sp-hint">当前默认供应商: <code>{cfg.modelProvider || "(未设置)"}</code></span>
-        </div>
         <div className="sp-row">
           <label className="sp-label">审批策略</label>
           <select
@@ -362,291 +266,6 @@ function SectionGeneral({ cfg, patch }: { cfg: AppConfig; patch: (p: Partial<App
           <span className="sp-hint">on-request: 每次审批</span>
         </div>
       </div>
-    </div>
-  );
-}
-
-function SectionModels({
-  cfg, creds, setCreds, showKey, setShowKey,
-  updateProvider, addProvider, delProvider, selectAsDefault,
-}: {
-  cfg: AppConfig;
-  creds: Record<string, string>;
-  setCreds: (k: Record<string, string>) => void;
-  showKey: Record<string, boolean>;
-  setShowKey: React.Dispatch<React.SetStateAction<Record<string, boolean>>>;
-  updateProvider: (i: number, p: Partial<ProviderConfig>) => void;
-  addProvider: () => void;
-  delProvider: (i: number) => void;
-  selectAsDefault: (i: number) => void;
-}) {
-  const hasProviders = cfg.modelProviders.length > 0;
-  const currentProvider = cfg.modelProviders.find((p) => p.id === cfg.modelProvider);
-
-  // ---------- 编辑弹窗：null = 关闭，数字 = 正在编辑的 provider index ----------
-  const [editIdx, setEditIdx] = useState<number | null>(null);
-  const isNew = editIdx === -1;
-
-  // v0.6.0 自动托管后不再需要手动添加 — 函数保留供未来扩展
-  void function _unused_handleAddAndEdit() {
-    addProvider();
-    setTimeout(() => setEditIdx(cfg.modelProviders.length), 0);
-  };
-
-  // ---------- SVG 图标 helpers（inline 无依赖） ----------
-  const IcPencil = (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
-    </svg>
-  );
-  const IcTrash = (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="3 6 5 6 21 6"/><path d="M19 6l-2 14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/>
-      <path d="M9 6V4a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v2"/>
-    </svg>
-  );
-  const IcCheck = (
-    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="20 6 9 17 4 12"/>
-    </svg>
-  );
-
-  function displayName(p: ProviderConfig) {
-    return p.name && p.name.trim() ? p.name : p.id || "(未命名)";
-  }
-  function avatarLetter(p: ProviderConfig) {
-    const n = displayName(p).trim();
-    return n ? n.charAt(0).toUpperCase() : "?";
-  }
-
-  const editing = (editIdx !== null && editIdx >= 0) ? cfg.modelProviders[editIdx] : null;
-  const editingCredsKey = editing?.envKey ?? "";
-
-  return (
-    <div className="sp-section">
-      <h2 className="sp-h">模型</h2>
-      <p className="sp-desc">
-        v0.6.0 自动托管：URL / API Key 已在后台硬编码注入，所有模型统一走火山方舟端点。切换模型请使用底部输入栏右侧的 Auto Mode 下拉。
-      </p>
-
-      <div className="sp-current-hint" style={{
-        background: "transparent",
-        padding: "0 0 12px",
-        border: "none",
-        display: "flex",
-        flexDirection: "column",
-        gap: 2,
-      }}>
-        <div style={{ fontSize: 12, color: "#6B7280" }}>
-          当前默认模型：<strong style={{ color: "#111827", fontWeight: 600 }}>{cfg.model || "ark-code-latest"}</strong>
-          <span style={{ margin: "0 6px" }}>·</span>
-          供应商：<strong style={{ color: "#111827", fontWeight: 600 }}>{currentProvider ? `${currentProvider.name} (${currentProvider.id})` : "(未设置)"}</strong>
-        </div>
-      </div>
-
-      <div className="sp-hardcode-banner" style={{
-  marginBottom: 14,
-  padding: "10px 14px",
-  borderRadius: 10,
-  background: "var(--bg-sunken)",
-  border: "1px solid var(--border)",
-  fontSize: 12.5,
-  color: "var(--text-secondary)",
-  lineHeight: 1.7,
-}}>
-  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-    <span style={{ color: "var(--brand)", fontWeight: 600 }}>🔒 已自动托管（v0.6.0）</span>
-  </div>
-  <div><b>Provider：</b>火山方舟 Ark · 单一端点</div>
-  <div><b>Base URL：</b><code style={{ fontFamily: "var(--mono)", fontSize: 11, background: "var(--bg-hover)", padding: "1px 6px", borderRadius: 4 }}>https://ark.cn-beijing.volces.com/api/plan/v3</code></div>
-  <div><b>API Key：</b>已内置，自动注入 codex 子进程</div>
-  <div><b>Wire API：</b>Responses · <b>默认模型：</b>ark-code-latest</div>
-  <div style={{ marginTop: 6, color: "var(--text-muted)", fontSize: 11.5 }}>
-    切换当前对话使用的模型 → 点击底部输入栏右侧的「Auto Mode」下拉。
-  </div>
-</div>
-<button className="sp-btn sp-btn-ghost sp-add-btn" disabled title="v0.6.0 已自动托管，无需手动添加">🔒 自动托管中（v0.6.0）</button>
-
-      <table className="tw-model-table">
-        <thead>
-          <tr>
-            <th>模型</th>
-            <th>服务商</th>
-            <th style={{ width: 150, textAlign: "right" }}>操作</th>
-          </tr>
-        </thead>
-        <tbody>
-          {!hasProviders && (
-            <tr className="tw-empty-row">
-              <td colSpan={3}>还没有模型，点上方「+ 添加模型」开始。</td>
-            </tr>
-          )}
-          {cfg.modelProviders.map((p, i) => {
-            const isDefault = cfg.modelProvider === p.id;
-            return (
-              <tr key={p.id} className={isDefault ? "is-default" : ""}>
-                <td>
-                  <div className="tw-model-cell">
-                    <div className={`tw-model-icon ${isDefault ? "" : "off"}`} title={isDefault ? "默认供应商" : "非默认"}>
-                      {avatarLetter(p)}
-                    </div>
-                    <div className="tw-model-main">
-                      <span className="tw-model-name">
-                        {isDefault && (
-                          <span title="默认供应商" style={{
-                            display: "inline-block",
-                            marginRight: 6,
-                            color: "#10B981",
-                            verticalAlign: "middle",
-                          }}>{IcCheck}</span>
-                        )}
-                        {cfg.model || "ark-code-latest"}
-                      </span>
-                      <span className="tw-model-id">{p.id} · {p.baseUrl.replace(/^https?:\/\//, "")}</span>
-                    </div>
-                  </div>
-                </td>
-                <td>
-                  <span className="tw-provider-name">
-                    {displayName(p)}
-                  </span>
-                </td>
-                <td>
-                  <div className="tw-model-actions">
-                    <button
-                      className="tw-icon-btn"
-                      title="编辑"
-                      onClick={() => setEditIdx(i)}
-                    >{IcPencil}</button>
-                    <button
-                      className="tw-icon-btn danger"
-                      title="删除"
-                      onClick={() => {
-                        if (!confirm(`确认删除供应商「${displayName(p)}」？`)) return;
-                        delProvider(i);
-                      }}
-                    >{IcTrash}</button>
-                    {/* 默认开关：toggle */}
-                    <button
-                      type="button"
-                      className={`tw-toggle ${isDefault ? "on" : ""}`}
-                      title={isDefault ? "当前为默认供应商" : "设为默认供应商"}
-                      onClick={() => !isDefault && selectAsDefault(i)}
-                      aria-label="toggle default"
-                    >
-                      <span className="tw-toggle-track" />
-                      <span className="tw-toggle-thumb" />
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-
-      {/* ---------- 编辑弹窗 ---------- */}
-      {/* v0.5.3：createPortal 到 document.body，脱离 sp-content 的 transform/filter 祖先，
-          修复固定定位弹窗被拉伸/偏移的问题。 */}
-      {editing && createPortal(
-        <div className="modal-backdrop" onClick={() => setEditIdx(null)}>
-          <div
-            className="modal-card modal-dialog edit-model-dialog"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="modal-head">
-              <h3>{isNew ? "添加模型" : `编辑模型 · ${displayName(editing)}`}</h3>
-              <button className="modal-close" onClick={() => setEditIdx(null)}>×</button>
-            </div>
-            <div className="modal-body edit-model-form">
-              <div className="two-col">
-                <div className="form-block">
-                  <label>名称（显示用）</label>
-                  <input
-                    className="sp-input sp-input-sm"
-                    value={editing.name}
-                    onChange={(e) => updateProvider(editIdx!, { name: e.target.value })}
-                    placeholder="火山方舟 Ark Code"
-                  />
-                </div>
-                <div className="form-block">
-                  <label>Provider ID</label>
-                  <input
-                    className="sp-input sp-input-sm sp-input-code"
-                    value={editing.id}
-                    onChange={(e) => updateProvider(editIdx!, { id: e.target.value })}
-                    placeholder="volcengine-ark"
-                  />
-                  <div className="sp-hint">唯一标识，Codex 配置里引用这个 ID。</div>
-                </div>
-              </div>
-
-              <div className="form-block">
-                <label>Base URL</label>
-                <input
-                  className="sp-input sp-input-sm sp-input-code"
-                  value={editing.baseUrl}
-                  onChange={(e) => updateProvider(editIdx!, { baseUrl: e.target.value })}
-                  placeholder="https://ark.cn-beijing.volces.com/api/coding/v3"
-                />
-                <div className="sp-hint">
-                  Coding Plan 企业版 Responses 协议：<code>https://ark.cn-beijing.volces.com/api/coding/v3</code>
-                </div>
-              </div>
-
-              <div className="two-col">
-                <div className="form-block">
-                  <label>wire_api</label>
-                  <select
-                    className="sp-input sp-input-sm"
-                    value={editing.wireApi}
-                    onChange={(e) => updateProvider(editIdx!, { wireApi: e.target.value })}
-                  >
-                    <option value="responses">responses（推荐）</option>
-                    <option value="chat">chat（兼容）</option>
-                  </select>
-                </div>
-                <div className="form-block">
-                  <label>env_key（API Key 变量名）</label>
-                  <input
-                    className="sp-input sp-input-sm sp-input-code"
-                    value={editing.envKey}
-                    onChange={(e) => updateProvider(editIdx!, { envKey: e.target.value })}
-                    placeholder="VOLCENGINE_ARK_API_KEY"
-                  />
-                </div>
-              </div>
-
-              <div className="form-block">
-                <label>API Key</label>
-                <div className="sp-key-wrap" style={{ maxWidth: "none" }}>
-                  <input
-                    className="sp-input sp-input-sm"
-                    type={showKey[editingCredsKey] ? "text" : "password"}
-                    placeholder={creds[editingCredsKey] ? "•••••• 已填" : "粘贴 Coding Plan 控制台生成的专属 API Key"}
-                    value={creds[editingCredsKey] ?? ""}
-                    onChange={(e) => setCreds({ ...creds, [editingCredsKey]: e.target.value })}
-                  />
-                  <button
-                    type="button"
-                    className="sp-key-toggle"
-                    onClick={() => setShowKey((s) => ({ ...s, [editingCredsKey]: !s[editingCredsKey] }))}
-                  >{showKey[editingCredsKey] ? "隐藏" : "显示"}</button>
-                </div>
-              </div>
-
-              <div className="modal-footer">
-                <button className="sp-btn sp-btn-ghost" onClick={() => setEditIdx(null)}>取消</button>
-                <button
-                  className="sp-btn sp-btn-primary"
-                  onClick={() => setEditIdx(null)}
-                >完成</button>
-              </div>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
     </div>
   );
 }

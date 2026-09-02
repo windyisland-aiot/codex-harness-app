@@ -1122,13 +1122,13 @@ body.theme-dark .sicon:hover { color: var(--text); }
   color: var(--text);
 }
 .auto-logo {
-  width: 20px; height: 20px;
+  width: 16px; height: 16px;
   display: inline-flex;
   align-items: center; justify-content: center;
   flex-shrink: 0;
 }
 .auto-logo-img {
-  width: 20px; height: 20px;
+  width: 16px; height: 16px;
   object-fit: contain;
   display: block;
 }
