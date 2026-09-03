@@ -86,9 +86,24 @@ pub async fn cloud_login(
         cfg.api_base = base;
         cfg.token = Some(t.to_string());
         cfg.enabled = true;
+        // 返回前端期望的 CloudLoginResult 结构
+        Ok(json!({
+            "ok": true,
+            "token": t,
+            "user": {
+                "id": body.get("data").and_then(|d| d.get("user")).and_then(|u| u.get("id")).cloned().unwrap_or(json!(null)),
+                "username": body.get("data").and_then(|d| d.get("user")).and_then(|u| u.get("username")).and_then(|u| u.as_str()).unwrap_or(""),
+                "role": body.get("data").and_then(|d| d.get("user")).and_then(|u| u.get("role")).and_then(|u| u.as_str()).unwrap_or(""),
+            }
+        }))
+    } else {
+        // token 缺失视为登录失败，把服务端的错误信息带回去便于排障
+        let msg = body.get("detail")
+            .map(|d| d.to_string())
+            .or_else(|| body.get("message").and_then(|m| m.as_str()).map(String::from))
+            .unwrap_or_else(|| format!("登录失败：响应中缺少 token，原始响应: {body}"));
+        Err(msg)
     }
-
-    Ok(body)
 }
 
 /// 设置云端模式开关（不登录也可切换，但 chat 需要 token）。
