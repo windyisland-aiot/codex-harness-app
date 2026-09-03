@@ -3181,6 +3181,41 @@ body.theme-dark .plg-card-tag.type-plugin { background: rgba(59,130,246,.15); co
   cursor: not-allowed;
 }
 
+/* 未登录全屏登录界面 */
+.cloud-login-fullscreen {
+  background: var(--bg-base);
+  backdrop-filter: none;
+  z-index: 9999;
+}
+.cloud-login-fullscreen .cloud-login-modal {
+  width: min(420px, 92vw);
+  padding: 36px 40px;
+  border-radius: 20px;
+}
+.cloud-login-fullscreen .cloud-login-modal h2 {
+  font-size: 22px;
+  margin-bottom: 4px;
+}
+.cloud-login-fullscreen .cloud-login-actions {
+  justify-content: stretch;
+}
+.cloud-login-fullscreen .cloud-login-actions button.primary {
+  width: 100%;
+  padding: 12px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.cloud-login-error {
+  margin: 14px 0 0;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: rgba(239, 68, 68, .12);
+  border: 1px solid rgba(239, 68, 68, .3);
+  color: #f87171;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 /* 云端阶段指示器 */
 .cloud-stage-chip {
   display: inline-flex;

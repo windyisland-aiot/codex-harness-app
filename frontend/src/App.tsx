@@ -14,7 +14,6 @@ import * as codex from "./codexClient";
 import type {
   ApprovalRequest,
   ResolvedPaths,
-  SessionMeta,
 } from "./codexClient";
 import { ALL_MODELS, modelInfo } from "./models";
 
@@ -412,7 +411,7 @@ export default function App() {
   const [approvalOpen, setApprovalOpen] = useState(false);
 
   // ------- 连接 & 状态 -------
-  const [connected, setConnected] = useState(false);
+  const [connected] = useState(false);
   const [pending, setPending] = useState(false);
   const [status, setStatus] = useState("解析运行路径中…");
   const [lastError, setLastError] = useState<string | null>(null);
@@ -450,7 +449,6 @@ export default function App() {
   // ------- B2 云端 codex 桥 -------
   const [cloudMode, setCloudMode] = useState(false);
   const [cloudConnected, setCloudConnected] = useState(false);
-  const [cloudLoginOpen, setCloudLoginOpen] = useState(false);
   const [cloudUser, setCloudUser] = useState("");
   const [cloudPass, setCloudPass] = useState("");
   const [cloudStage, setCloudStage] = useState<string | null>(null);
@@ -721,7 +719,7 @@ export default function App() {
     }
   }, [messages, running, lastError]);
 
-  // ------- 启动首步：解析路径 + 检查云端模式 + 连接 -------
+  // ------- 启动首步：解析路径 + 强制云端模式 + 检查登录 -------
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -731,67 +729,40 @@ export default function App() {
         setPaths(p);
         setStatus("路径就绪");
 
-        // 检查云端模式状态
-        let isCloud = false;
+        // 强制启用云端模式
+        try {
+          await codex.cloudModeSet(true);
+        } catch { /* 首次安装可能未就绪 */ }
+
+        setCloudMode(true);
+        let hasToken = false;
         try {
           const cs = await codex.cloudModeGet();
-          if (cs.enabled) {
-            setCloudMode(true);
-            isCloud = true;
-            if (cs.hasToken) {
-              setCloudConnected(true);
-              setStatus("云端模式 · 已登录");
-              // 健康检查
-              try {
-                const h = await codex.cloudHealth();
-                if (h.ok) setStatus(`云端模式 · 已连接 (${h.latencyMs}ms)`);
-                else setStatus("云端模式 · 连接失败");
-              } catch { /* */ }
-            } else {
-              setStatus("云端模式 · 请登录");
-              setCloudLoginOpen(true);
-            }
-          }
-        } catch { /* cloud_mode_get 不可用（首次安装） */ }
+          hasToken = cs.hasToken;
+        } catch { /* */ }
 
-        // 非云端模式：启动本地 codex app-server
-        if (!isCloud) {
-          const ua = await codex.start({ codexBin: p.codexBin, codexHome: p.codexHome });
-          if (cancelled) return;
-          setConnected(true);
-          setStatus(`已连接 · ${ua}`);
+        if (hasToken) {
+          setCloudConnected(true);
+          setStatus("云端模式 · 已登录");
+          try {
+            const h = await codex.cloudHealth();
+            if (h.ok) setStatus(`云端模式 · 已连接 (${h.latencyMs}ms)`);
+            else setStatus("云端模式 · 连接失败");
+          } catch { /* */ }
+        } else {
+          setStatus("请登录云端");
         }
 
+        // 读取本地配置（模型/Provider 仍需读取）
         try {
           const cfg = await codex.configRead(p.codexHome);
           if (cfg.model) setModel(cfg.model);
           if (cfg.modelProvider) setProvider(cfg.modelProvider);
         } catch { /* 首次无配置用前端默认 */ }
-
-        try {
-          const l: SessionMeta[] = await codex.sessionList(p.codexHome);
-          if (!cancelled) {
-            setSessions(
-              l.map((m) => ({
-                id: m.id,
-                title: m.title || m.id,
-                updatedAt: m.updatedAt ? new Date(String(m.updatedAt)).getTime() : undefined,
-                provider: m.provider,
-                model: m.model,
-                status: "done",
-              }))
-            );
-          }
-        } catch { /* 首次空目录常见，静默 */ }
-
-        try {
-          const already = window.localStorage.getItem(ONBOARDING_KEY);
-          if (!already && sessions.length === 0) setOnboardingOpen(true);
-        } catch { /* localStorage 受限 */ }
+        // 不加载本地会话列表 —— 全部走云端
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         if (!cancelled) {
-          // 浏览器开发环境 fallback（无 Tauri 运行时）
           const isTauri = typeof (window as any).__TAURI__ !== "undefined";
           if (!isTauri) {
             setPaths({
@@ -799,9 +770,8 @@ export default function App() {
               codexBin: "/usr/bin/codex",
               defaultCwd: "/tmp/harness-dev/workspace",
             });
-            setConnected(true);
-            setCloudMode(false);
-            setStatus("浏览器开发模式（mock）");
+            setCloudMode(true);
+            setStatus("浏览器开发模式 · 请登录");
           } else {
             setLastError(msg);
             setStatus(`初始化失败: ${msg}`);
@@ -1024,7 +994,6 @@ export default function App() {
       if (result.ok && result.token) {
         setCloudConnected(true);
         setCloudMode(true);
-        setCloudLoginOpen(false);
         setStatus("云端模式 · 已登录");
         // 健康检查
         try {
@@ -1046,7 +1015,7 @@ export default function App() {
     const text = input.trim();
     if (!text || pending) return;
     if (!codexHome) { setStatus("运行路径尚未就绪，请稍后"); return; }
-    if (cloudMode && !cloudConnected) { setCloudLoginOpen(true); setStatus("请先登录云端"); return; }
+    if (cloudMode && !cloudConnected) { setStatus("请先登录云端"); return; }
     if (!cloudMode && !connected) { setStatus("本地 codex 尚未就绪，请稍后"); return; }
 
     // ---- 浏览器开发 mock 模式 ----
@@ -1247,6 +1216,48 @@ export default function App() {
   const sessionTitle = activeThread
     ? sessions.find((s) => s.id === activeThread)?.title || "新任务"
     : messages.length > 0 ? "任务对话" : "新任务";
+
+  // 未登录时只显示登录界面，不能进入其他页面
+  if (!cloudConnected) {
+    return (
+      <div className="cloud-login-overlay cloud-login-fullscreen">
+        <div className="cloud-login-modal">
+          <h2>登录云端 Codex 服务</h2>
+          <p className="cloud-login-hint">
+            连接到 bibike 云端脚本生成平台（118.31.107.214），
+            使用你的 bibike 账号登录后即可使用 talk-script 脚本生成 skill。
+          </p>
+          <input
+            className="cloud-login-input"
+            type="text"
+            placeholder="用户名"
+            value={cloudUser}
+            onChange={(e) => setCloudUser(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") handleCloudLogin(); }}
+            autoFocus
+          />
+          <input
+            className="cloud-login-input"
+            type="password"
+            placeholder="密码"
+            value={cloudPass}
+            onChange={(e) => setCloudPass(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") handleCloudLogin(); }}
+          />
+          <div className="cloud-login-actions">
+            <button
+              className="primary"
+              onClick={handleCloudLogin}
+              disabled={!cloudUser || !cloudPass}
+            >
+              登录
+            </button>
+          </div>
+          {lastError && <p className="cloud-login-error">{lastError}</p>}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="app-shell">
@@ -2083,44 +2094,7 @@ export default function App() {
         onStatus={setStatus}
       />
 
-      {/* ============ B2 云端登录弹窗 ============ */}
-      {cloudLoginOpen && (
-        <div className="cloud-login-overlay" onClick={() => setCloudLoginOpen(false)}>
-          <div className="cloud-login-modal" onClick={(e) => e.stopPropagation()}>
-            <h2>登录云端 Codex 服务</h2>
-            <p className="cloud-login-hint">
-              连接到 bibike 云端脚本生成平台（118.31.107.214），
-              使用你的 bibike 账号登录后即可使用 talk-script 脚本生成 skill。
-            </p>
-            <input
-              className="cloud-login-input"
-              type="text"
-              placeholder="用户名"
-              value={cloudUser}
-              onChange={(e) => setCloudUser(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") handleCloudLogin(); }}
-            />
-            <input
-              className="cloud-login-input"
-              type="password"
-              placeholder="密码"
-              value={cloudPass}
-              onChange={(e) => setCloudPass(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter") handleCloudLogin(); }}
-            />
-            <div className="cloud-login-actions">
-              <button onClick={() => setCloudLoginOpen(false)}>取消</button>
-              <button
-                className="primary"
-                onClick={handleCloudLogin}
-                disabled={!cloudUser || !cloudPass}
-              >
-                登录
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* ============ B2 云端登录弹窗（已移至未登录全屏界面） ============ */}
 
       {/* ============ 删除确认弹窗（图一样式：暗色警告 + 红按钮） ============ */}
       {confirmDel.open && (
