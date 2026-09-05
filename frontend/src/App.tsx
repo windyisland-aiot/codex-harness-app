@@ -985,6 +985,16 @@ export default function App() {
 
   // ------- B2 云端登录 -------
   async function handleCloudLogin() {
+    const isTauriEnv = typeof (window as any).__TAURI__ !== "undefined";
+    // 浏览器开发模式：invoke 不可用，直接 mock 登录成功
+    if (!isTauriEnv) {
+      setStatus("云端登录中…");
+      await new Promise((r) => setTimeout(r, 400));
+      setCloudConnected(true);
+      setCloudMode(true);
+      setStatus("浏览器 mock 模式 · 已登录");
+      return;
+    }
     try {
       setStatus("云端登录中…");
       const result = await codex.cloudLogin({
