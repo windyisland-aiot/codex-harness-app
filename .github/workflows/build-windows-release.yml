@@ -214,8 +214,8 @@ jobs:
             "logs_count=$n" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
           }
 
-      - name: 上传失败日志 artifact（仅 tauri build 非成功时有效，其它事件也传便于比对）
-        if: always() && steps.collect_logs.outputs.logs_count && steps.collect_logs.outcome != 'skipped'
+      - name: 上传失败日志 artifact（仅 tauri build 失败时上传）
+        if: always() && steps.tauri_build.outcome == 'failure' && steps.collect_logs.outputs.logs_count && steps.collect_logs.outcome != 'skipped'
         uses: actions/upload-artifact@v4
         with:
           name: Harness-BuildLogs-${{ steps.version.outputs.version }}
