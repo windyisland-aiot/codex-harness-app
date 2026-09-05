@@ -272,6 +272,7 @@ jobs:
 
       - name: 上传安装包作为 workflow artifact
         uses: actions/upload-artifact@v4
+        continue-on-error: true
         with:
           name: Harness-Installers-${{ steps.version.outputs.version }}
           path: ${{ steps.artifacts.outputs.artifacts_path }}
