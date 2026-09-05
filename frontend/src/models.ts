@@ -57,6 +57,26 @@ export function modelInfo(id: string): ModelEntry {
   return ALL_MODELS.find((m) => m.id === id) ?? ALL_MODELS[0];
 }
 
+/**
+ * 根据 model id 返回对应的品牌 logo 路径（public/logos 下的 svg）。
+ * 模型归属品牌：
+ *   ark-code-latest → volcengine（火山方舟 Auto 路由）
+ *   doubao-*        → doubao（豆包）
+ *   minimax-*       → minimax（MiniMax）
+ *   deepseek-*      → deepseek（深度求索）
+ *   glm-*           → zhipu（智谱）
+ *   kimi-*          → moonshot（月之暗面）
+ */
+export function modelLogo(id: string): string {
+  const base = "/logos";
+  if (id.startsWith("doubao")) return `${base}/doubao.svg`;
+  if (id.startsWith("minimax")) return `${base}/minimax.svg`;
+  if (id.startsWith("deepseek")) return `${base}/deepseek.svg`;
+  if (id.startsWith("glm")) return `${base}/zhipu.svg`;
+  if (id.startsWith("kimi")) return `${base}/moonshot.svg`;
+  return `${base}/volcengine.svg`; // ark-code-latest 等兜底
+}
+
 /** 对外兼容字段 — 纯 model id 列表（旧代码仍引用）。 */
 export const MODEL_IDS: string[] = ALL_MODELS.map((m) => m.id);
 

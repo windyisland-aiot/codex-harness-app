@@ -15,7 +15,7 @@ import type {
   ApprovalRequest,
   ResolvedPaths,
 } from "./codexClient";
-import { ALL_MODELS, modelInfo } from "./models";
+import { ALL_MODELS, modelInfo, modelLogo } from "./models";
 
 // 窗口控制：Tauri 2.x 下优先用 @tauri-apps/api/window 的 getCurrentWindow() 实例方法。
 // 如果 `toggleMaximize` 在个别运行时不存在，退化为 maximize/unmaximize；
@@ -453,6 +453,8 @@ export default function App() {
   const [cloudPass, setCloudPass] = useState("");
   const [cloudStage, setCloudStage] = useState<string | null>(null);
   const cloudSessionRef = useRef<string | null>(null);
+  // 当前选用的云端 skill（不传 = 后端默认；talk-script = 脚本生成工作流）
+  const [selectedSkill, setSelectedSkill] = useState<string>("talk-script");
 
   // ------- T6 模板库抽屉（广告脚本 5 步模板） -------
   const [templateOpen, setTemplateOpen] = useState(false);
@@ -685,6 +687,10 @@ export default function App() {
   const termRef = useRef(terminalLines);
   const msgsListRef = useRef<HTMLDivElement>(null);
   const lastErrMergeRef = useRef<{ text: string; count: number } | null>(null);
+  // 云端会话消息缓存：每个 thread id 对应一份消息历史，切换会话时恢复
+  const sessionMessagesRef = useRef<Record<string, Msg[]>>({});
+  // 正在运行云端 turn 的会话 id（用于把 SSE 事件路由到正确的会话）
+  const runningSessionIdRef = useRef<string | null>(null);
   // Modal 表单状态（放在顶层 hooks 区，不放进 IIFE）
   const [mName, setMName] = useState("");
   const [mTrigger, setMTrigger] = useState("每天 09:00");
@@ -705,6 +711,25 @@ export default function App() {
   useEffect(() => { msgsRef.current = messages; }, [messages]);
   useEffect(() => { approvalsRef.current = approvals; }, [approvals]);
   useEffect(() => { termRef.current = terminalLines; }, [terminalLines]);
+
+  // 会话消息缓存：消息变化时按当前 activeThread 存盘
+  useEffect(() => {
+    const tid = activeThreadRef.current;
+    if (tid) {
+      sessionMessagesRef.current[tid] = messages;
+    }
+  }, [messages]);
+
+  // 切换会话时：从缓存恢复该会话的消息历史
+  useEffect(() => {
+    const tid = activeThread;
+    if (!tid) {
+      setMessages([]);
+      return;
+    }
+    const cached = sessionMessagesRef.current[tid];
+    setMessages(cached ?? []);
+  }, [activeThread]);
 
   useEffect(() => {
     if (typeof document === "undefined") return;
@@ -828,6 +853,7 @@ export default function App() {
           if (e.method === "cloud/turn_completed") {
             setRunning(false); setLastError(null);
             setCloudStage(null);
+            runningSessionIdRef.current = null;
             continue;
           }
           if (e.method === "cloud/error") {
@@ -835,6 +861,7 @@ export default function App() {
             setLastError(msg);
             termAccum.push({ ts: Date.now(), text: `[CLOUD-ERROR] ${msg}`, stream: "stderr" });
             setRunning(false);
+            runningSessionIdRef.current = null;
             continue;
           }
           const stage = codex.cloudStatusStage(e);
@@ -849,16 +876,25 @@ export default function App() {
             setStatus(`云端 · ${stageLabel[stage] || stage}…`);
             continue;
           }
+          // 把云端消息追加到「正在运行的会话」的缓存；若是当前活跃会话则同步刷新 UI
+          const appendCloudMsg = (m: Msg) => {
+            const sid = runningSessionIdRef.current ?? activeThreadRef.current;
+            if (!sid) return;
+            const cur = sessionMessagesRef.current[sid] ?? [];
+            const next = [...cur, m];
+            sessionMessagesRef.current[sid] = next;
+            if (sid === activeThreadRef.current) {
+              setMessages(next);
+            }
+          };
           const intakeQ = codex.cloudIntakeQuestion(e);
           if (intakeQ) {
-            const cur = msgsRef.current;
-            setMessages([...cur, { role: "assistant", text: `📋 **${intakeQ.question}**\n\n_原因：${intakeQ.reason}_` }]);
+            appendCloudMsg({ role: "assistant", text: `📋 **${intakeQ.question}**\n\n_原因：${intakeQ.reason}_` });
             setCloudStage("intake");
             continue;
           }
           const result = codex.cloudResult(e);
           if (result) {
-            const cur = msgsRef.current;
             let resultText = result.script;
             if (result.creative_notes) resultText += `\n\n---\n**创意备注**\n${result.creative_notes}`;
             if (result.issues && result.issues.length > 0) {
@@ -876,7 +912,7 @@ export default function App() {
                 resultText += `\n\n---\n**优化建议**\n` + sugArr.map((s, idx) => `${idx + 1}. ${s}`).join("\n");
               }
             }
-            setMessages([...cur, { role: "assistant", text: resultText }]);
+            appendCloudMsg({ role: "assistant", text: resultText });
             setTerminalLines((prev) => [
               ...prev, { ts: Date.now(), text: `[cloud/result] 脚本已生成（${result.script.length} 字，mode=${result.mode ?? "standard"}）`, stream: "meta" as const },
             ].slice(-500));
@@ -969,8 +1005,6 @@ export default function App() {
   });
   const errCount = terminalLines.filter((l) => l.stream === "stderr").length;
 
-  const presetName = provider || model || "未设置";
-
   // ------- 动作回调 -------
   async function respondApproval(id: number, decision: string) {
     try {
@@ -1056,7 +1090,8 @@ export default function App() {
 
     setPending(true); setInput(""); setLastError(null);
 
-    const next = [...msgsRef.current, { role: "user" as const, text }];
+    const userMsg: Msg = { role: "user", text };
+    const next = [...msgsRef.current, userMsg];
     setMessages(next);
     setTerminalLines((prev) => [
       ...prev, { ts: Date.now(), text: `[user]: ${text.slice(0, 160)}${text.length > 160 ? "…" : ""}`, stream: "meta" as const },
@@ -1069,9 +1104,13 @@ export default function App() {
       if (cloudMode && cloudConnected) {
         setStatus("云端发送中…");
         try {
-          // 创建或复用云端 session
-          if (!cloudSessionRef.current) {
-            const sid = await codex.cloudThreadStart();
+          // 以 activeThread 作为云端 session id；新会话（activeThread 为空）时创建
+          let sid: string = activeThreadRef.current ?? "";
+          if (!sid) {
+            sid = await codex.cloudThreadStart();
+            // 先把用户消息写入新会话缓存，避免 setActiveThread 触发的 load effect 把消息冲掉
+            sessionMessagesRef.current[sid] = next;
+            activeThreadRef.current = sid;
             cloudSessionRef.current = sid;
             setActiveThread(sid);
             setSessions((s) => [...s, {
@@ -1082,12 +1121,17 @@ export default function App() {
             setTerminalLines((prev) => [
               ...prev, { ts: Date.now(), text: `[cloud/session] → ${sid}`, stream: "meta" as const },
             ].slice(-500));
+          } else {
+            // 已有会话：把用户消息追加到该会话缓存
+            sessionMessagesRef.current[sid] = next;
           }
 
           // 发送到云端 codex 桥（SSE 在后台消费）
+          runningSessionIdRef.current = sid;
           await codex.cloudTurnStart({
-            sessionId: cloudSessionRef.current,
+            sessionId: sid,
             text: promptText,
+            brief: selectedSkill ? { skill: selectedSkill } : undefined,
           });
           setTerminalLines((prev) => [
             ...prev, { ts: Date.now(), text: `[cloud/turn] ok，等待 SSE 回流…`, stream: "meta" as const },
@@ -1164,6 +1208,7 @@ export default function App() {
   function newChat() {
     setActiveThread(null); setMessages([]); setApprovals([]); setRunning(false);
     setLastError(null); threadProviderRef.current = null;
+    cloudSessionRef.current = null;
   }
 
   function requestDelete(id: string, title: string) {
@@ -1173,6 +1218,19 @@ export default function App() {
   async function confirmDeleteSession() {
     const { id, title } = confirmDel;
     setConfirmDel({ open: false, id: "", title: "" });
+    // 云端模式：会话由云端维护，本地只清理 UI 状态与缓存
+    if (cloudMode) {
+      delete sessionMessagesRef.current[id];
+      setSessions((prev) => prev.filter((x) => x.id !== id));
+      if (id === activeThread) {
+        activeThreadRef.current = null;
+        cloudSessionRef.current = null;
+        setActiveThread(null);
+        setMessages([]);
+      }
+      setStatus(`已删除「${title}」`);
+      return;
+    }
     try {
       await codex.sessionDelete(codexHome, id);
       setSessions((prev) => prev.filter((x) => x.id !== id));
@@ -1202,6 +1260,16 @@ export default function App() {
   }
 
   async function handleSideSessionClick(id: string) {
+    // 云端模式：会话由云端维护，本地没有 session 文件；直接切换 activeThread，
+    // 消息缓存 effect 会从 sessionMessagesRef 恢复该会话的历史。
+    if (cloudMode) {
+      activeThreadRef.current = id;
+      cloudSessionRef.current = id;
+      setActiveThread(id);
+      setApprovals([]);
+      threadProviderRef.current = null;
+      return;
+    }
     if (!codexHome) return;
     try {
       const d = await codex.sessionGet(codexHome, id);
@@ -1234,8 +1302,7 @@ export default function App() {
         <div className="cloud-login-modal">
           <h2>登录云端 Codex 服务</h2>
           <p className="cloud-login-hint">
-            连接到 bibike 云端脚本生成平台（118.31.107.214），
-            使用你的 bibike 账号登录后即可使用 talk-script 脚本生成 skill。
+            使用你的账号登录后即可开始对话。
           </p>
           <input
             className="cloud-login-input"
@@ -1444,7 +1511,7 @@ export default function App() {
             <div className="user-info">
               <span className="n">{oboUsername || "本机用户"}</span>
               <span className="r" title={status}>
-                {connected ? "在线" : "离线"}
+                {cloudMode ? (cloudConnected ? "在线" : "离线") : (connected ? "在线" : "离线")}
               </span>
             </div>
             <button
@@ -1469,8 +1536,8 @@ export default function App() {
               <span>{sessionTitle}</span>
             </div>
             <div className="crumbs">
-              <span className="model-crumb" title={`${presetName} · ${model}`}>
-                <span className="dot" /> {model}
+              <span className="model-crumb" title={modelInfo(model).name}>
+                <img src={modelLogo(model)} alt="" className="crumb-logo" /> {model}
               </span>
               <button className="tb-icon-btn tiny" title="分享（v0.2 占位）" onClick={() => setStatus("分享：敬请期待（v0.2）")}>{IconShare}</button>
               <button className="tb-icon-btn tiny" title="全屏阅读" onClick={() => setStatus("全屏模式：敬请期待（v0.2）")}>{IconFullscreen}</button>
@@ -1667,7 +1734,7 @@ export default function App() {
             {messages.length === 0 ? (
               <div className="placeholder">
                 <h1 className="hero-title">今天想做什么？</h1>
-                <div className="hero-sub">用自然语言下达任务，Harness 会调用火山方舟 Ark Code 自动完成</div>
+                <div className="hero-sub">用自然语言下达任务，Harness 会自动完成</div>
 
                 <div className="shortcuts">
                   {STARTER_CHIPS.map((c) => (
@@ -1720,7 +1787,7 @@ export default function App() {
           <footer className="composer">
             {/* 主输入栏：左工具 + textarea + 右发送 */}
             <div className="composer-bar">
-              {/* 左侧：📎 多模态附件 / 手动审批 / Auto Mode */}
+              {/* 左侧：📎 多模态附件 / 插件 Skill / 手动审批 / Auto Mode */}
               <div className="bar-left">
                 {/* 📎 多模态附件：图片 / 视频 / 文档 */}
                 <button
@@ -1738,6 +1805,15 @@ export default function App() {
                   style={{ display: "none" }}
                   onChange={onFilesPicked}
                 />
+
+                {/* 插件 / Skill 选择入口 */}
+                <button
+                  className="bar-btn-plus"
+                  title="选择 Skill / 模板"
+                  onClick={() => setTemplateOpen(true)}
+                >
+                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 16.8l-6.2 4.5 2.4-7.4L2 9.4h7.6z"/></svg>
+                </button>
 
                 {/* 访问模式切换：自动审批 ↔ 完全访问 */}
                 <div className="bar-btn-approval-wrap">
@@ -1785,8 +1861,11 @@ export default function App() {
                   <button
                     className="auto-mode-pill"
                     onClick={() => setAutoModeOpen((v) => !v)}
-                    title="切换模型（所有模型统一走火山方舟）"
+                    title={`切换模型 · ${modelInfo(model).name}`}
                   >
+                    <span className="auto-logo">
+                      <img src={modelLogo(model)} alt="" className="auto-logo-img" />
+                    </span>
                     <span className="auto-label">{modelInfo(model).name}</span>
                     <span className="caret" style={{ transform: autoModeOpen ? "rotate(180deg)" : "none", transition: "transform .15s" }}>
                       {IconCaretDown}
@@ -1808,6 +1887,9 @@ export default function App() {
                                 setAutoModeOpen(false);
                               }}
                             >
+                              <span className="auto-item-logo">
+                                <img src={modelLogo(m.id)} alt="" className="auto-item-logo-img" />
+                              </span>
                               <span className="auto-item-name">{m.name}</span>
                               {m.multiModal && <span className="auto-mm-tag" title="支持图片 / 视频 / 文档">多模态</span>}
                               {isActive && <span className="auto-item-check">✓</span>}
@@ -1968,9 +2050,29 @@ export default function App() {
         <div className="modal-backdrop" onClick={() => setTemplateOpen(false)}>
           <div className="tpl-panel" onClick={(e) => e.stopPropagation()}>
             <div className="tpl-head">
-              <h2>模板库</h2>
+              <h2>模板库 / Skill</h2>
               <button className="sp-close" onClick={() => setTemplateOpen(false)}>×</button>
             </div>
+
+            {/* Skill 选择 */}
+            <div className="tpl-skill-row">
+              <span className="tpl-skill-label">工作流</span>
+              <div className="tpl-skill-opts">
+                {[
+                  { id: "talk-script", label: "脚本生成" },
+                  { id: "", label: "自由对话" },
+                ].map((s) => (
+                  <button
+                    key={s.id || "free"}
+                    className={`tpl-skill-opt ${selectedSkill === s.id ? "on" : ""}`}
+                    onClick={() => setSelectedSkill(s.id)}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
             <p className="sp-desc" style={{ marginTop: 0 }}>
               选一个模板填入输入框，直接开始任务。
             </p>
@@ -2010,8 +2112,7 @@ export default function App() {
           <div className="onboarding-inner">
             <h1>欢迎使用 Harness AI 工作台</h1>
             <div className="sub">
-              你的本地 Agent 工作台，Work/Code/Design 三模式切换，
-              火山方舟 Ark Code 已预置为默认模型。
+              你的本地 Agent 工作台，Work/Code/Design 三模式切换。
             </div>
             <div className="steps">
               <div className={`step ${onboardingStep >= 1 ? "done" : onboardingStep === 0 ? "now" : ""}`} />
@@ -2023,12 +2124,9 @@ export default function App() {
               <div className="onboarding-card">
                 <h3>工具 · 默认模型已就绪</h3>
                 <p>
-                  火山方舟 Ark Code（<code>ark-code-latest</code>）已被设为默认模型，
-                  API Key 由后端内嵌网关持有，可直接开箱使用。
-                  你稍后可以在「设置」中切换到其他厂商。
+                  已预置默认模型，可直接开箱使用。
+                  你稍后可以在输入栏切换其他模型。
                 </p>
-                <div className="ok">· 内嵌 Ark 网关 127.0.0.1:18762 转发真实 Ark 端点</div>
-                <div className="ok">· wire_api: responses（Codex 新版协议）</div>
               </div>
             )}
 
@@ -2043,7 +2141,7 @@ export default function App() {
                   </div>
                   <div>
                     <label>自定义 API Key（可选，留空则使用预置）</label>
-                    <input type="password" value={oboKey} onChange={(e) => setOboKey(e.target.value)} placeholder="自定义火山方舟 API Key（后期替换用）" />
+                    <input type="password" value={oboKey} onChange={(e) => setOboKey(e.target.value)} placeholder="自定义 API Key（可选）" />
                   </div>
                 </div>
               </div>

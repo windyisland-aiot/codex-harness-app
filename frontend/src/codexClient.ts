@@ -708,6 +708,8 @@ export interface CloudHealthResult {
 }
 
 export interface CloudBrief {
+  /** 选用的 skill / 工作流标识，如 "talk-script"；不传则由后端默认处理。 */
+  skill?: string;
   target_audience?: string;
   primary_selling_point?: string;
   duration_seconds?: number;
