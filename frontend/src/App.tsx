@@ -763,7 +763,7 @@ export default function App() {
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         if (!cancelled) {
-          const isTauri = typeof (window as any).__TAURI__ !== "undefined";
+          const isTauri = (typeof (window as any).__TAURI_INTERNALS__ !== "undefined" || typeof (window as any).__TAURI__ !== "undefined");
           if (!isTauri) {
             setPaths({
               codexHome: "/tmp/harness-dev/codex-home",
@@ -985,7 +985,7 @@ export default function App() {
 
   // ------- B2 云端登录 -------
   async function handleCloudLogin() {
-    const isTauriEnv = typeof (window as any).__TAURI__ !== "undefined";
+    const isTauriEnv = (typeof (window as any).__TAURI_INTERNALS__ !== "undefined" || typeof (window as any).__TAURI__ !== "undefined");
     // 浏览器开发模式：invoke 不可用，直接 mock 登录成功
     if (!isTauriEnv) {
       setStatus("云端登录中…");
@@ -1029,7 +1029,7 @@ export default function App() {
     if (!cloudMode && !connected) { setStatus("本地 codex 尚未就绪，请稍后"); return; }
 
     // ---- 浏览器开发 mock 模式 ----
-    const isTauriEnv = typeof (window as any).__TAURI__ !== "undefined";
+    const isTauriEnv = (typeof (window as any).__TAURI_INTERNALS__ !== "undefined" || typeof (window as any).__TAURI__ !== "undefined");
     if (!isTauriEnv) {
       setPending(true); setInput(""); setLastError(null);
       const next = [...msgsRef.current, { role: "user" as const, text }];
