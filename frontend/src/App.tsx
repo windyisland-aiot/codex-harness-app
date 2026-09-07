@@ -453,8 +453,8 @@ export default function App() {
   const [cloudPass, setCloudPass] = useState("");
   const [cloudStage, setCloudStage] = useState<string | null>(null);
   const cloudSessionRef = useRef<string | null>(null);
-  // 当前选用的云端 skill（不传 = 后端默认；talk-script = 脚本生成工作流）
-  const [selectedSkill, setSelectedSkill] = useState<string>("talk-script");
+  // 当前选用的云端 skill（空字符串 = 自由对话；talk-script = 脚本生成工作流）
+  const [selectedSkill, setSelectedSkill] = useState<string>("");
 
   // ------- T6 模板库抽屉（广告脚本 5 步模板） -------
   const [templateOpen, setTemplateOpen] = useState(false);
@@ -508,6 +508,8 @@ export default function App() {
     const t = TEMPLATES.find((x) => x.id === id);
     if (!t) return;
     setInput((prev) => (prev.trim() ? `${prev}\n\n${t.prompt}` : t.prompt));
+    // 广告脚本模板自动选用脚本生成工作流
+    if (id === "ad_script") setSelectedSkill("talk-script");
     setTemplateOpen(false);
     setStatus(`已应用模板：${t.title}`);
   };
@@ -1936,6 +1938,15 @@ export default function App() {
             <div className="composer-meta">
               <div className="meta-left">
                 <span className="status-chip" title={status}>{status}</span>
+                {selectedSkill ? (
+                  <span className="skill-chip" title="当前工作流（点击模板库切换）">
+                    ✨ {selectedSkill === "talk-script" ? "脚本生成" : selectedSkill}
+                  </span>
+                ) : (
+                  <span className="skill-chip skill-free" title="自由对话（点击模板库可选用工作流）">
+                    💬 自由对话
+                  </span>
+                )}
                 {cloudStage && (
                   <span className="cloud-stage-chip" title={`云端阶段：${cloudStage}`}>
                     {cloudStage === "intake" ? "📋 采集" : cloudStage === "retrieving" ? "🔍 检索" : cloudStage === "generating" ? "✍️ 生成" : cloudStage === "guard" ? "🛡️ 守卫" : cloudStage}
