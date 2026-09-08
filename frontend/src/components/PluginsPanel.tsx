@@ -174,7 +174,7 @@ export default function PluginsPanel({
         bundledSkillsEnabled: l.bundledSkillsEnabled,
         skillsIncludeInstructions: l.skillsIncludeInstructions,
       });
-      onStatus("技能/插件配置已保存（重启 app-server 生效）");
+      onStatus("配置已保存");
     } catch (e: any) {
       onStatus(`保存失败: ${e?.message ?? e}`);
     } finally {
@@ -479,9 +479,8 @@ export default function PluginsPanel({
               )}
 
               <p className="cfg-hint" style={{ marginTop: 4 }}>
-                插件/技能统一存储在安装目录 <code style={{ fontFamily: "var(--mono)" }}>{codexHome}/skills</code> 与
+                存储位置：<code style={{ fontFamily: "var(--mono)" }}>{codexHome}/skills</code>、
                 <code style={{ fontFamily: "var(--mono)", marginLeft: 4 }}>{codexHome}/plugins</code>
-                。改动写回 config.toml，重启 app-server 后生效。
               </p>
             </>
           )}
@@ -492,7 +491,7 @@ export default function PluginsPanel({
               <div className="plg-toolbar">
                 <input
                   className="plg-search"
-                  placeholder="搜索云端可下载的 skill / 插件（名称、描述、标签）…"
+                  placeholder="搜索云端 skill / 插件…"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                 />
@@ -509,11 +508,10 @@ export default function PluginsPanel({
 
               {cloudOk === false && (
                 <div className="cfg-empty" style={{ textAlign: "left" }}>
-                  ⚠️ 无法连接到云端服务器 <b>118.31.107.214</b>。
+                  ⚠️ 无法连接服务器
                   <br />
                   <span style={{ color: "var(--text-secondary)" }}>
-                    原因：{cloudMsg || "网络不通 / 服务未启动"}。请检查网络，或在服务端开放插件市场接口（
-                    <code style={{ fontFamily: "var(--mono)" }}>/api/v1/market</code>）。
+                    {cloudMsg || "网络不通 / 服务未启动"}
                   </span>
                 </div>
               )}
@@ -521,7 +519,7 @@ export default function PluginsPanel({
               {cloudOk !== false && filteredCloud.length === 0 && (
                 <div className="cfg-empty">
                   {cloudItems.length === 0
-                    ? "云端市场暂无可用内容。请在 bibike 后台管理端添加插件/技能后再刷新。"
+                    ? "云端暂无可用内容，请在服务端后台导入后刷新。"
                     : search
                     ? `云端未找到匹配「${search}」的项。`
                     : "没有匹配项。"}
@@ -591,14 +589,8 @@ export default function PluginsPanel({
                 <div className="plg-import-icon">📦</div>
                 <div className="plg-import-title">导入本地 Skill 或 插件</div>
                 <div className="plg-import-desc">
-                  支持两类格式：
-                  <br />
-                  ① 目录：根目录下含 <code style={{ fontFamily: "var(--mono)" }}>SKILL.md</code>（skill）
-                  或 <code style={{ fontFamily: "var(--mono)" }}>plugin.toml</code>（插件）。
-                  <br />
-                  ② ZIP 压缩包：打包时把整个 skill/插件 目录压缩为 .zip。
-                  <br />
-                  导入后会自动复制到安装目录并启用，可在「已安装」页查看。
+                  支持目录（含 <code style={{ fontFamily: "var(--mono)" }}>SKILL.md</code> 或{" "}
+                  <code style={{ fontFamily: "var(--mono)" }}>plugin.toml</code>）与 ZIP 压缩包，导入后自动启用。
                 </div>
               </div>
 
@@ -655,10 +647,8 @@ export default function PluginsPanel({
                     }}
                   />
                   <p className="cfg-hint" style={{ marginTop: 6 }}>
-                    ① 直接粘贴本地文件管理器中的完整路径即可。
-                    <br />
-                    ② 目标是安装目录下的 <code style={{ fontFamily: "var(--mono)" }}>{codexHome}/skills</code> 或{" "}
-                    <code style={{ fontFamily: "var(--mono)" }}>{codexHome}/plugins</code>。
+                    粘贴本地完整路径即可，将安装到{" "}
+                    <code style={{ fontFamily: "var(--mono)" }}>{codexHome}/skills</code>。
                   </p>
                 </div>
 

@@ -23,14 +23,14 @@ interface Dec {
 const DECISIONS_COMMAND: Dec[] = [
   { value: "accept",            idx: "1", label: "仅本次运行",   hint: "只允许这一条命令，下一条再问" },
   { value: "acceptForSession",  idx: "2", label: "本次会话允许", hint: "当前会话中相同命令直接通过" },
-  { value: "acceptForSession",  idx: "3", label: "始终允许",     hint: "v0.4 当前版本等价于「本次会话允许」" },
+  { value: "acceptForSession",  idx: "3", label: "始终允许",     hint: "等价于本次会话允许" },
   { value: "decline",           idx: "4", label: "拒绝执行",     hint: "不执行该命令", danger: true },
 ];
 
 const DECISIONS_FILE: Dec[] = [
   { value: "accept",            idx: "1", label: "仅本次修改",   hint: "只接受这次文件改动" },
   { value: "acceptForSession",  idx: "2", label: "本次会话允许", hint: "当前会话同类写入直接通过" },
-  { value: "acceptForSession",  idx: "3", label: "始终允许",     hint: "v0.4 当前版本等价于「本次会话允许」" },
+  { value: "acceptForSession",  idx: "3", label: "始终允许",     hint: "等价于本次会话允许" },
   { value: "decline",           idx: "4", label: "拒绝修改",     hint: "不写入，丢弃 patch", danger: true },
 ];
 
@@ -102,6 +102,7 @@ function IconArrow() {
 export default function ApprovalPanel({
   approvals,
   onRespond,
+  onApproveAll,
   // hideHeader 为占位 prop：ToolPanel 传 true 以便后续扩展（外层已有 Tab 头部），
   // 当前版本卡片形态在外层弹窗/抽屉均无额外差异，保留接口以避免类型报错。
   hideHeader: _hideHeader,
@@ -109,6 +110,8 @@ export default function ApprovalPanel({
 }: {
   approvals: ApprovalRequest[];
   onRespond: (id: number, decision: string) => void;
+  /** 一次批准队列里全部请求，并切换到完全访问模式。 */
+  onApproveAll?: () => void;
   /** 内嵌在 ToolPanel 抽屉时为 true（外层已有 Tab 标题），审批弹窗里不传。 */
   hideHeader?: boolean;
   /** 若提供，则每张审批卡片上会出现「提交至飞书审批」按钮。 */
@@ -148,15 +151,20 @@ export default function ApprovalPanel({
     return (
       <div style={{ padding: "40px 12px", textAlign: "center", color: "var(--text-muted)", fontSize: 13 }}>
         暂无需审批的操作
-        <div style={{ marginTop: 6, fontSize: 12, opacity: 0.8 }}>
-          Agent 执行命令 / 修改文件时会在这里请求确认
-        </div>
       </div>
     );
   }
 
   return (
     <div className="tw-approval-stack">
+      {onApproveAll && approvals.length > 0 && (
+        <div className="tw-a-bulk">
+          <span>待批准 {approvals.length} 条</span>
+          <button className="tw-a-bulk-btn" onClick={onApproveAll}>
+            全部允许（切换完全访问）
+          </button>
+        </div>
+      )}
       {approvals.map((a) => {
         const s = summarize(a);
         const hov = hoveredIdx[String(a.id)];
@@ -232,7 +240,7 @@ export default function ApprovalPanel({
                       className="tw-a-feishu-btn"
                       onClick={(e) => { e.stopPropagation(); sendToFeishu(a); }}
                     >
-                      📨 提交至飞书审批（T22）
+                      📨 提交至飞书审批
                     </button>
                   );
                 })()}

@@ -257,11 +257,34 @@ const BADGE_LABEL: Record<SessionStatus, string> = {
   error: "出错",
 };
 
-const STARTER_CHIPS = [
-  { title: "解释代码库", text: "帮我分析当前工作目录的代码结构并生成一个 README 摘要" },
-  { title: "写测试", text: "为最近修改过的文件生成单元测试并运行" },
-  { title: "调试修复", text: "运行项目测试套件，若有失败请定位原因并修复" },
-  { title: "构建发布", text: "执行打包构建，生成产物并说明部署步骤" },
+/** 欢迎页推荐入口：围绕飞书 / 影刀 / 脚本生成等实际业务场景。 */
+const STARTER_CHIPS: Array<{
+  title: string;
+  desc: string;
+  text: string;
+  skill?: string;
+}> = [
+  {
+    title: "飞书审批推送",
+    desc: "把结果写入多维表格并提交审批",
+    text: "把这次的产出写入飞书多维表格，并向指定审批人提交一条飞书审批，说明里带上标题和正文预览。",
+  },
+  {
+    title: "影刀 RPA 集成",
+    desc: "生成影刀流程参数并触发执行",
+    text: "帮我准备影刀 RPA 的流程入参（JSON），然后调用影刀接口触发对应流程，并回报执行结果。",
+  },
+  {
+    title: "广告脚本生成",
+    desc: "检索品牌话术 → 初稿 → 润色定稿",
+    text: "帮我生成一条广告口播脚本：先检索品牌话术与历史案例，再出 3 版初稿，最后挑一版按品牌语气润色定稿。",
+    skill: "talk-script",
+  },
+  {
+    title: "本地文件整理",
+    desc: "读写本地目录、批量处理文档",
+    text: "帮我整理当前工作目录下的文档：列出结构、找出重复与过期文件，并给出清理建议。",
+  },
 ];
 
 /* =============================================================
@@ -454,62 +477,34 @@ export default function App() {
   // 当前选用的 skill（空 = 自由对话；talk-script = 脚本生成工作流，SKILL.md 在本地）
   const [selectedSkill, setSelectedSkill] = useState<string>("");
 
-  // ------- T6 模板库抽屉（广告脚本 5 步模板） -------
-  const [templateOpen, setTemplateOpen] = useState(false);
-  type TemplateId = "ad_script" | "manual_summarize_weekly";
-  const TEMPLATES: Array<{
-    id: TemplateId;
-    icon: string;
-    title: string;
-    subtitle: string;
-    prompt: string;
-    tag?: string;
-  }> = [
-    {
-      id: "ad_script",
-      icon: "🎬",
-      title: "广告脚本生成（RAG → LLM × 2 → Bitable → 飞书审批）",
-      subtitle: "5 步协同工作流：品牌话术检索 → 初稿 → 润色 → 写 Bitable → 提单审批",
-      tag: "T21 · AdScriptWorkflow",
-      prompt: [
-        "【广告脚本生成工作流 · 5 步】",
-        "",
-        "【第 1 步 · 检索知识库】请调用 RAG 检索：品牌话术、竞品分析、历史脚本案例，关键词提取自 brief（品牌 / 品类 / 卖点）。",
-        "",
-        "【第 2 步 · 生成初稿】基于 brief + 第 1 步检索到的参考片段，输出 3 套广告脚本（每条 <= 180 字，包含：Hook、卖点、CTA）。",
-        "",
-        "【第 3 步 · 润色定稿】挑出最佳的 1 条，按品牌语气进行润色；输出「脚本标题 / 最终稿 / 可选 B 版 / 拍摄建议」四段结构。",
-        "",
-        "【第 4 步 · 写入飞书多维表格】把第 3 步结果写入多维表格：字段 = {品牌、品类、脚本标题、脚本正文、拍摄建议、创建时间、状态=draft}。",
-        "",
-        "【第 5 步 · 飞书审批提单】对上述脚本执行「提交飞书审批」：审批说明包含脚本标题与正文预览；审批通过后状态置 approved。",
-        "",
-        "请开始执行工作流。",
-      ].join("\n"),
-    },
-    {
-      id: "manual_summarize_weekly",
-      icon: "📊",
-      title: "周报/总结助手",
-      subtitle: "通用工作周报模板，按：本周产出 / 风险与阻塞 / 下周计划 三段输出",
-      prompt: [
-        "请帮我生成一份本周工作周报，按三段结构整理：",
-        "1. 本周产出（3-8 条，动宾开头）",
-        "2. 风险与阻塞（如无则写「无」）",
-        "3. 下周计划（3-5 条）",
-        "以下是我的本周零散记录（可补充具体条目）：",
-        "……",
-      ].join("\n"),
-    },
-  ];
-  const applyTemplate = (id: TemplateId) => {
-    const t = TEMPLATES.find((x) => x.id === id);
-    if (!t) return;
-    setInput((prev) => (prev.trim() ? `${prev}\n\n${t.prompt}` : t.prompt));
-    // 广告脚本模板自动选用脚本生成工作流
-    if (id === "ad_script") setSelectedSkill("talk-script");
-    setTemplateOpen(false);
-    setStatus(`已应用模板：${t.title}`);
+  // ------- Skill 选择器（composer 左侧「工作流」按钮） -------
+  // 列表来自本地安装目录扫描（<codexHome>/skills 下的 SKILL.md），
+  // 服务端导入的 skill 经「插件管理 → 云端市场」下载后即出现在这里。
+  const [skillMenuOpen, setSkillMenuOpen] = useState(false);
+  const [skillOptions, setSkillOptions] = useState<Array<{ id: string; label: string; desc: string }>>([]);
+  const [skillLoading, setSkillLoading] = useState(false);
+
+  async function loadSkillOptions(home: string) {
+    if (!home) return;
+    setSkillLoading(true);
+    try {
+      const list = await codex.pluginsList({ codexHome: home, skillRoots: [], pluginRoots: [] });
+      setSkillOptions(
+        list.skills
+          .filter((sk) => sk.enabled)
+          .map((sk) => ({ id: sk.name, label: sk.name, desc: sk.description || "" })),
+      );
+    } catch {
+      setSkillOptions([]);
+    } finally {
+      setSkillLoading(false);
+    }
+  }
+
+  const skillLabel = (id: string) => {
+    if (!id) return "自由对话";
+    const hit = skillOptions.find((sk) => sk.id === id);
+    return hit?.label ?? id;
   };
 
   // ------- Trae Work v5：左栏 collapsed、终端输出、浏览器 URL -------
@@ -519,7 +514,12 @@ export default function App() {
   >([]);
   const [logOpen, setLogOpen] = useState(false);
   const [confirmDel, setConfirmDel] = useState<{ open: boolean; id: string; title: string }>({ open: false, id: "", title: "" });
-  const [accessMode, setAccessMode] = useState<"auto" | "full">("auto");
+  // 审批模式：auto=逐条弹窗确认；full=完全访问（自动批准）。
+  // 持久化，避免每次重启又退回逐条确认。
+  const [accessMode, setAccessMode] = useState<"auto" | "full">(() => {
+    if (typeof window === "undefined") return "auto";
+    return window.localStorage.getItem("harness.accessMode") === "full" ? "full" : "auto";
+  });
   const [automationOpen, setAutomationOpen] = useState(false);
   const [autoTab, setAutoTab] = useState<"configured" | "templates" | "history">("configured");
   const [showNewTaskModal, setShowNewTaskModal] = useState(false);
@@ -684,6 +684,9 @@ export default function App() {
   const msgsRef = useRef<Msg[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const approvalsRef = useRef<ApprovalRequest[]>([]);
+  // 轮询 interval 闭包捕获的是创建时的 accessMode，改用 ref 读最新值，
+  // 否则切到「完全访问」后仍按旧模式挂起审批。
+  const accessModeRef = useRef<"auto" | "full">(accessMode);
   const termRef = useRef(terminalLines);
   const msgsListRef = useRef<HTMLDivElement>(null);
   const lastErrMergeRef = useRef<{ text: string; count: number } | null>(null);
@@ -708,6 +711,10 @@ export default function App() {
   useEffect(() => { activeThreadRef.current = activeThread; }, [activeThread]);
   useEffect(() => { msgsRef.current = messages; }, [messages]);
   useEffect(() => { approvalsRef.current = approvals; }, [approvals]);
+  useEffect(() => {
+    accessModeRef.current = accessMode;
+    if (typeof window !== "undefined") window.localStorage.setItem("harness.accessMode", accessMode);
+  }, [accessMode]);
   useEffect(() => { termRef.current = terminalLines; }, [terminalLines]);
 
   // 会话消息缓存：消息变化时按当前 activeThread 存盘
@@ -718,7 +725,9 @@ export default function App() {
     }
   }, [messages]);
 
-  // 切换会话时：从缓存恢复该会话的消息历史
+  // 切换会话时：从缓存恢复该会话的消息历史。
+  // 缓存缺失时保持现状而非清空——新建会话拿到 id 的瞬间缓存可能还没落，
+  // 直接清空会把用户刚发的消息抹掉。
   useEffect(() => {
     const tid = activeThread;
     if (!tid) {
@@ -726,7 +735,7 @@ export default function App() {
       return;
     }
     const cached = sessionMessagesRef.current[tid];
-    setMessages(cached ?? []);
+    if (cached) setMessages(cached);
   }, [activeThread]);
 
   useEffect(() => {
@@ -955,12 +964,31 @@ export default function App() {
     const t = setInterval(async () => {
       try {
         const list = await codex.pollApprovals();
-        if (list.length > 0) {
-          setApprovals((prev) => {
-            const seen = new Set(prev.map((a) => a.id));
-            return [...prev, ...list.filter((a) => !seen.has(a.id))];
-          });
+        if (list.length === 0) return;
+
+        // 完全访问：直接回 acceptForSession，不入 UI 队列。
+        // 之前只是隐藏面板而不应答，codex 会一直等审批 → 表现为「允许全部无效」。
+        if (accessModeRef.current === "full") {
+          for (const item of list) {
+            try {
+              await codex.respondApproval(item.id, "acceptForSession");
+            } catch (e) {
+              const msg = e instanceof Error ? e.message : String(e);
+              setTerminalLines((prev) => [
+                ...prev, { ts: Date.now(), text: `[审批 #${item.id}] 自动批准失败: ${msg}`, stream: "stderr" as const },
+              ].slice(-500));
+            }
+          }
+          setTerminalLines((prev) => [
+            ...prev, { ts: Date.now(), text: `[审批] 完全访问模式，已自动批准 ${list.length} 条`, stream: "meta" as const },
+          ].slice(-500));
+          return;
         }
+
+        setApprovals((prev) => {
+          const seen = new Set(prev.map((a) => a.id));
+          return [...prev, ...list.filter((a) => !seen.has(a.id))];
+        });
       } catch { /* 静默 */ }
     }, POLL_MS);
     return () => clearInterval(t);
@@ -983,6 +1011,36 @@ export default function App() {
         { ts: Date.now(), text: `[审批 #${id}] ${decision}`, stream: "meta" as const },
       ].slice(-500));
     } catch (e) { setStatus(`审批回复失败: ${e}`); }
+  }
+
+  /** 批准当前队列里的全部待审批项，并切到完全访问模式。 */
+  async function approveAllAndGoFull() {
+    const current = approvalsRef.current;
+    let failed = 0;
+    for (const a of current) {
+      try {
+        await codex.respondApproval(a.id, "acceptForSession");
+      } catch {
+        failed += 1;
+      }
+    }
+    setApprovals([]);
+    setApprovalOpen(false);
+    setAccessMode("full");
+    accessModeRef.current = "full";
+    setTerminalLines((prev) => [
+      ...prev,
+      {
+        ts: Date.now(),
+        text: `[审批] 已批准 ${current.length - failed}/${current.length} 条并切换为完全访问`,
+        stream: "meta" as const,
+      },
+    ].slice(-500));
+    setStatus(
+      failed > 0
+        ? `完全访问已开启，但有 ${failed} 条批准失败（可能已过期）`
+        : "已切换为完全访问模式，后续操作自动批准",
+    );
   }
 
   // ------- 登录（登录成功后拉起本地 codex） -------
@@ -1092,6 +1150,10 @@ ${promptText}` : promptText;
           const nid = await codex.threadStart({ model, modelProvider: provider, cwd });
           threadId = nid;
           threadProviderRef.current = provider;
+          // 先把本轮消息写进新会话的缓存并同步 ref，否则 setActiveThread 触发的
+          // 恢复 effect 会读到空缓存，把刚发出的用户消息清掉（新建对话后不跳转的根因）。
+          sessionMessagesRef.current[nid] = next;
+          activeThreadRef.current = nid;
           setActiveThread(nid);
           setSessions((s) => [...s, {
             id: nid,
@@ -1333,12 +1395,6 @@ ${promptText}` : promptText;
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8.11 2.79a3 3 0 0 1 4.24 4.24 3 3 0 0 1 4.24 4.24 3 3 0 0 1 4.62 4.62z"/></svg>
               </span>
               <span>插件管理</span>
-            </button>
-            <button className="sb-menu-item" onClick={() => setTemplateOpen(true)}>
-              <span className="ic-wrap bl">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="13" x2="15" y2="13"/><line x1="9" y1="17" x2="15" y2="17"/></svg>
-              </span>
-              <span>模板库</span>
             </button>
             <button className={`sb-menu-item ${automationOpen ? "active" : ""}`} onClick={() => setAutomationOpen((v) => !v)}>
               <span className="ic-wrap yl">
@@ -1629,39 +1685,36 @@ ${promptText}` : promptText;
             </div>
           ) : (<>
 
-          {/* 有审批待处理且在自动模式时 → 审批界面替代对话框 */}
-          {approvals.length > 0 && accessMode === "auto" ? (
-            <section className="msglist" style={{ display: "flex", alignItems: "flex-start", justifyContent: "center", padding: "40px 24px" }}>
-              <div style={{ width: "100%", maxWidth: 560 }}>
-                <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 14, display: "flex", alignItems: "center", gap: 8 }}>
-                  <span style={{ width: 8, height: 8, borderRadius: 4, background: "#F59E0B", display: "inline-block", animation: "pulse 1.4s infinite" }} />
-                  等待审批（{approvals.length} 条）
-                </div>
-                <ApprovalPanel
-                  approvals={approvals}
-                  onRespond={(id, dec) => respondApproval(id, dec)}
-                />
-                <div style={{ marginTop: 16, fontSize: 12, color: "var(--text-muted)" }}>
-                  提示：想让后续操作自动执行？点击左下角的「自动审批」切换为「完全访问」模式。
-                </div>
-              </div>
-            </section>
-          ) : (
           <section className="msglist" ref={msgsListRef}>
+            {/* 审批提示条：不再顶掉对话内容，点击进入审批弹窗 */}
+            {approvals.length > 0 && accessMode === "auto" && (
+              <div className="approval-banner" onClick={() => setApprovalOpen(true)}>
+                <span className="ab-dot" />
+                <span className="ab-text">有 {approvals.length} 条操作等待批准</span>
+                <button className="ab-btn" onClick={(e) => { e.stopPropagation(); setApprovalOpen(true); }}>去处理</button>
+                <button
+                  className="ab-btn ab-btn-ghost"
+                  onClick={(e) => { e.stopPropagation(); void approveAllAndGoFull(); }}
+                >全部允许</button>
+              </div>
+            )}
             {messages.length === 0 ? (
               <div className="placeholder">
                 <h1 className="hero-title">今天想做什么？</h1>
-                <div className="hero-sub">用自然语言下达任务，Harness 会自动完成</div>
 
                 <div className="shortcuts">
                   {STARTER_CHIPS.map((c) => (
                     <div
                       key={c.title}
                       className="chip"
-                      onClick={() => { setInput(c.text); }}
+                      title={c.text}
+                      onClick={() => {
+                        setInput(c.text);
+                        setSelectedSkill(c.skill ?? "");
+                      }}
                     >
                       <div style={{ fontWeight: 600, marginBottom: 4 }}>{c.title}</div>
-                      <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>{c.text}</div>
+                      <div style={{ fontSize: 12, color: "var(--text-muted)", lineHeight: 1.5 }}>{c.desc}</div>
                     </div>
                   ))}
                 </div>
@@ -1698,7 +1751,6 @@ ${promptText}` : promptText;
               </>
             )}
           </section>
-          )}
 
           {/* 发送器 composer · v0.6.0 新布局 */}
           <footer className="composer">
@@ -1723,23 +1775,66 @@ ${promptText}` : promptText;
                   onChange={onFilesPicked}
                 />
 
-                {/* 插件 / Skill 选择入口 */}
-                <button
-                  className="bar-btn-plus"
-                  title="选择 Skill / 模板"
-                  onClick={() => setTemplateOpen(true)}
-                >
-                  <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 16.8l-6.2 4.5 2.4-7.4L2 9.4h7.6z"/></svg>
-                </button>
+                {/* 插件 / Skill 选择：下拉列出本地已启用的 skill */}
+                <div className="skill-pick-wrap">
+                  <button
+                    className={`bar-btn-plus ${selectedSkill ? "is-on" : ""}`}
+                    title={selectedSkill ? `当前工作流：${skillLabel(selectedSkill)}` : "选择工作流 / 插件"}
+                    onClick={() => {
+                      const next = !skillMenuOpen;
+                      setSkillMenuOpen(next);
+                      if (next) loadSkillOptions(codexHome);
+                    }}
+                  >
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 16.8l-6.2 4.5 2.4-7.4L2 9.4h7.6z"/></svg>
+                  </button>
+                  {skillMenuOpen && (
+                    <>
+                      <div className="auto-mode-backdrop" onClick={() => setSkillMenuOpen(false)} />
+                      <div className="skill-pick-menu">
+                        <div className="auto-group-label">工作流 / 插件</div>
+                        <button
+                          className={`auto-item ${selectedSkill === "" ? "active" : ""}`}
+                          onClick={() => { setSelectedSkill(""); setSkillMenuOpen(false); }}
+                        >
+                          <span className="auto-item-name skill-pick-name">自由对话</span>
+                          {selectedSkill === "" && <span className="auto-item-check">✓</span>}
+                        </button>
+                        {skillOptions.map((sk) => (
+                          <button
+                            key={sk.id}
+                            className={`auto-item ${selectedSkill === sk.id ? "active" : ""}`}
+                            title={sk.desc}
+                            onClick={() => { setSelectedSkill(sk.id); setSkillMenuOpen(false); }}
+                          >
+                            <span className="auto-item-name skill-pick-name">{sk.label}</span>
+                            {selectedSkill === sk.id && <span className="auto-item-check">✓</span>}
+                          </button>
+                        ))}
+                        {!skillLoading && skillOptions.length === 0 && (
+                          <div className="skill-pick-empty">
+                            未检测到已启用的 skill
+                            <button
+                              className="skill-pick-link"
+                              onClick={() => { setSkillMenuOpen(false); setPluginsOpen(true); }}
+                            >去插件管理安装</button>
+                          </div>
+                        )}
+                        {skillLoading && <div className="skill-pick-empty">扫描中…</div>}
+                      </div>
+                    </>
+                  )}
+                </div>
 
                 {/* 访问模式切换：自动审批 ↔ 完全访问 */}
                 <div className="bar-btn-approval-wrap">
                   <button
                     className={`bar-btn-approval ${accessMode === "full" ? "is-full" : ""}`}
                     onClick={() => {
-                      const next: "auto" | "full" = accessMode === "auto" ? "full" : "auto";
-                      setAccessMode(next);
-                      setStatus(next === "full" ? "已切换为完全访问模式" : "已切换回自动审批模式");
+                      if (accessMode === "auto") { void approveAllAndGoFull(); return; }
+                      setAccessMode("auto");
+                      accessModeRef.current = "auto";
+                      setStatus("已切换回自动审批模式");
                     }}
                     title={accessMode === "auto" ? "当前：自动审批（有操作时会弹窗请你批准）" : "当前：完全访问（自动批准所有操作）"}
                   >
@@ -1853,15 +1948,13 @@ ${promptText}` : promptText;
             <div className="composer-meta">
               <div className="meta-left">
                 <span className="status-chip" title={status}>{status}</span>
-                {selectedSkill ? (
-                  <span className="skill-chip" title="当前工作流（点击模板库切换）">
-                    ✨ {selectedSkill === "talk-script" ? "脚本生成" : selectedSkill}
-                  </span>
-                ) : (
-                  <span className="skill-chip skill-free" title="自由对话（点击模板库可选用工作流）">
-                    💬 自由对话
-                  </span>
-                )}
+                <span
+                  className={`skill-chip ${selectedSkill ? "" : "skill-free"}`}
+                  title="点击切换工作流"
+                  onClick={() => { setSkillMenuOpen(true); loadSkillOptions(codexHome); }}
+                >
+                  {selectedSkill ? `✨ ${skillLabel(selectedSkill)}` : "💬 自由对话"}
+                </span>
                 {errCount > 0 && (
                   <span className="err-chip" title="有错误，点击日志查看详情">
                     ⚠ {errCount}
@@ -1918,7 +2011,7 @@ ${promptText}` : promptText;
       </div>
 
       {/* ============ 审批浮层（右下角） ============ */}
-      {approvals.length > 0 && !approvalOpen && (
+      {approvals.length > 0 && accessMode === "auto" && !approvalOpen && (
         <div className="approval-toast">
           <div className="at-card">
             <div className="at-title">
@@ -1928,18 +2021,15 @@ ${promptText}` : promptText;
               <button className="btn sm" onClick={() => setApprovalOpen(true)}>查看</button>
               <button
                 className="btn sm primary"
-                onClick={() => {
-                  // 一键 accept 最旧的一条
-                  if (approvals[0]) respondApproval(approvals[0].id, "accept");
-                }}
-              >允许最旧</button>
+                onClick={() => void approveAllAndGoFull()}
+              >全部允许</button>
             </div>
           </div>
         </div>
       )}
 
       {/* ============ 审批弹窗（Trae Work 图一风格，直接嵌入 styled ApprovalPanel） ============ */}
-      {approvalOpen && (
+      {approvalOpen && approvals.length > 0 && (
         <div className="modal-backdrop" onClick={() => setApprovalOpen(false)}>
           <div
             className="approval-modal-wrap"
@@ -1955,6 +2045,7 @@ ${promptText}` : promptText;
               approvals={approvals}
               codexHome={paths?.codexHome}
               onRespond={(id, dec) => respondApproval(id, dec)}
+              onApproveAll={() => void approveAllAndGoFull()}
             />
           </div>
         </div>
@@ -1966,75 +2057,12 @@ ${promptText}` : promptText;
 
 
 
-      {/* ============ T6 模板库抽屉 ============ */}
-      {templateOpen && (
-        <div className="modal-backdrop" onClick={() => setTemplateOpen(false)}>
-          <div className="tpl-panel" onClick={(e) => e.stopPropagation()}>
-            <div className="tpl-head">
-              <h2>模板库 / Skill</h2>
-              <button className="sp-close" onClick={() => setTemplateOpen(false)}>×</button>
-            </div>
-
-            {/* Skill 选择 */}
-            <div className="tpl-skill-row">
-              <span className="tpl-skill-label">工作流</span>
-              <div className="tpl-skill-opts">
-                {[
-                  { id: "talk-script", label: "脚本生成" },
-                  { id: "", label: "自由对话" },
-                ].map((s) => (
-                  <button
-                    key={s.id || "free"}
-                    className={`tpl-skill-opt ${selectedSkill === s.id ? "on" : ""}`}
-                    onClick={() => setSelectedSkill(s.id)}
-                  >
-                    {s.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <p className="sp-desc" style={{ marginTop: 0 }}>
-              选一个模板填入输入框，直接开始任务。
-            </p>
-            <div className="tpl-grid">
-              {TEMPLATES.map((t) => (
-                <div key={t.id} className="tpl-card">
-                  <div className="tpl-card-title">
-                    <span className="tpl-icon">{t.icon}</span>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 15, fontWeight: 700, color: "#111827" }}>{t.title}</div>
-                      <div style={{ fontSize: 12, color: "#6B7280", marginTop: 4 }}>{t.subtitle}</div>
-                    </div>
-                    {t.tag && <span className="tpl-tag">{t.tag}</span>}
-                  </div>
-                  <pre className="tpl-preview">
-                    {t.prompt.length > 280 ? `${t.prompt.slice(0, 280)}…` : t.prompt}
-                  </pre>
-                  <div className="tpl-actions">
-                    <button className="sp-btn sp-btn-ghost" onClick={() => {
-                      navigator.clipboard?.writeText(t.prompt).catch(() => {});
-                      setStatus(`已复制「${t.title}」到剪贴板`);
-                    }}>复制</button>
-                    <button className="sp-btn sp-btn-primary" onClick={() => applyTemplate(t.id)}>
-                      填入输入框
-                    </button>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* ============ 首次启动向导 ============ */}
       {onboardingOpen && (
         <div className="onboarding">
           <div className="onboarding-inner">
             <h1>欢迎使用 Harness AI 工作台</h1>
-            <div className="sub">
-              你的本地 Agent 工作台，Work/Code/Design 三模式切换。
-            </div>
+            <div className="sub">飞书 · 影刀 · 脚本生成，一句话下达任务</div>
             <div className="steps">
               <div className={`step ${onboardingStep >= 1 ? "done" : onboardingStep === 0 ? "now" : ""}`} />
               <div className={`step ${onboardingStep >= 2 ? "done" : onboardingStep === 1 ? "now" : ""}`} />
@@ -2043,18 +2071,15 @@ ${promptText}` : promptText;
 
             {onboardingStep === 0 && (
               <div className="onboarding-card">
-                <h3>工具 · 默认模型已就绪</h3>
-                <p>
-                  已预置默认模型，可直接开箱使用。
-                  你稍后可以在输入栏切换其他模型。
-                </p>
+                <h3>模型已就绪</h3>
+                <p>已预置默认模型，可在输入栏随时切换。</p>
               </div>
             )}
 
             {onboardingStep === 1 && (
               <div className="onboarding-card">
-                <h3>用户 · 账号信息（单机模式）</h3>
-                <p>当前为单机运行。填写以下信息用于界面展示。</p>
+                <h3>账号信息</h3>
+                <p>仅用于界面展示。</p>
                 <div className="onboarding-form" style={{ marginTop: 10 }}>
                   <div>
                     <label>昵称</label>
@@ -2071,11 +2096,10 @@ ${promptText}` : promptText;
             {onboardingStep === 2 && (
               <div className="onboarding-card">
                 <h3>开始你的第一个任务</h3>
-                <p>点击下方完成即可进入工作台。你可以直接尝试：</p>
                 <ul style={{ color: "var(--text-secondary)", fontSize: 13, paddingLeft: 18, margin: 0, lineHeight: 1.8 }}>
-                  <li>分析当前目录下的项目结构并生成 README</li>
-                  <li>运行测试套件，定位并修复失败用例</li>
-                  <li>为最近修改过的代码生成单元测试</li>
+                  <li>生成广告口播脚本并写入飞书多维表格</li>
+                  <li>提交一条飞书审批并回报审批结果</li>
+                  <li>准备影刀 RPA 入参并触发流程</li>
                 </ul>
               </div>
             )}

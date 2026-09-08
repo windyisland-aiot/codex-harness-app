@@ -21,6 +21,8 @@ pub struct CloudConfig {
     pub api_base: String,
     /// 登录后的 Bearer token。
     pub token: Option<String>,
+    /// 登录用户名：会话库按账号分文件，避免多账号共用一台机器时历史串混。
+    pub username: Option<String>,
     /// 是否已启用服务端链路（关闭则退化为纯本地、无模型可用）。
     pub enabled: bool,
 }
@@ -75,9 +77,17 @@ pub async fn cloud_login(
         .and_then(|t| t.as_str());
 
     if let Some(t) = token {
+        let login_name = body
+            .get("data")
+            .and_then(|d| d.get("user"))
+            .and_then(|u| u.get("username"))
+            .and_then(|u| u.as_str())
+            .unwrap_or(&username)
+            .to_string();
         let mut cfg = state.inner().lock().map_err(|e| e.to_string())?;
         cfg.api_base = base;
         cfg.token = Some(t.to_string());
+        cfg.username = Some(login_name);
         cfg.enabled = true;
         // 返回前端期望的 CloudLoginResult 结构
         Ok(json!({
@@ -118,6 +128,7 @@ pub async fn cloud_mode_get(state: State<'_, CloudHandle>) -> Result<Value, Stri
         "enabled": cfg.enabled,
         "hasToken": cfg.token.is_some(),
         "apiBase": cfg.api_base,
+        "username": cfg.username,
     }))
 }
 

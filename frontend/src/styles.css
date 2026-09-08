@@ -1026,6 +1026,46 @@ body.theme-dark .md :not(pre) > code {
   border-color: var(--border-strong);
   color: var(--text);
 }
+.bar-btn-plus.is-on {
+  border-color: color-mix(in srgb, var(--brand, #6366F1) 55%, transparent);
+  background: color-mix(in srgb, var(--brand, #6366F1) 12%, transparent);
+  color: var(--brand, #6366F1);
+}
+
+/* Skill / 插件选择下拉（composer 左侧） */
+.skill-pick-wrap { position: relative; display: inline-flex; }
+.skill-pick-menu {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  width: 260px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  z-index: 901;
+  padding: 6px;
+}
+.skill-pick-name { font-family: inherit; font-size: 12.5px; }
+.skill-pick-empty {
+  padding: 10px 10px 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+.skill-pick-link {
+  display: block;
+  margin-top: 6px;
+  border: none;
+  background: transparent;
+  padding: 0;
+  color: var(--brand, #6366F1);
+  font-size: 12px;
+  cursor: pointer;
+}
+.skill-pick-link:hover { text-decoration: underline; }
 
 /* 手动审批 下拉按钮 */
 .bar-btn-approval-wrap { position: relative; }
@@ -1962,6 +2002,7 @@ body.theme-dark .err-chip {
   text-overflow: ellipsis;
 }
 .skill-chip {
+  cursor: pointer;
   font-size: 11.5px;
   color: var(--brand, #6366F1);
   padding: 3px 10px;
@@ -2156,6 +2197,28 @@ body.theme-dark .log-line.is-err {
   flex-direction: column;
   gap: 16px;
 }
+.tw-a-bulk {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--bg-sunken, #F5F5F5);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+}
+.tw-a-bulk-btn {
+  border: none;
+  border-radius: 6px;
+  padding: 5px 14px;
+  background: var(--brand, #6366F1);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.tw-a-bulk-btn:hover { opacity: .85; }
 .tw-approval-card {
   background: #FFFFFF;
   border-radius: 10px;
@@ -2358,92 +2421,6 @@ body.theme-dark .log-line.is-err {
   border: 1px solid var(--border);
 }
 .tw-a-feishu-link:hover { background: var(--bg-hover); color: #000000; }
-
-/* ============================================================
-   T6 模板库面板
-   ============================================================ */
-.tpl-panel {
-  background: #fff;
-  border-radius: 14px;
-  width: min(920px, 92vw);
-  max-height: 80vh;
-  overflow: auto;
-  padding: 20px 24px 24px;
-  box-shadow: 0 20px 40px rgba(0,0,0,0.14);
-  border: 1px solid #E5E7EB;
-}
-.tpl-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
-.tpl-head h2 { margin: 0; font-size: 18px; font-weight: 700; color: #111827; }
-.tpl-skill-row {
-  display: flex; align-items: center; gap: 12px;
-  padding: 10px 0; margin-bottom: 4px;
-  border-bottom: 1px solid #E5E7EB;
-}
-.tpl-skill-label { font-size: 13px; font-weight: 600; color: #374151; }
-.tpl-skill-opts { display: flex; gap: 8px; }
-.tpl-skill-opt {
-  padding: 5px 14px; border-radius: 999px; border: 1px solid #D1D5DB;
-  background: #fff; color: #374151; font-size: 12.5px; font-weight: 500;
-  cursor: pointer; transition: all .12s;
-}
-.tpl-skill-opt:hover { border-color: var(--brand, #6366F1); color: var(--brand, #6366F1); }
-.tpl-skill-opt.on {
-  background: var(--brand, #6366F1); border-color: var(--brand, #6366F1); color: #fff;
-}
-.tpl-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 14px;
-  margin-top: 14px;
-}
-@media (min-width: 760px) {
-  .tpl-grid { grid-template-columns: 1fr 1fr; }
-}
-.tpl-card {
-  background: #FAFAFA;
-  border: 1px solid #E5E7EB;
-  border-radius: 12px;
-  padding: 14px 16px 14px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-.tpl-card-title { display: flex; gap: 10px; align-items: flex-start; }
-.tpl-icon {
-  width: 34px; height: 34px;
-  border-radius: 9px;
-  background: var(--brand-soft);
-  color: var(--brand);
-  display: inline-flex; align-items: center; justify-content: center;
-  font-size: 18px;
-  flex-shrink: 0;
-}
-.tpl-tag {
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: #FEF3C7;
-  color: #92400E;
-  border: 1px solid #FDE68A;
-  font-weight: 600;
-  flex-shrink: 0;
-}
-.tpl-preview {
-  margin: 0;
-  padding: 10px 12px;
-  background: #fff;
-  border: 1px solid #E5E7EB;
-  border-radius: 8px;
-  font-size: 12px;
-  line-height: 1.6;
-  color: #374151;
-  white-space: pre-wrap;
-  word-break: break-word;
-  max-height: 170px;
-  overflow: auto;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
-}
-.tpl-actions { display: flex; justify-content: flex-end; gap: 8px; }
 
 /* ===========================================================
    T33.2 设置面板 · 模型 tab（Trae Work 图三风格列表 + 编辑弹窗）
