@@ -11,11 +11,18 @@ export interface AppEvent {
   params: Record<string, unknown>;
 }
 
-/** 启动 codex app-server（子进程）。返回 userAgent。 */
+/**
+ * 启动 codex app-server（本地子进程）。返回 userAgent。
+ *
+ * v0.7.0：模型鉴权不再由前端传递。Rust 侧会自动读取登录态（cloud_bridge）的
+ * token 与 api_base，拉起本地 Ark 网关并把 config.toml 的 base_url 指向它，
+ * 由服务端 `/api/v1/llm` 代理转发到管理员配置的真实模型上游。
+ * 因此调用前必须已 `cloudLogin()` 成功，否则模型请求会被服务端拒绝。
+ */
 export function start(server: {
   codexBin: string;
   codexHome: string;
-  /** T07：注入 codex 子进程的 provider API key 等环境变量（安全传递，不写 config）。 */
+  /** 额外注入 codex 子进程的环境变量（不含模型密钥）。 */
   env?: Record<string, string>;
 }): Promise<string> {
   return invoke<string>("appserver_start", {
@@ -684,13 +691,12 @@ export function approvalSendToFeishu(opts: {
   });
 }
 
-// --- B2 云端 codex 执行桥 ---
+// --- 云端登录与鉴权 ---
 
 export interface CloudModeStatus {
   enabled: boolean;
   hasToken: boolean;
   apiBase: string;
-  sessionId: string | null;
 }
 
 export interface CloudLoginResult {
@@ -707,15 +713,6 @@ export interface CloudHealthResult {
   data?: unknown;
 }
 
-export interface CloudBrief {
-  /** 选用的 skill / 工作流标识，如 "talk-script"；不传则由后端默认处理。 */
-  skill?: string;
-  target_audience?: string;
-  primary_selling_point?: string;
-  duration_seconds?: number;
-  script_mode?: string;
-  promotion_context?: string;
-}
 
 /** 登录 bibike 云端，获取 Bearer token。 */
 export function cloudLogin(input: {
@@ -745,96 +742,9 @@ export function cloudHealth(): Promise<CloudHealthResult> {
   return invoke<CloudHealthResult>("cloud_health");
 }
 
-/** 创建云端会话（返回 session_id）。 */
-export function cloudThreadStart(): Promise<string> {
-  return invoke<string>("cloud_thread_start");
-}
 
-/**
- * 发送消息到云端 codex 桥。
- * SSE 流在 Rust 后台线程消费，事件推入 pollEvents() 队列。
- * 事件 method 前缀 `cloud/`：
- * - cloud/status          → { stage: "intake|retrieving|generating|guard" }
- * - cloud/intake_question  → { question, reason }
- * - cloud/result           → { script, creative_notes, suggestions, issues, references, mode, brief }
- * - cloud/turn_completed   → 本轮结束
- * - cloud/error            → { message }
- */
-export function cloudTurnStart(input: {
-  sessionId: string;
-  text: string;
-  brief?: CloudBrief;
-}): Promise<void> {
-  return invoke("cloud_turn_start", {
-    sessionId: input.sessionId,
-    text: input.text,
-    brief: input.brief ?? null,
-  });
-}
 
 /** 从云端同步 skill 列表。 */
 export function cloudSkillsSync(): Promise<{ ok: boolean; synced?: string[] }> {
   return invoke("cloud_skills_sync");
-}
-
-// --- 云端 SSE 事件解析辅助 ---
-
-/** 从 pollEvents() 返回的事件中提取云端状态更新。 */
-export function cloudStatusStage(e: AppEvent): string | null {
-  if (e.method === "cloud/status") {
-    const stage = e.params?.stage;
-    return typeof stage === "string" ? stage : null;
-  }
-  return null;
-}
-
-/** 从事件中提取 intake 提问（需要编导回答后继续发消息）。 */
-export function cloudIntakeQuestion(e: AppEvent): { question: string; reason: string } | null {
-  if (e.method === "cloud/intake_question") {
-    const q = e.params?.question;
-    const r = e.params?.reason;
-    if (typeof q === "string") {
-      return { question: q, reason: typeof r === "string" ? r : "" };
-    }
-  }
-  return null;
-}
-
-/** 从事件中提取脚本生成结果。 */
-export function cloudResult(e: AppEvent): {
-  script: string;
-  creative_notes?: string;
-  suggestions?: string | string[];
-  issues?: Array<{ severity: string; message: string; evidence?: string }>;
-  references?: unknown[];
-  mode?: string;
-} | null {
-  if (e.method === "cloud/result") {
-    const script = e.params?.script;
-    if (typeof script === "string") {
-      return {
-        script,
-        creative_notes: e.params?.creative_notes as string | undefined,
-        suggestions: e.params?.suggestions as string | string[] | undefined,
-        issues: e.params?.issues as Array<{ severity: string; message: string; evidence?: string }> | undefined,
-        references: e.params?.references as unknown[] | undefined,
-        mode: e.params?.mode as string | undefined,
-      };
-    }
-  }
-  return null;
-}
-
-/** 云端事件：本轮完成。 */
-export function isCloudTurnCompleted(e: AppEvent): boolean {
-  return e.method === "cloud/turn_completed";
-}
-
-/** 云端事件：错误。 */
-export function cloudError(e: AppEvent): string | null {
-  if (e.method === "cloud/error") {
-    const msg = e.params?.message;
-    return typeof msg === "string" ? msg : null;
-  }
-  return null;
 }

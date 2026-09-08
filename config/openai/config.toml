@@ -1,23 +1,26 @@
-# T07 单模型打通（OpenAI）：企业内 Agent 桌面应用的默认配置。
+# Harness 客户端的默认 CODEX_HOME 配置（v0.7.0）。
 #
-# - 该 CODEX_HOME 目录（config/openai）作为 app 的默认 Codex 配置根，
-#   由 harness 在启动 `codex app-server` 时通过 CODEX_HOME 指向。
-# - 单模型：model_provider = "openai"，model 显式指定（不设则用 codex 默认）。
-# - 鉴权：OPENAI_API_KEY 由 harness 注入 codex 子进程环境变量（不走 config，
-#   减少泄露面）；有 env 时 codex 走 ApiKey 模式，无需 ChatGPT 登录界面。
-# - approval_policy = "never" 仅为自动测试默认；生产可通过 T08/T09 面板调整。
+# 架构：codex 跑在**本地**，只有「模型推理」这一步走服务端代理。
+#
+#   codex app-server (wire_api = responses)
+#       ↓ POST {base_url}/responses     Bearer = 登录 token
+#   bibike 服务端 /api/v1/llm 代理       ← 管理员在后台配置真实上游
+#       ↓ Bearer = 服务端持有的 api_key
+#   真实模型上游（火山方舟 / 任意 OpenAI 兼容网关）
+#
+# 要点：
+# - 客户端**不含任何模型密钥**。`env_key` 指向的环境变量由 appserver_start 注入，
+#   值是登录 token，服务端据此校验登录态（登录即可用，不做用量计量）。
+# - `base_url` 由 appserver_start 在启动时按登录态回写，这里的值只是兜底。
+# - 文件读写、命令执行、MCP（飞书 / 影刀）全部在本地，不受服务端影响；
+#   因此 wire_api 必须是 responses —— tool_calls 需无损透传。
 
-model = "ark-code-latest"
+model = "deepseek-v4-flash"
 model_provider = "volcengine-ark"
 approval_policy = "never"
 
-# 自定义 provider：本机内嵌 Ark 网关（127.0.0.1:18762）。
-# 网关持有真实火山方舟 Ark API Key 与上游地址，做 wire_api 翻译：
-# codex (Responses) ↔ 网关 ↔ 火山方舟 Ark (Chat Completions SSE)。
-# wire_api 固定为 responses，codex 前端与 app-server 之间走新版协议。
-
 [model_providers.volcengine-ark]
-name = "火山方舟 Ark Code（内嵌网关）"
-base_url = "http://127.0.0.1:18762/v1"
+name = "bibike 服务端模型代理"
+base_url = "http://118.31.107.214/api/v1/llm"
 env_key = "VOLCENGINE_ARK_API_KEY"
 wire_api = "responses"
