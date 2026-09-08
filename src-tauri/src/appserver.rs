@@ -122,24 +122,35 @@ fn load_provider_env(codex_home: &str) -> HashMap<String, String> {
     out
 }
 
+/// 服务端 LLM 代理的兜底地址（登录态里没有 api_base 时用）。
+const DEFAULT_LLM_PROXY: &str = "http://118.31.107.214/api/v1/llm";
+
 /// 启动 `codex app-server` 子进程并完成 `initialize` 握手。
 ///
-/// 关键改动（v0.2.1→v0.3.0）：
-/// 1. 移除了 ark_gateway 内嵌网关启动——火山方舟 Responses 端点原生可用，
-///    codex 直接向 `https://ark.cn-beijing.volces.com/api/v3` 发 Responses 请求；
-/// 2. **自动注入 API key**：config.toml 的每个 provider 声明 `env_key = "VOLCENGINE_ARK_API_KEY"`
-///    （环境变量名），本函数扫描全部 provider 的 `env_key`，从 `<codex_home>/.env-provider`
-///    取出值，注入 codex 子进程环境。此前这一步缺失 → 401 → 对话完全静默失败。
+/// 模型链路（v0.7.0）：codex（本地）→ 服务端 `/api/v1/llm/*` 代理 → 真实模型上游。
+///
+/// 客户端不再内置任何模型密钥：以登录 token 作 Bearer 请求服务端代理，服务端校验
+/// 登录态后换成管理员在后台配置的 base_url / api_key 转发。因此 codex 保留完整的
+/// 本地读写文件、执行命令、MCP（飞书/影刀）能力，只有「模型推理」这一步走服务端。
 #[tauri::command]
 pub async fn appserver_start(
     app: tauri::AppHandle,
     state: State<'_, CodexHandle>,
+    cloud: State<'_, crate::cloud_bridge::CloudHandle>,
     codex_bin: String,
     codex_home: String,
     env: Option<HashMap<String, String>>,
 ) -> Result<String, String> {
     let st = state.inner().clone();
     let codex_home_log = codex_home.clone();
+    // 模型鉴权与上游地址全部来自登录态：登录 token 作 Bearer，
+    // 真实模型 base_url / api_key 只存在服务端（管理员在后台配置）。
+    let (cloud_token, llm_proxy_url) = {
+        let cfg = cloud.lock().map_err(|_| "cloud state poisoned")?;
+        let base = cfg.api_base.trim().trim_end_matches('/').to_string();
+        let url = if base.is_empty() { None } else { Some(format!("{base}/api/v1/llm")) };
+        (cfg.token.clone().unwrap_or_default(), url)
+    };
     tauri::async_runtime::spawn_blocking(move || {
         // 初始化日志文件（便于用户在生产环境排查问题）
         let _ = std::fs::create_dir_all(&codex_home_log);
@@ -171,18 +182,24 @@ pub async fn appserver_start(
         let cfg = harness_config::read(&codex_home_log)
             .map_err(|e| format!("config 迁移失败: {e}"))?;
 
-        // --- v0.6.0：强制覆盖 base_url 为统一的方舟 plan/v3 ---
-        // 所有 provider 都走 plan/v3（之前可能是旧的 coding/v3 或手动填的），
-        // 启动时写回 config.toml，后续不再迁移。
-        const HARDCODED_BASE_URL: &str = "https://ark.cn-beijing.volces.com/api/plan/v3";
+        // --- v0.7.0：base_url 指向服务端 LLM 代理，wire_api 保持 responses ---
+        //
+        // 直连 Responses：实测上游原生支持该协议且完整回传 function_call。曾经的
+        // 本地 Responses→Chat 翻译网关会丢弃 tool_calls，等于砍掉 codex 读写文件 /
+        // 执行命令 / MCP（飞书·影刀）的能力，故已移除。若日后上游换成只讲 Chat
+        // Completions 的网关，翻译应加在服务端代理里，而不是退回客户端。
+        let gateway_base_url = llm_proxy_url
+            .clone()
+            .unwrap_or_else(|| DEFAULT_LLM_PROXY.to_string());
+        log(&format!("  模型上游（服务端代理）= {gateway_base_url}"));
         let cfg_mutated = {
             let mut c = cfg.clone();
             let mut changed = false;
             for p in &mut c.model_providers {
-                if p.base_url != HARDCODED_BASE_URL {
+                if p.base_url != gateway_base_url {
                     log(&format!("  ⚠️ provider {} base_url={} → 强制覆盖为 {}",
-                        p.id, p.base_url, HARDCODED_BASE_URL));
-                    p.base_url = HARDCODED_BASE_URL.to_string();
+                        p.id, p.base_url, gateway_base_url));
+                    p.base_url = gateway_base_url.to_string();
                     changed = true;
                 }
                 // 确保 env_key 正确
@@ -254,11 +271,14 @@ pub async fn appserver_start(
             log(&format!("  ✅ 飞书凭据已写入 {}", env_path.display()));
         }
 
-        // --- v0.6.0：硬编码注入 Volcengine Ark API Key ---
-        // 不再从 .env-provider 读取，统一使用 Harness 内置 key。
-        const ARK_API_KEY: &str = "ark-504d682a-6c53-4ee5-9c63-6ce31ffb8fa3-fd87a";
-        child_env.insert("VOLCENGINE_ARK_API_KEY".to_string(), ARK_API_KEY.to_string());
-        log(&format!("  ✅ 硬编码注入 VOLCENGINE_ARK_API_KEY (len={})", ARK_API_KEY.len()));
+        // --- 模型鉴权：注入登录 token，由本地网关透传给服务端 LLM 代理 ---
+        // 客户端不再内置任何模型密钥；上游 base_url / api_key 由管理员在服务端配置。
+        child_env.insert("VOLCENGINE_ARK_API_KEY".to_string(), cloud_token.clone());
+        if cloud_token.is_empty() {
+            log("  ⚠️ 未提供登录 token，模型请求将被服务端拒绝（请先登录）");
+        } else {
+            log(&format!("  ✅ 注入登录 token 作模型鉴权 (len={})", cloud_token.len()));
+        }
 
         // 前端传的额外 env
         if let Some(extra) = env {

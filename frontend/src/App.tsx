@@ -359,6 +359,7 @@ export default function App() {
   // ------- 运行时路径 -------
   const [paths, setPaths] = useState<ResolvedPaths | null>(null);
   const codexHome = paths?.codexHome ?? "";
+  const codexBin = paths?.codexBin ?? "";
   const cwd = paths?.defaultCwd ?? "";
 
   // ------- 默认模型 -------
@@ -411,7 +412,7 @@ export default function App() {
   const [approvalOpen, setApprovalOpen] = useState(false);
 
   // ------- 连接 & 状态 -------
-  const [connected] = useState(false);
+  const [connected, setConnected] = useState(false);
   const [pending, setPending] = useState(false);
   const [status, setStatus] = useState("解析运行路径中…");
   const [lastError, setLastError] = useState<string | null>(null);
@@ -446,14 +447,11 @@ export default function App() {
   const [oboUsername, setOboUsername] = useState("");
   const [oboKey, setOboKey] = useState("");
 
-  // ------- B2 云端 codex 桥 -------
-  const [cloudMode, setCloudMode] = useState(false);
+  // ------- 登录态（模型走服务端代理，需登录 token 鉴权） -------
   const [cloudConnected, setCloudConnected] = useState(false);
   const [cloudUser, setCloudUser] = useState("");
   const [cloudPass, setCloudPass] = useState("");
-  const [cloudStage, setCloudStage] = useState<string | null>(null);
-  const cloudSessionRef = useRef<string | null>(null);
-  // 当前选用的云端 skill（不传 = 后端默认；talk-script = 脚本生成工作流）
+  // 当前选用的 skill（空 = 自由对话；talk-script = 脚本生成工作流，SKILL.md 在本地）
   const [selectedSkill, setSelectedSkill] = useState<string>("talk-script");
 
   // ------- T6 模板库抽屉（广告脚本 5 步模板） -------
@@ -687,10 +685,8 @@ export default function App() {
   const termRef = useRef(terminalLines);
   const msgsListRef = useRef<HTMLDivElement>(null);
   const lastErrMergeRef = useRef<{ text: string; count: number } | null>(null);
-  // 云端会话消息缓存：每个 thread id 对应一份消息历史，切换会话时恢复
+  // 会话消息缓存：每个 thread id 对应一份消息历史，切换会话时恢复
   const sessionMessagesRef = useRef<Record<string, Msg[]>>({});
-  // 正在运行云端 turn 的会话 id（用于把 SSE 事件路由到正确的会话）
-  const runningSessionIdRef = useRef<string | null>(null);
   // Modal 表单状态（放在顶层 hooks 区，不放进 IIFE）
   const [mName, setMName] = useState("");
   const [mTrigger, setMTrigger] = useState("每天 09:00");
@@ -744,7 +740,41 @@ export default function App() {
     }
   }, [messages, running, lastError]);
 
-  // ------- 启动首步：解析路径 + 强制云端模式 + 检查登录 -------
+  // ------- 拉起本地 codex app-server -------
+  //
+  // Rust 侧 appserver_start 会自动：
+  //   1) 从登录态取 token + api_base；
+  //   2) 把 config.toml 各 provider 的 base_url 改写为服务端 /api/v1/llm 代理；
+  //   3) 注入登录 token 作模型鉴权（客户端不含任何内置模型密钥）。
+  // 所以这里无需传 key，只要保证调用前已登录。
+  const bootLocalCodex = async (home: string, bin: string) => {
+    setStatus("启动本地 codex…");
+    try {
+      const ua = await codex.start({ codexBin: bin, codexHome: home });
+      setConnected(true);
+      setStatus(`本地 codex 就绪 · ${ua}`);
+      setTerminalLines((prev) => [
+        ...prev, { ts: Date.now(), text: `[appserver] ${ua}（模型经服务端代理）`, stream: "meta" as const },
+      ].slice(-500));
+      return true;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setConnected(false);
+      setLastError(msg);
+      setStatus(`本地 codex 启动失败: ${msg}`);
+      setTerminalLines((prev) => [
+        ...prev, { ts: Date.now(), text: `[appserver] 启动失败: ${msg}`, stream: "stderr" as const },
+      ].slice(-500));
+      return false;
+    }
+  };
+
+  // ------- 启动首步：解析路径 + 检查登录 + 拉起本地 codex -------
+  //
+  // v0.7.0 架构：codex 跑在本地（保留文件读写 / 命令执行 / 飞书·影刀 MCP 的全部能力），
+  // 只把「模型推理」这一步转发到服务端 /api/v1/llm 代理。服务端持有真实模型
+  // base_url / api_key（管理员在后台配置），客户端只带登录 token。
+  // 因此必须「先登录 → 再启动 codex」。
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -754,37 +784,44 @@ export default function App() {
         setPaths(p);
         setStatus("路径就绪");
 
-        // 强制启用云端模式
+        // 关闭云端执行模式：codex 在本地跑，服务端只做模型代理 / 知识库 / 账号
         try {
-          await codex.cloudModeSet(true);
+          await codex.cloudModeSet(false);
         } catch { /* 首次安装可能未就绪 */ }
 
-        setCloudMode(true);
+        // 读取本地配置（模型 / provider）
+        try {
+          const cfg = await codex.configRead(p.codexHome);
+          if (cfg.model) setModel(cfg.model);
+          if (cfg.modelProvider) setProvider(cfg.modelProvider);
+        } catch { /* 首次无配置用前端默认 */ }
+
+        // 登录态：有 token 才能启动 codex（模型请求需要它做鉴权）
         let hasToken = false;
         try {
           const cs = await codex.cloudModeGet();
           hasToken = cs.hasToken;
         } catch { /* */ }
 
-        if (hasToken) {
-          setCloudConnected(true);
-          setStatus("云端模式 · 已登录");
-          try {
-            const h = await codex.cloudHealth();
-            if (h.ok) setStatus(`云端模式 · 已连接 (${h.latencyMs}ms)`);
-            else setStatus("云端模式 · 连接失败");
-          } catch { /* */ }
-        } else {
-          setStatus("请登录云端");
+        if (!hasToken) {
+          setStatus("请先登录");
+          return;
         }
+        setCloudConnected(true);
+        if (cancelled) return;
+        await bootLocalCodex(p.codexHome, p.codexBin);
 
-        // 读取本地配置（模型/Provider 仍需读取）
+        // 本地会话列表（codex 在本地跑，会话文件也在本地）
         try {
-          const cfg = await codex.configRead(p.codexHome);
-          if (cfg.model) setModel(cfg.model);
-          if (cfg.modelProvider) setProvider(cfg.modelProvider);
-        } catch { /* 首次无配置用前端默认 */ }
-        // 不加载本地会话列表 —— 全部走云端
+          const list = await codex.sessionList(p.codexHome);
+          if (!cancelled) {
+            setSessions(list.map((m) => ({
+              id: m.id, title: m.title || m.id,
+              provider: m.provider, model: m.model, status: "done" as const,
+              updatedAt: m.updatedAt,
+            })));
+          }
+        } catch { /* 首次无会话 */ }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
         if (!cancelled) {
@@ -795,7 +832,6 @@ export default function App() {
               codexBin: "/usr/bin/codex",
               defaultCwd: "/tmp/harness-dev/workspace",
             });
-            setCloudMode(true);
             setStatus("浏览器开发模式 · 请登录");
           } else {
             setLastError(msg);
@@ -849,76 +885,6 @@ export default function App() {
         const events = await codex.pollEvents();
         const termAccum: Array<{ ts: number; text: string; stream?: "stdout" | "stderr" | "meta" }> = [];
         for (const e of events) {
-          // ===== B2 云端事件处理 =====
-          if (e.method === "cloud/turn_completed") {
-            setRunning(false); setLastError(null);
-            setCloudStage(null);
-            runningSessionIdRef.current = null;
-            continue;
-          }
-          if (e.method === "cloud/error") {
-            const msg = codex.cloudError(e) ?? "云端错误";
-            setLastError(msg);
-            termAccum.push({ ts: Date.now(), text: `[CLOUD-ERROR] ${msg}`, stream: "stderr" });
-            setRunning(false);
-            runningSessionIdRef.current = null;
-            continue;
-          }
-          const stage = codex.cloudStatusStage(e);
-          if (stage) {
-            setCloudStage(stage);
-            const stageLabel: Record<string, string> = {
-              intake: "需求采集",
-              retrieving: "知识检索",
-              generating: "脚本生成",
-              guard: "风险守卫",
-            };
-            setStatus(`云端 · ${stageLabel[stage] || stage}…`);
-            continue;
-          }
-          // 把云端消息追加到「正在运行的会话」的缓存；若是当前活跃会话则同步刷新 UI
-          const appendCloudMsg = (m: Msg) => {
-            const sid = runningSessionIdRef.current ?? activeThreadRef.current;
-            if (!sid) return;
-            const cur = sessionMessagesRef.current[sid] ?? [];
-            const next = [...cur, m];
-            sessionMessagesRef.current[sid] = next;
-            if (sid === activeThreadRef.current) {
-              setMessages(next);
-            }
-          };
-          const intakeQ = codex.cloudIntakeQuestion(e);
-          if (intakeQ) {
-            appendCloudMsg({ role: "assistant", text: `📋 **${intakeQ.question}**\n\n_原因：${intakeQ.reason}_` });
-            setCloudStage("intake");
-            continue;
-          }
-          const result = codex.cloudResult(e);
-          if (result) {
-            let resultText = result.script;
-            if (result.creative_notes) resultText += `\n\n---\n**创意备注**\n${result.creative_notes}`;
-            if (result.issues && result.issues.length > 0) {
-              const issueLines = result.issues.map((i, idx) => {
-                const sev = i.severity ? `[${i.severity}] ` : "";
-                return `${idx + 1}. ${sev}${i.message}`;
-              });
-              resultText += `\n\n---\n**⚠️ 守卫提醒（不阻断）**\n` + issueLines.join("\n");
-            }
-            if (result.suggestions) {
-              const sugArr = typeof result.suggestions === "string"
-                ? [result.suggestions]
-                : (result.suggestions as string[]);
-              if (sugArr.length > 0) {
-                resultText += `\n\n---\n**优化建议**\n` + sugArr.map((s, idx) => `${idx + 1}. ${s}`).join("\n");
-              }
-            }
-            appendCloudMsg({ role: "assistant", text: resultText });
-            setTerminalLines((prev) => [
-              ...prev, { ts: Date.now(), text: `[cloud/result] 脚本已生成（${result.script.length} 字，mode=${result.mode ?? "standard"}）`, stream: "meta" as const },
-            ].slice(-500));
-            continue;
-          }
-          // ===== 本地 codex 事件处理（原有逻辑） =====
           if (e.method === "turn/completed") {
             setRunning(false); setLastError(null);
             lastErrMergeRef.current = null;
@@ -1017,40 +983,48 @@ export default function App() {
     } catch (e) { setStatus(`审批回复失败: ${e}`); }
   }
 
-  // ------- B2 云端登录 -------
+  // ------- 登录（登录成功后拉起本地 codex） -------
   async function handleCloudLogin() {
     const isTauriEnv = (typeof (window as any).__TAURI_INTERNALS__ !== "undefined" || typeof (window as any).__TAURI__ !== "undefined");
     // 浏览器开发模式：invoke 不可用，直接 mock 登录成功
     if (!isTauriEnv) {
-      setStatus("云端登录中…");
+      setStatus("登录中…");
       await new Promise((r) => setTimeout(r, 400));
       setCloudConnected(true);
-      setCloudMode(true);
       setStatus("浏览器 mock 模式 · 已登录");
       return;
     }
     try {
-      setStatus("云端登录中…");
+      setStatus("登录中…");
       const result = await codex.cloudLogin({
         username: cloudUser,
         password: cloudPass,
       });
-      if (result.ok && result.token) {
-        setCloudConnected(true);
-        setCloudMode(true);
-        setStatus("云端模式 · 已登录");
-        // 健康检查
-        try {
-          const h = await codex.cloudHealth();
-          if (h.ok) setStatus(`云端模式 · 已连接 (${h.latencyMs}ms)`);
-        } catch { /* */ }
-      } else {
+      if (!result.ok || !result.token) {
         setStatus("登录失败：请检查用户名和密码");
+        return;
+      }
+      setCloudConnected(true);
+      setStatus("已登录");
+
+      // 登录拿到 token 后才能启动 codex（模型请求靠它鉴权）
+      if (codexHome && codexBin) {
+        await bootLocalCodex(codexHome, codexBin);
+        try {
+          const list = await codex.sessionList(codexHome);
+          setSessions(list.map((m) => ({
+            id: m.id, title: m.title || m.id,
+            provider: m.provider, model: m.model, status: "done" as const,
+            updatedAt: m.updatedAt,
+          })));
+        } catch { /* 首次无会话 */ }
+      } else {
+        setStatus("已登录，等待运行路径就绪…");
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setLastError(msg);
-      setStatus(`云端登录失败: ${msg}`);
+      setStatus(`登录失败: ${msg}`);
     }
   }
 
@@ -1059,8 +1033,8 @@ export default function App() {
     const text = input.trim();
     if (!text || pending) return;
     if (!codexHome) { setStatus("运行路径尚未就绪，请稍后"); return; }
-    if (cloudMode && !cloudConnected) { setStatus("请先登录云端"); return; }
-    if (!cloudMode && !connected) { setStatus("本地 codex 尚未就绪，请稍后"); return; }
+    if (!cloudConnected) { setStatus("请先登录"); return; }
+    if (!connected) { setStatus("本地 codex 尚未就绪，请稍后"); return; }
 
     // ---- 浏览器开发 mock 模式 ----
     const isTauriEnv = (typeof (window as any).__TAURI_INTERNALS__ !== "undefined" || typeof (window as any).__TAURI__ !== "undefined");
@@ -1100,55 +1074,13 @@ export default function App() {
     try {
       const promptText = text;
 
-      // ===== B2 云端模式分支 =====
-      if (cloudMode && cloudConnected) {
-        setStatus("云端发送中…");
-        try {
-          // 以 activeThread 作为云端 session id；新会话（activeThread 为空）时创建
-          let sid: string = activeThreadRef.current ?? "";
-          if (!sid) {
-            sid = await codex.cloudThreadStart();
-            // 先把用户消息写入新会话缓存，避免 setActiveThread 触发的 load effect 把消息冲掉
-            sessionMessagesRef.current[sid] = next;
-            activeThreadRef.current = sid;
-            cloudSessionRef.current = sid;
-            setActiveThread(sid);
-            setSessions((s) => [...s, {
-              id: sid,
-              title: text.slice(0, 24) + (text.length > 24 ? "…" : ""),
-              provider: "cloud", model, status: "running",
-            }]);
-            setTerminalLines((prev) => [
-              ...prev, { ts: Date.now(), text: `[cloud/session] → ${sid}`, stream: "meta" as const },
-            ].slice(-500));
-          } else {
-            // 已有会话：把用户消息追加到该会话缓存
-            sessionMessagesRef.current[sid] = next;
-          }
+      // ===== 本地 codex 模式（v0.7.0 增强） =====
+      // 模型经服务端 /api/v1/llm 代理（Responses 直连，tool_calls 无损）；
+      // 文件读写、命令执行、MCP（飞书/影刀）全部在本地，不受云端影响。
 
-          // 发送到云端 codex 桥（SSE 在后台消费）
-          runningSessionIdRef.current = sid;
-          await codex.cloudTurnStart({
-            sessionId: sid,
-            text: promptText,
-            brief: selectedSkill ? { skill: selectedSkill } : undefined,
-          });
-          setTerminalLines((prev) => [
-            ...prev, { ts: Date.now(), text: `[cloud/turn] ok，等待 SSE 回流…`, stream: "meta" as const },
-          ].slice(-500));
-          setRunning(true);
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e);
-          setLastError(msg);
-          setStatus(`云端发送失败: ${msg}`);
-          setTerminalLines((prev) => [
-            ...prev, { ts: Date.now(), text: `[cloud/turn] 失败: ${msg}`, stream: "stderr" as const },
-          ].slice(-500));
-        }
-        return;
-      }
-
-      // ===== 本地 codex 模式（原有逻辑） =====
+      // 若有选中的 skill，把它注入 prompt 头部（codex 会读取 $CODEX_HOME/skills 中的 SKILL.md 指引）
+      const finalText = selectedSkill ? `[skill: ${selectedSkill}]
+${promptText}` : promptText;
 
       // --- 阶段 1：建线程（如果需要） ---
       let threadId = activeThreadRef.current;
@@ -1183,7 +1115,7 @@ export default function App() {
       const tid = threadId as string;
       setStatus("发送中…");
       try {
-        await codex.turnStart({ threadId: tid, cwd, text: promptText });
+        await codex.turnStart({ threadId: tid, cwd, text: finalText });
         setTerminalLines((prev) => [
           ...prev, { ts: Date.now(), text: `[turn/start] ok，等待 LLM 回复…`, stream: "meta" as const },
         ].slice(-500));
@@ -1208,7 +1140,6 @@ export default function App() {
   function newChat() {
     setActiveThread(null); setMessages([]); setApprovals([]); setRunning(false);
     setLastError(null); threadProviderRef.current = null;
-    cloudSessionRef.current = null;
   }
 
   function requestDelete(id: string, title: string) {
@@ -1218,30 +1149,18 @@ export default function App() {
   async function confirmDeleteSession() {
     const { id, title } = confirmDel;
     setConfirmDel({ open: false, id: "", title: "" });
-    // 云端模式：会话由云端维护，本地只清理 UI 状态与缓存
-    if (cloudMode) {
-      delete sessionMessagesRef.current[id];
-      setSessions((prev) => prev.filter((x) => x.id !== id));
-      if (id === activeThread) {
-        activeThreadRef.current = null;
-        cloudSessionRef.current = null;
-        setActiveThread(null);
-        setMessages([]);
-      }
-      setStatus(`已删除「${title}」`);
-      return;
-    }
+    // codex 跑在本地，会话文件也在本地：删文件 + 清 UI 缓存
     try {
       await codex.sessionDelete(codexHome, id);
-      setSessions((prev) => prev.filter((x) => x.id !== id));
-      if (id === activeThread) {
-        setActiveThread("");
-        setMessages([]);
-      }
-      setStatus(`已删除「${title}」`);
-    } catch (err) {
-      setStatus(`删除失败：${err}`);
+    } catch { /* 未落盘的新会话没有文件，忽略 */ }
+    delete sessionMessagesRef.current[id];
+    setSessions((prev) => prev.filter((x) => x.id !== id));
+    if (id === activeThread) {
+      activeThreadRef.current = null;
+      setActiveThread(null);
+      setMessages([]);
     }
+    setStatus(`已删除「${title}」`);
   }
 
   function handleLoadSession(d: codex.SessionDetail) {
@@ -1260,22 +1179,18 @@ export default function App() {
   }
 
   async function handleSideSessionClick(id: string) {
-    // 云端模式：会话由云端维护，本地没有 session 文件；直接切换 activeThread，
-    // 消息缓存 effect 会从 sessionMessagesRef 恢复该会话的历史。
-    if (cloudMode) {
-      activeThreadRef.current = id;
-      cloudSessionRef.current = id;
-      setActiveThread(id);
-      setApprovals([]);
-      threadProviderRef.current = null;
-      return;
-    }
     if (!codexHome) return;
+    // 先看本地内存缓存（本轮未落盘的会话），再回落到 SQLite
+    const cached = sessionMessagesRef.current[id];
     try {
       const d = await codex.sessionGet(codexHome, id);
       handleLoadSession(d);
     } catch {
-      setActiveThread(id); setMessages([]); setApprovals([]); threadProviderRef.current = null;
+      activeThreadRef.current = id;
+      setActiveThread(id);
+      setMessages(cached ?? []);
+      setApprovals([]);
+      threadProviderRef.current = null;
     }
   }
 
@@ -1300,9 +1215,9 @@ export default function App() {
     return (
       <div className="cloud-login-overlay cloud-login-fullscreen">
         <div className="cloud-login-modal">
-          <h2>登录云端 Codex 服务</h2>
+          <h2>登录 Codex Harness</h2>
           <p className="cloud-login-hint">
-            使用你的账号登录后即可开始对话。
+            登录后即可开始对话；模型经服务端统一代理，无需配置密钥。
           </p>
           <input
             className="cloud-login-input"
@@ -1511,7 +1426,7 @@ export default function App() {
             <div className="user-info">
               <span className="n">{oboUsername || "本机用户"}</span>
               <span className="r" title={status}>
-                {cloudMode ? (cloudConnected ? "在线" : "离线") : (connected ? "在线" : "离线")}
+                {connected ? "在线" : cloudConnected ? "连接中" : "离线"}
               </span>
             </div>
             <button
@@ -1936,9 +1851,9 @@ export default function App() {
             <div className="composer-meta">
               <div className="meta-left">
                 <span className="status-chip" title={status}>{status}</span>
-                {cloudStage && (
-                  <span className="cloud-stage-chip" title={`云端阶段：${cloudStage}`}>
-                    {cloudStage === "intake" ? "📋 采集" : cloudStage === "retrieving" ? "🔍 检索" : cloudStage === "generating" ? "✍️ 生成" : cloudStage === "guard" ? "🛡️ 守卫" : cloudStage}
+                {selectedSkill && (
+                  <span className="cloud-stage-chip" title={`当前工作流：${selectedSkill}`}>
+                    {selectedSkill === "talk-script" ? "🎬 脚本生成" : selectedSkill}
                   </span>
                 )}
                 {errCount > 0 && (

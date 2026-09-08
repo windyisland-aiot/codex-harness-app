@@ -189,8 +189,6 @@ pub fn run() {
             cloud_bridge::cloud_mode_set,
             cloud_bridge::cloud_mode_get,
             cloud_bridge::cloud_health,
-            cloud_bridge::cloud_thread_start,
-            cloud_bridge::cloud_turn_start,
             cloud_bridge::cloud_skills_sync,
         ])
         .run(tauri::generate_context!())
