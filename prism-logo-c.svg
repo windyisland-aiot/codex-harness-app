@@ -1,0 +1,22 @@
+<svg viewBox="0 0 100 100" width="512" height="512" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="gem1" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#A78BFA"/>
+      <stop offset="100%" stop-color="#6366F1"/>
+    </linearGradient>
+    <linearGradient id="gem2" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#8B5CF6"/>
+      <stop offset="100%" stop-color="#5B21B6"/>
+    </linearGradient>
+  </defs>
+  <!-- 顶部冠 -->
+  <polygon points="22,30 50,18 78,30 50,40" fill="url(#gem1)" stroke="#6366F1" stroke-width="1.2" stroke-linejoin="round"/>
+  <!-- 左下腰 -->
+  <polygon points="22,30 50,40 38,72" fill="#7C3AED" stroke="#5B21B6" stroke-width="1.2" stroke-linejoin="round" opacity="0.9"/>
+  <!-- 右下腰 -->
+  <polygon points="78,30 50,40 62,72" fill="url(#gem2)" stroke="#5B21B6" stroke-width="1.2" stroke-linejoin="round" opacity="0.9"/>
+  <!-- 底尖 -->
+  <polygon points="38,72 62,72 50,86" fill="#4C1D95" stroke="#3B0A78" stroke-width="1.2" stroke-linejoin="round"/>
+  <!-- 中线 -->
+  <line x1="50" y1="40" x2="50" y2="86" stroke="#fff" stroke-width="0.8" opacity="0.4"/>
+</svg>
