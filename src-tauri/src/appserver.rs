@@ -145,11 +145,12 @@ pub async fn appserver_start(
     let codex_home_log = codex_home.clone();
     // 模型鉴权与上游地址全部来自登录态：登录 token 作 Bearer，
     // 真实模型 base_url / api_key 只存在服务端（管理员在后台配置）。
-    let (cloud_token, llm_proxy_url) = {
+    let (cloud_token, llm_proxy_url, bibike_api_base) = {
         let cfg = cloud.lock().map_err(|_| "cloud state poisoned")?;
         let base = cfg.api_base.trim().trim_end_matches('/').to_string();
         let url = if base.is_empty() { None } else { Some(format!("{base}/api/v1/llm")) };
-        (cfg.token.clone().unwrap_or_default(), url)
+        let bibike = if base.is_empty() { None } else { Some(format!("{base}/api/v1")) };
+        (cfg.token.clone().unwrap_or_default(), url, bibike)
     };
     tauri::async_runtime::spawn_blocking(move || {
         // 初始化日志文件（便于用户在生产环境排查问题）
@@ -231,6 +232,12 @@ pub async fn appserver_start(
 
         let mut child_env = HashMap::new();
         child_env.insert("CODEX_HOME".to_string(), codex_home_log.clone());
+
+        // talk-script 等本地 skill 访问服务端知识库（/api/v1/retrieve 免鉴权）
+        if let Some(bibike) = &bibike_api_base {
+            child_env.insert("BIBIKE_API_BASE".to_string(), bibike.clone());
+            log(&format!("  ✅ 注入 BIBIKE_API_BASE={bibike}"));
+        }
 
         // --- Harness 固定注入：飞书企业机器人凭据 ---
         // 硬编码 App ID/Secret，随应用启动自动写入 .env-provider + 子进程 env。

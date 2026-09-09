@@ -1,0 +1,202 @@
+product:
+  name: "比拜克胶囊"
+  dosage_form: "胶囊剂"
+  specification: "0.36g×9粒×2板"
+  approval_number: "国药准字Z20026560"
+  manufacturer: "四川金辉药业有限责任公司"
+  otc: true
+  dosage: "口服，一次2-3粒；小儿1-2粒；三岁以内酌减；一日三次。"
+  ingredients:
+    - "熊胆粉"
+    - "酒大黄"
+    - "儿茶"
+    - "冰片"
+    - "胡黄连"
+    - "香墨"
+    - "玄明粉"
+  excipient: "淀粉"
+  indications: "清热、解毒、通便；用于外感病气分热盛，发热烦躁，头痛目赤，牙龈肿痛，大便秘结。"
+  confirmed_facts:
+    bear_bile_powder_per_capsule: "每粒含量高达11.1mg熊胆粉"
+
+script_policy:
+  allowed_facts:
+    - "name"
+    - "ingredients"
+    - "indications"
+    - "dosage"
+    - "otc"
+    - "confirmed_facts.bear_bile_powder_per_capsule"
+  approved_expressions:
+    - "OTC"
+    - "正规药品"
+    - "正规中成药"
+    - "国药准字（不写具体编号）"
+  internal_only:
+    - "specification"
+    - "approval_number"
+    - "manufacturer"
+    - "dosage_form"
+  creative_context:
+    - "上火"
+  forbidden_expansions:
+    - "牙痛"
+    - "牙龈鼓包"
+    - "牙龈出血"
+    - "牙龈起泡"
+    - "半边脸发胀"
+    - "口腔溃疡"
+    - "口舌生疮"
+    - "牙周炎"
+    - "消炎"
+    - "止痛"
+    - "根治"
+    - "治愈"
+    - "杀菌"
+    - "抗炎"
+  # 合规规则（guard_rules）集中配置：只做风险分级提醒，不拦截/不阻断脚本生成。
+  # level 仅表示提醒强度（block=高风险提醒 / warn=低风险提醒），生成结果始终交付编导人工修改。
+  # 活动政策、不合规标准实时变动时，直接修改本文件即可，无需改代码或重启进程。
+  guard_rules:
+    forbidden_expansions:
+      level: block
+      message: "脚本出现未确认功效或症状：{term}"
+    oral_symptoms:
+      level: block
+      terms:
+        - "牙龈出血"
+        - "牙龈鼓包"
+        - "牙龈起泡"
+        - "半边脸"
+        - "溃疡"
+        - "生疮"
+      message: "脚本出现未确认的口腔症状：{term}"
+    head_symptoms:
+      level: block
+      terms:
+        - "偏头痛"
+        - "头晕"
+        - "失眠"
+      message: "脚本出现未经确认的头部症状"
+    stool_guard:
+      level: block
+      keyword: "大便"
+      allowed_phrases:
+        - "大便秘结"
+        - "大便不畅"
+        - "大便不通畅"
+        - "排便不畅"
+        - "排便不通"
+        - "便秘"
+        - "排便困难"
+        - "排便不顺"
+      message: "脚本将大便相关内容改写成了未经确认的症状"
+    unrequested_dosage:
+      level: block
+      terms:
+        - "一次2"
+        - "一次 2"
+        - "一日三次"
+        - "一日 3 次"
+        - "小儿"
+        - "三岁以内"
+      message: "脚本主动加入了未被本次需求要求的用法用量"
+    promo_terms:
+      # 风格性促销话术只提醒、不阻断：促销脚本可以不包含实际活动，仅有促销风格。
+      # 具体数字承诺由 numbers 规则按当期活动信息比对。
+      level: warn
+      terms:
+        - "元"
+        - "折"
+        - "优惠"
+        - "活动"
+        - "包邮"
+        - "厂家直发"
+        - "买一送一"
+        - "限时"
+        - "底价"
+        - "促销"
+        - "送到家"
+        - "仓库"
+      message: "脚本包含未确认的价格、优惠或购买承诺：{terms}"
+    risk_terms:
+      level: warn
+      terms:
+        - "最"
+        - "第一"
+        - "顶级"
+        - "唯一"
+        - "绝对"
+        - "保证"
+        - "完美"
+        - "百分之百"
+        - "100%"
+        - "立刻见效"
+        - "根治"
+        - "彻底解决"
+      message: "可能包含绝对化/极限化表达：{terms}"
+    numbers:
+      level: block
+      pattern: "\\d+(?:\\.\\d+)?\\s*(?:mg|毫克|元|折|%)"
+      allowed_numbers:
+        - "11.1"
+      message: "脚本包含未确认的数字宣传：{number}"
+      # 数字承诺以当期活动信息（promotion_context + 额外要求）为准：
+      # 活动文本中出现过的数字视为已授权；allowed_numbers 仅保留产品事实类数字（如 11.1mg）。
+
+selling_points:
+  functional:
+    label: "功能主治相关"
+    options:
+      - "上火相关"
+      - "清热"
+      - "解毒"
+      - "通便"
+      - "牙龈肿痛"
+      - "发热烦躁"
+      - "头痛目赤"
+      - "大便秘结"
+  herbal_formula:
+    label: "中药药材/配方相关"
+    options:
+      - "熊胆粉"
+      - "酒大黄"
+      - "儿茶"
+      - "冰片"
+      - "胡黄连"
+      - "香墨"
+      - "玄明粉"
+      - "七味药材整体"
+      - "中药配方整体"
+  qualification:
+    label: "药品资质/OTC相关"
+    options:
+      - "正规药品"
+      - "OTC"
+      - "正规中成药"
+      - "国药准字"
+
+generation:
+  default_structure: "B+C+D+E"
+  speech_chars_per_second: 6
+  max_follow_up_questions: 5
+  max_golden_sentences: 3
+  max_examples_per_section: 3
+  max_reference_preview_per_section: 2
+  reference_preview_chars: 50
+  duration_presets: [45, 60, 75, 90, 100, 120]
+  perspective_options:
+    - "商家视角"
+    - "消费者视角"
+    - "专家视角"
+  default_perspective: "商家视角"
+  style_presets:
+    - "口语化"
+    - "真实分享"
+    - "情绪冲击"
+    - "专业可信"
+    - "故事化"
+    - "轻松自然"
+    - "生活化"
+  default_primary_selling_point: "功能主治相关"
+  default_secondary_selling_point: "中药药材/配方相关"
