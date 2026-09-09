@@ -90,17 +90,8 @@ jobs:
           sed -i '' 's#"resources/codex.exe": "codex.exe"#"resources/codex": "codex"#' src-tauri/tauri.conf.json
           grep -n "resources/codex" src-tauri/tauri.conf.json
           # bundle.targets 从 ["msi","nsis"] 改成 ["dmg"]，否则 macOS 上只编译二进制不打 dmg
-          # 用 python 改 JSON，避免 sed 处理数组引号的坑
-          python3 - <<'PY'
-          import json, re
-          p = "src-tauri/tauri.conf.json"
-          with open(p) as f: s = f.read()
-          data = json.loads(s)
-          data["bundle"]["targets"] = ["dmg"]
-          # 保持 2 空格缩进写回
-          with open(p, "w") as f: json.dump(data, f, indent=2, ensure_ascii=False)
-          f.write("\n")
-          PY
+          # 用 python 单行改 JSON，避免 sed 处理数组引号的坑
+          python3 -c "import json; p='src-tauri/tauri.conf.json'; d=json.load(open(p)); d['bundle']['targets']=['dmg']; open(p,'w').write(json.dumps(d,indent=2,ensure_ascii=False)+chr(10))"
           grep -n '"targets"' src-tauri/tauri.conf.json
 
       - name: 安装 tauri-cli
