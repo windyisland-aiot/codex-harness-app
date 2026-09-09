@@ -206,8 +206,8 @@ impl AppServerClient {
 
     /// `initialize` 握手。
     ///
-    /// 声明 `experimentalApi` 能力，以启用 `thread/settings/update` 等
-    /// experimental 方法（T10 多模型切换依赖）。
+    /// 声明 `experimentalApi` 能力，以启用 turn/start 的模型覆盖等
+    /// experimental 行为（T10 多模型切换依赖 turn/start 的 model 参数）。
     pub fn initialize(&mut self, name: &str, version: &str) -> Result<Value> {
         let params = serde_json::json!({
             "protocolVersion": 1,
@@ -279,38 +279,38 @@ impl AppServerClient {
     }
 
     /// 开启一轮对话。
-    pub fn turn_start(&mut self, thread_id: &str, cwd: &str, text: &str) -> Result<Value> {
-        let params = serde_json::json!({
-            "threadId": thread_id,
-            "cwd": cwd,
-            "input": [{ "type": "text", "text": text, "text_elements": [] }],
-        });
-        self.call("turn/start", params, None)
-    }
-
-    /// 更新现有线程的设置，覆盖随后的 turn（T10 多模型切换）。
     ///
-    /// 通过 `thread/settings/update` 的 `model` 覆盖该线程后续 turn 的模型
-    /// （provider 固定为建线程时所用；跨 provider 切换需新开线程）。
-    /// 空的 `model` / `approval_policy` 不写入对应字段，保持线程原样。
-    pub fn thread_settings_update(
+    /// `images` 为 data URL（`data:image/...;base64,...`），按 codex 用户输入的
+    /// `image` 项依次追加在文本之后；为空时退化为纯文本轮次。
+    pub fn turn_start(
         &mut self,
         thread_id: &str,
+        cwd: &str,
+        text: &str,
+        images: &[String],
         model: Option<&str>,
-        approval_policy: Option<&str>,
     ) -> Result<Value> {
-        let mut params = serde_json::json!({ "threadId": thread_id });
-        if let Some(m) = model {
-            if !m.is_empty() {
-                params["model"] = m.into();
+        let mut input = vec![serde_json::json!({
+            "type": "text", "text": text, "text_elements": []
+        })];
+        for url in images {
+            let url = url.trim();
+            if url.is_empty() {
+                continue;
             }
+            input.push(serde_json::json!({ "type": "image", "url": url }));
         }
-        if let Some(a) = approval_policy {
-            if !a.is_empty() {
-                params["approvalPolicy"] = a.into();
-            }
+        let mut params = serde_json::json!({
+            "threadId": thread_id,
+            "cwd": cwd,
+            "input": input,
+        });
+        // 协议规定 turn/start 的 model 覆盖「本轮及后续轮次」的模型。
+        // 该版本 app-server 没有 thread/settings/update 方法，切换模型必须走这里。
+        if let Some(m) = model.map(str::trim).filter(|m| !m.is_empty()) {
+            params["model"] = m.into();
         }
-        self.call("thread/settings/update", params, None)
+        self.call("turn/start", params, None)
     }
 
     /// 回复服务器主动请求（如审批 `item/commandExecution/requestApproval`）。

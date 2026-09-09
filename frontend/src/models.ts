@@ -21,34 +21,26 @@ export interface ModelEntry {
 const VOLCES_BASE_URL = "https://ark.cn-beijing.volces.com/api/plan/v3";
 const VOLCES_ENV_KEY  = "VOLCENGINE_ARK_API_KEY";
 
-/**
- * 火山方舟上可用模型列表（扁平、不分品牌）。
- *
- * 多模态能力来源：
- *   https://www.volcengine.com/docs/82379/1330310  模型列表（支持能力表）
- *   https://www.volcengine.com/docs/82379/2615194  精调数据格式（输入模态说明）
- *   https://www.volcengine.com/docs/82379/1362931  图片理解教程
- *
- *   ✅ 多模态：doubao-seed-2.0-lite/mini、minimax 系列、deepseek-v4 系列、
- *             glm 5.x、kimi-k2.5/k3 均支持 文本 + 图片（部分还支持视频）。
- *   ❌ 纯文本：ark-code-latest（Coding Plan Auto 路由，仅文本）。
- */
+/** 火山方舟 Agent Plan 可用模型列表（扁平、不分品牌）。 */
+// 多模态判定（2026-09 对 Agent Plan 端点 /api/plan/v3/responses 实测图片输入）：
+//   ✅ 多模态：ark-code-latest(Auto)、glm-5.3-flash、doubao-seed-2.0-lite/mini、
+//             minimax-m3、kimi-k3
+//   ❌ 纯文本：glm-5.3（"Model only support text input"）、deepseek-v4-flash/pro
+//   不在 Agent Plan 可用列表的模型不出现在下拉中（kimi-k2.5、minimax-seed-evolving）。
 export const ALL_MODELS: ModelEntry[] = [
-  { id: "ark-code-latest",          name: "ark-code-latest（Auto）",      multiModal: false, isAuto: true },
+  { id: "ark-code-latest",          name: "ark-code-latest",               multiModal: true,  isAuto: true },
 
   { id: "doubao-seed-2.0-lite",     name: "doubao-seed-2.0-lite",          multiModal: true  },
   { id: "doubao-seed-2.0-mini",     name: "doubao-seed-2.0-mini",          multiModal: true  },
 
   { id: "minimax-m3",               name: "minimax-m3",                     multiModal: true  },
-  { id: "minimax-seed-evolving",    name: "minimax-seed-evolving",          multiModal: true  },
 
-  { id: "deepseek-v4-flash",        name: "deepseek-v4-flash",              multiModal: true  },
-  { id: "deepseek-v4-pro",          name: "deepseek-v4-pro",                multiModal: true  },
+  { id: "deepseek-v4-flash",        name: "deepseek-v4-flash",              multiModal: false },
+  { id: "deepseek-v4-pro",          name: "deepseek-v4-pro",                multiModal: false },
 
-  { id: "glm-5.3",                  name: "glm-5.3",                        multiModal: true  },
-  { id: "glm-5-flash",              name: "glm-5-flash",                    multiModal: true  },
+  { id: "glm-5.3",                  name: "glm-5.3",                        multiModal: false },
+  { id: "glm-5.3-flash",            name: "glm-5.3-flash",                  multiModal: true  },
 
-  { id: "kimi-k2.5",                name: "kimi-k2.5",                      multiModal: true  },
   { id: "kimi-k3",                  name: "kimi-k3",                        multiModal: true  },
 ];
 

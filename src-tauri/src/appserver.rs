@@ -370,12 +370,18 @@ pub async fn appserver_turn_start(
     thread_id: String,
     cwd: String,
     text: String,
+    images: Option<Vec<String>>,
+    model: Option<String>,
 ) -> Result<Value, String> {
     let st = state.inner().clone();
+    let images = images.unwrap_or_default();
     tauri::async_runtime::spawn_blocking(move || {
         let mut guard = st.client.lock().map_err(|e| e.to_string())?;
         let client = guard.as_mut().ok_or("app-server 未启动")?;
-        client.turn_start(&thread_id, &cwd, &text).map_err(|e| e.to_string())
+        let m = model.as_deref().map(str::trim).filter(|m| !m.is_empty());
+        client
+            .turn_start(&thread_id, &cwd, &text, &images, m)
+            .map_err(|e| e.to_string())
     })
     .await
     .map_err(|e| e.to_string())?
@@ -391,24 +397,6 @@ pub async fn appserver_poll_events(state: State<'_, CodexHandle>) -> Result<Vec<
             .map(|(method, params)| serde_json::json!({ "method": method, "params": params }))
             .collect();
         Ok::<Vec<Value>, String>(out)
-    })
-    .await
-    .map_err(|e| e.to_string())?
-}
-
-#[tauri::command]
-pub async fn appserver_thread_set_model(
-    state: State<'_, CodexHandle>,
-    thread_id: String,
-    model: String,
-) -> Result<(), String> {
-    let st = state.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || {
-        let mut guard = st.client.lock().map_err(|e| e.to_string())?;
-        let client = guard.as_mut().ok_or("app-server 未启动")?;
-        let m = if model.is_empty() { None } else { Some(model.as_str()) };
-        client.thread_settings_update(&thread_id, m, None).map_err(|e| e.to_string())?;
-        Ok::<(), String>(())
     })
     .await
     .map_err(|e| e.to_string())?

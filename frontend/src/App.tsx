@@ -71,6 +71,20 @@ interface Msg {
 
 type SessionStatus = "running" | "approval" | "waiting" | "done" | "error";
 
+/** 思考过程里展示的动作类型：规划 / 命令 / 文件 / 插件工具。 */
+type ActivityKind = "plan" | "cmd" | "file" | "tool";
+interface ActivityStep {
+  id: string;
+  kind: ActivityKind;
+  title: string;
+  detail?: string;
+  done: boolean;
+}
+interface TurnActivity {
+  steps: ActivityStep[];
+  reasoning: string;
+}
+
 interface SessionExt {
   id: string;
   title: string;
@@ -235,29 +249,6 @@ function formatTimeAgo(ts?: number): string {
 const POLL_MS = 200;
 const ONBOARDING_KEY = "harness.onboarding.v1";
 
-/** 基于状态推导会话徽章：running → approval → waiting → done。 */
-function deriveBadge(opts: {
-  running: boolean;
-  approvalCount: number;
-  hasMessages: boolean;
-  hasError: boolean;
-}): SessionStatus {
-  if (opts.hasError) return "error";
-  if (opts.approvalCount > 0) return "approval";
-  if (opts.running) return "running";
-  if (opts.hasMessages) return "done";
-  return "waiting";
-}
-
-const BADGE_LABEL: Record<SessionStatus, string> = {
-  running: "运行中",
-  approval: "待审批",
-  waiting: "待使用",
-  done: "已完成",
-  error: "出错",
-};
-
-/** 欢迎页推荐入口：围绕飞书 / 影刀 / 脚本生成等实际业务场景。 */
 const STARTER_CHIPS: Array<{
   title: string;
   desc: string;
@@ -341,26 +332,9 @@ const IconCloud = (
     <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" />
   </svg>
 );
-const IconShare = (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <circle cx="18" cy="5" r="3" />
-    <circle cx="6" cy="12" r="3" />
-    <circle cx="18" cy="19" r="3" />
-    <line x1="8.59" y1="13.51" x2="15.42" y2="17.49" />
-    <line x1="15.41" y1="6.51" x2="8.59" y2="10.49" />
-  </svg>
-);
-const IconFullscreen = (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3" />
-  </svg>
-);
-const IconMic = (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-    <path d="M19 10v2a7 7 0 0 1-14 0v-2M12 19v4M8 23h8" />
-  </svg>
-);
+
+
+
 const IconPlus = (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <line x1="12" y1="5" x2="12" y2="19" />
@@ -391,7 +365,7 @@ export default function App() {
   const [autoModeOpen, setAutoModeOpen] = useState(false);
 
   // ------- 附件（多模态文件上传） -------
-  interface Attachment { name: string; size: number; kind: "image" | "video" | "doc"; preview?: string; }
+  interface Attachment { name: string; size: number; kind: "image" | "video" | "doc"; preview?: string; file?: File; }
   const [attachments, setAttachments] = useState<Attachment[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -416,6 +390,7 @@ export default function App() {
         size: f.size,
         kind: isImage ? "image" : isVideo ? "video" : "doc",
         preview: isImage ? URL.createObjectURL(f) : undefined,
+        file: f,
       };
     });
     setAttachments((prev) => [...prev, ...newItems]);
@@ -426,6 +401,58 @@ export default function App() {
 
   function removeAttachment(idx: number) {
     setAttachments((prev) => prev.filter((_, i) => i !== idx));
+  }
+
+  const readAsDataURL = (f: File) =>
+    new Promise<string>((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result));
+      r.onerror = () => reject(r.error);
+      r.readAsDataURL(f);
+    });
+  const readAsText = (f: File) =>
+    new Promise<string>((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result));
+      r.onerror = () => reject(r.error);
+      r.readAsText(f);
+    });
+  /** 只保留文件名安全字符，避免路径穿越。 */
+  const safeFileName = (name: string) =>
+    name.replace(/[\\/:*?"<>|]+/g, "_").replace(/\s+/g, " ").slice(0, 120) || "attachment";
+
+  /** 把本轮附件整理成 codex 可消费的形式：图片→dataURL，文本文档→内联，其它→workspace 文件。 */
+  async function prepareAttachments(workspace: string, multimodal: boolean) {
+    const imageUrls: string[] = [];
+    const inlineTexts: string[] = [];
+    const savedPaths: string[] = [];
+    const textExt = /\.(txt|md|csv|json|log)$/i;
+    for (const a of attachments) {
+      const f = a.file;
+      if (!f) continue;
+      if (a.kind === "image") {
+        if (!multimodal) {
+          throw new Error(`当前模型不支持图片，无法发送 ${a.name}，请切换多模态模型`);
+        }
+        imageUrls.push(await readAsDataURL(f));
+      } else if (textExt.test(a.name)) {
+        const body = await readAsText(f);
+        inlineTexts.push(`【附件：${a.name}】\n${body.slice(0, 20000)}`);
+      } else {
+        const buf = await f.arrayBuffer();
+        const bytes = new Uint8Array(buf);
+        let bin = "";
+        const CHUNK = 0x8000;
+        for (let i = 0; i < bytes.length; i += CHUNK) {
+          bin += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
+        }
+        const b64 = btoa(bin);
+        const rel = `_attachments/${Date.now()}-${safeFileName(a.name)}`;
+        const abs = await codex.fsWriteFileB64(workspace, rel, b64);
+        savedPaths.push(abs);
+      }
+    }
+    return { imageUrls, inlineTexts, savedPaths };
   }
 
   // ------- 设置面板开关（v0.3.0 统一成单个 SettingsPanel） -------
@@ -447,7 +474,15 @@ export default function App() {
   const [input, setInput] = useState("");
   const [running, setRunning] = useState(false);
   const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
+  // 当前轮的「思考过程」：规划/命令/文件/插件动作 + 模型推理流（内部滚动、限高）
+  const [activity, setActivity] = useState<TurnActivity>({ steps: [], reasoning: "" });
+  const [thinkingOpen, setThinkingOpen] = useState(true);
   const [sideSearch, setSideSearch] = useState("");
+  const sideSearchRef = useRef<HTMLInputElement>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameValue, setRenameValue] = useState("");
+  const [appVersion, setAppVersion] = useState("0.7.3");
 
   // ------- 主题 -------
   const [theme, setThemeState] = useState<"light" | "dark">(() => {
@@ -512,7 +547,6 @@ export default function App() {
   const [terminalLines, setTerminalLines] = useState<
     Array<{ ts: number; text: string; stream?: "stdout" | "stderr" | "meta" }>
   >([]);
-  const [logOpen, setLogOpen] = useState(false);
   const [confirmDel, setConfirmDel] = useState<{ open: boolean; id: string; title: string }>({ open: false, id: "", title: "" });
   // 审批模式：auto=逐条弹窗确认；full=完全访问（自动批准）。
   // 持久化，避免每次重启又退回逐条确认。
@@ -528,12 +562,14 @@ export default function App() {
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
       if (e.key !== "Escape") return;
+      if (renameOpen) { setRenameOpen(false); return; }
+      if (helpOpen) { setHelpOpen(false); return; }
       if (showNewTaskModal) { setShowNewTaskModal(false); return; }
       if (automationOpen) { setAutomationOpen(false); return; }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [automationOpen, showNewTaskModal]);
+  }, [automationOpen, showNewTaskModal, helpOpen, renameOpen]);
 
   // ---------- 自动化任务状态（localStorage 持久化） ----------
   const AUTO_TASKS_KEY = "harness.auto.tasks.v1";
@@ -684,6 +720,9 @@ export default function App() {
   const msgsRef = useRef<Msg[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const approvalsRef = useRef<ApprovalRequest[]>([]);
+  const activityRef = useRef<TurnActivity>({ steps: [], reasoning: "" });
+  const reasoningBufRef = useRef<Record<string, string>>({});
+  const thinkReasonRef = useRef<HTMLDivElement>(null);
   // 轮询 interval 闭包捕获的是创建时的 accessMode，改用 ref 读最新值，
   // 否则切到「完全访问」后仍按旧模式挂起审批。
   const accessModeRef = useRef<"auto" | "full">(accessMode);
@@ -751,6 +790,14 @@ export default function App() {
     }
   }, [messages, running, lastError]);
 
+  // 活动流更新时只滚思考块自身（内部滚动），不顶动整条消息
+  useEffect(() => {
+    if (thinkReasonRef.current && thinkingOpen) {
+      thinkReasonRef.current.scrollTop = thinkReasonRef.current.scrollHeight;
+    }
+  }, [activity, thinkingOpen]);
+
+
   // ------- 拉起本地 codex app-server -------
   //
   // Rust 侧 appserver_start 会自动：
@@ -803,7 +850,9 @@ export default function App() {
         // 读取本地配置（模型 / provider）
         try {
           const cfg = await codex.configRead(p.codexHome);
-          if (cfg.model) setModel(cfg.model);
+          const savedModel = (() => { try { return window.localStorage.getItem("harness.model"); } catch { return null; } })();
+          if (savedModel && ALL_MODELS.some((mm) => mm.id === savedModel)) setModel(savedModel);
+          else if (cfg.model) setModel(cfg.model);
           if (cfg.modelProvider) setProvider(cfg.modelProvider);
         } catch { /* 首次无配置用前端默认 */ }
 
@@ -892,13 +941,69 @@ export default function App() {
     if (!running) return;
     timerRef.current = setInterval(async () => {
       if (!runningRef.current) return;
+      const upsert = (steps: ActivityStep[], step: ActivityStep): ActivityStep[] =>
+        steps.some((x) => x.id === step.id)
+          ? steps.map((x) => (x.id === step.id ? { ...x, ...step } : x))
+          : [...steps, step];
       try {
         const events = await codex.pollEvents();
         const termAccum: Array<{ ts: number; text: string; stream?: "stdout" | "stderr" | "meta" }> = [];
         for (const e of events) {
           if (e.method === "turn/completed") {
+            // 收尾：把还挂着的动作标记完成
+            patchActivity((a) => ({ ...a, steps: a.steps.map((x) => ({ ...x, done: true })) }));
             setRunning(false); setLastError(null);
             lastErrMergeRef.current = null;
+            continue;
+          }
+          // ------- 思考过程：规划 / 推理流 / 工具动作 -------
+          if (e.method === "item/plan/delta") {
+            const d = typeof (e.params as any)?.delta === "string" ? (e.params as any).delta : "";
+            const iid = String((e.params as any)?.itemId ?? "plan");
+            if (d) {
+              const buf = (reasoningBufRef.current[iid] ?? "") + d;
+              reasoningBufRef.current[iid] = buf;
+              patchActivity((a) => ({ ...a, steps: upsert(a.steps, {
+                id: iid, kind: "plan", title: "制定执行计划", detail: buf.length > 400 ? buf.slice(0, 400) + "…" : buf, done: false,
+              }) }));
+            }
+            continue;
+          }
+          if (e.method === "item/reasoning/textDelta" || e.method === "item/reasoning/summaryTextDelta") {
+            const d = typeof (e.params as any)?.delta === "string" ? (e.params as any).delta : "";
+            if (d) {
+              patchActivity((a) => ({ ...a, reasoning: a.reasoning + d }));
+            }
+            continue;
+          }
+          if (e.method === "item/started") {
+            const step = stepFromThreadItem((e.params as any)?.item);
+            if (step) upsertActivityStep(step);
+            continue;
+          }
+          if (e.method === "item/completed") {
+            const it = (e.params as any)?.item;
+            const step = stepFromThreadItem(it);
+            // 工具/动作类条目进活动流并消费；普通正文消息继续往下走 textDelta 兜底渲染
+            if (step) {
+              upsertActivityStep({ ...step, done: true });
+              continue;
+            }
+            if (it?.type === "reasoning" && Array.isArray(it.summary)) {
+              const joined = it.summary.join("\n");
+              if (joined.trim()) patchActivity((a) => ({ ...a, reasoning: joined }));
+              continue;
+            }
+          }
+          if (e.method === "item/mcpToolCall/progress") {
+            const prm = (e.params as any) ?? {};
+            upsertActivityStep({
+              id: String(prm.itemId ?? prm.toolCallId ?? "mcp"),
+              kind: "tool",
+              title: prm.server && prm.tool ? `调用插件 · ${prm.server}/${prm.tool}` : "调用插件",
+              detail: String(prm.message ?? prm.progress ?? "执行中…"),
+              done: false,
+            });
             continue;
           }
           if (e.method === "error") {
@@ -994,12 +1099,133 @@ export default function App() {
     return () => clearInterval(t);
   }, [connected]);
 
-  // ------- 状态派生 -------
-  const activeStatus = deriveBadge({
-    running, approvalCount: approvals.length,
-    hasMessages: messages.length > 0, hasError: !!lastError,
-  });
-  const errCount = terminalLines.filter((l) => l.stream === "stderr").length;
+  // ------- 思考过程（活动流） -------
+  function patchActivity(fn: (a: TurnActivity) => TurnActivity) {
+    setActivity((prev) => {
+      const next = fn(prev);
+      activityRef.current = next;
+      return next;
+    });
+  }
+  function resetActivity() {
+    const empty: TurnActivity = { steps: [], reasoning: "" };
+    activityRef.current = empty;
+    reasoningBufRef.current = {};
+    setActivity(empty);
+    setThinkingOpen(true);
+  }
+  function upsertActivityStep(step: ActivityStep) {
+    patchActivity((a) => ({
+      ...a,
+      steps: a.steps.some((x) => x.id === step.id)
+        ? a.steps.map((x) => (x.id === step.id ? { ...x, ...step } : x))
+        : [...a.steps, step],
+    }));
+  }
+  /** 把 codex 的 ThreadItem 映射成一条动作；纯消息/推理条目返回 null。 */
+  function stepFromThreadItem(it: any): ActivityStep | null {
+    if (!it || typeof it !== "object" || it.id == null) return null;
+    const id = String(it.id);
+    const clip = (v: unknown, n = 220) => {
+      const str = String(v ?? "").replace(/\s+/g, " ").trim();
+      return str.length > n ? str.slice(0, n) + "…" : str;
+    };
+    switch (it.type) {
+      case "plan":
+        return { id, kind: "plan", title: "制定执行计划", detail: clip(it.text, 400), done: false };
+      case "commandExecution":
+        return { id, kind: "cmd", title: "执行命令", detail: clip(it.command), done: false };
+      case "fileChange": {
+        const paths = Array.isArray(it.changes)
+          ? it.changes.map((c: any) => c?.path).filter(Boolean)
+          : [];
+        return {
+          id, kind: "file",
+          title: paths.length ? `修改文件（${paths.length}）` : "修改文件",
+          detail: clip(paths.join("、"), 300),
+          done: false,
+        };
+      }
+      case "mcpToolCall":
+        return {
+          id, kind: "tool",
+          title: `调用插件 · ${it.server ?? "?"}/${it.tool ?? "?"}`,
+          detail: it.status === "failed" ? "调用失败" : clip(JSON.stringify(it.arguments ?? ""), 200),
+          done: it.status === "completed",
+        };
+      case "dynamicToolCall":
+      case "customToolCall":
+        return {
+          id, kind: "tool",
+          title: `调用工具 · ${it.name ?? it.tool ?? "?"}`,
+          detail: clip(JSON.stringify(it.arguments ?? it.args ?? ""), 200),
+          done: false,
+        };
+      default:
+        return null;
+    }
+  }
+
+  // ------- 顶栏按钮：搜索 / 编辑重命名 / 帮助 / 退出账号 -------
+  function focusSessionSearch() {
+    if (collapsed) setCollapsed(false);
+    requestAnimationFrame(() => {
+      sideSearchRef.current?.focus();
+      sideSearchRef.current?.select();
+    });
+  }
+  function openRename() {
+    if (!activeThread) { setStatus("请先选择一个任务再重命名"); return; }
+    const cur = sessions.find((x) => x.id === activeThread)?.title ?? "";
+    setRenameValue(cur);
+    setRenameOpen(true);
+  }
+  async function submitRename() {
+    const title = renameValue.trim();
+    const id = activeThread;
+    if (!title || !id) { setRenameOpen(false); return; }
+    setRenameOpen(false);
+    setSessions((prev) => prev.map((x) => (x.id === id ? { ...x, title } : x)));
+    try {
+      await codex.sessionRename(codexHome, id, title);
+      setStatus("已重命名");
+    } catch (e) {
+      setStatus(`重命名失败: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  async function switchModel(next: string) {
+    if (next === model) { setAutoModeOpen(false); return; }
+    setModel(next);
+    setAutoModeOpen(false);
+    try { window.localStorage.setItem("harness.model", next); } catch {}
+    // 该版本 app-server 没有 thread/settings/update（调用会报 RPC -32601）。
+    // 协议上模型覆盖由 turn/start 的 model 参数完成，下一条消息即生效并延续后续轮次。
+    setStatus(`已切换模型：${modelInfo(next).isAuto ? "Auto Model" : modelInfo(next).name}（下条消息生效）`);
+  }
+
+  function handleLogout() {
+    setCloudConnected(false);
+    setConnected(false);
+    setRunning(false);
+    setPending(false);
+    setActiveThread(null);
+    activeThreadRef.current = null;
+    setMessages([]);
+    setApprovals([]);
+    setCloudPass("");
+    setStatus("已退出登录");
+  }
+
+  // 读取应用版本号（Tauri 运行时），失败兜底 package 版本
+  useEffect(() => {
+    (async () => {
+      try {
+        const app = await import("@tauri-apps/api/app");
+        const v = await app.getVersion();
+        if (v) setAppVersion(v);
+      } catch { /* 浏览器开发模式保留默认值 */ }
+    })();
+  }, []);
 
   // ------- 动作回调 -------
   async function respondApproval(id: number, decision: string) {
@@ -1091,7 +1317,8 @@ export default function App() {
   // ------- 发送消息 -------
   async function send() {
     const text = input.trim();
-    if (!text || pending) return;
+    const hasFiles = attachments.length > 0;
+    if ((!text && !hasFiles) || pending) return;
     if (!codexHome) { setStatus("运行路径尚未就绪，请稍后"); return; }
     if (!cloudConnected) { setStatus("请先登录"); return; }
     if (!connected) { setStatus("本地 codex 尚未就绪，请稍后"); return; }
@@ -1123,8 +1350,34 @@ export default function App() {
     }
 
     setPending(true); setInput(""); setLastError(null);
+    resetActivity();
 
-    const userMsg: Msg = { role: "user", text };
+    // 先把附件转成 codex 能用的形式（图片 dataURL / 文本内联 / 其它落 workspace）
+    let imageUrls: string[] = [];
+    let attachmentNote = "";
+    try {
+      const prepared = await prepareAttachments(cwd, modelInfo(model).multiModal);
+      imageUrls = prepared.imageUrls;
+      const parts: string[] = [];
+      if (prepared.inlineTexts.length) parts.push(prepared.inlineTexts.join("\n\n"));
+      if (prepared.savedPaths.length) {
+        parts.push(
+          "用户已附上以下本地文件，可用你的文件工具读取处理：\n" +
+            prepared.savedPaths.map((x) => `- ${x}`).join("\n"),
+        );
+      }
+      attachmentNote = parts.join("\n\n");
+    } catch (e) {
+      setPending(false);
+      setStatus(e instanceof Error ? e.message : String(e));
+      setLastError(e instanceof Error ? e.message : String(e));
+      return;
+    }
+    const fileNames = attachments.map((a) => a.name);
+    const displayText = text || `（发送了 ${fileNames.length} 个文件：${fileNames.join("、")}）`;
+    setAttachments([]);
+
+    const userMsg: Msg = { role: "user", text: displayText };
     const next = [...msgsRef.current, userMsg];
     setMessages(next);
     setTerminalLines((prev) => [
@@ -1139,8 +1392,9 @@ export default function App() {
       // 文件读写、命令执行、MCP（飞书/影刀）全部在本地，不受云端影响。
 
       // 若有选中的 skill，把它注入 prompt 头部（codex 会读取 $CODEX_HOME/skills 中的 SKILL.md 指引）
+      const bodyText = attachmentNote ? `${promptText}${promptText ? "\n\n" : ""}${attachmentNote}` : promptText;
       const finalText = selectedSkill ? `[skill: ${selectedSkill}]
-${promptText}` : promptText;
+${bodyText}` : bodyText;
 
       // --- 阶段 1：建线程（如果需要） ---
       let threadId = activeThreadRef.current;
@@ -1157,7 +1411,7 @@ ${promptText}` : promptText;
           setActiveThread(nid);
           setSessions((s) => [...s, {
             id: nid,
-            title: text.slice(0, 24) + (text.length > 24 ? "…" : ""),
+            title: (text || fileNames[0] ? (text || `附件：${fileNames[0]}`) : "新任务").slice(0, 24) + ((text || "").length > 24 ? "…" : ""),
             provider, model, status: "running",
           }]);
           setTerminalLines((prev) => [
@@ -1179,7 +1433,7 @@ ${promptText}` : promptText;
       const tid = threadId as string;
       setStatus("发送中…");
       try {
-        await codex.turnStart({ threadId: tid, cwd, text: finalText });
+        await codex.turnStart({ threadId: tid, cwd, text: finalText, images: imageUrls, model });
         setTerminalLines((prev) => [
           ...prev, { ts: Date.now(), text: `[turn/start] ok，等待 LLM 回复…`, stream: "meta" as const },
         ].slice(-500));
@@ -1279,10 +1533,7 @@ ${promptText}` : promptText;
     return (
       <div className="cloud-login-overlay cloud-login-fullscreen">
         <div className="cloud-login-modal">
-          <h2>登录 Codex Harness</h2>
-          <p className="cloud-login-hint">
-            登录后即可开始对话；模型经服务端统一代理，无需配置密钥。
-          </p>
+          <h2>Codex Harness 登录</h2>
           <input
             className="cloud-login-input"
             type="text"
@@ -1330,7 +1581,7 @@ ${promptText}` : promptText;
         <button
           className="tb-icon-btn"
           data-tauri-drag-region="false"
-          onClick={() => setSettingsOpen(true)}
+          onClick={focusSessionSearch}
           title="搜索任务"
         >
           {IconSearch}
@@ -1338,14 +1589,16 @@ ${promptText}` : promptText;
         <button
           className="tb-menu-btn"
           data-tauri-drag-region="false"
-          onClick={() => setStatus("菜单栏：编辑(E) 占位（v0.2 实现）")}
+          onClick={openRename}
+          title="重命名当前任务"
         >
           编辑<span className="mn">(E)</span>
         </button>
         <button
           className="tb-menu-btn"
           data-tauri-drag-region="false"
-          onClick={() => setStatus("菜单栏：帮助(H) 占位（v0.2 实现）")}
+          onClick={() => setHelpOpen(true)}
+          title="帮助与快捷键"
         >
           帮助<span className="mn">(H)</span>
         </button>
@@ -1426,6 +1679,7 @@ ${promptText}` : promptText;
           </div>
           <div className="sb-search-row">
             <input
+              ref={sideSearchRef}
               className="sb-search"
               placeholder="搜索任务…"
               value={sideSearch}
@@ -1442,7 +1696,6 @@ ${promptText}` : promptText;
             )}
             {filteredSessions.map((s) => {
               const isActive = s.id === activeThread;
-              const st: SessionStatus = isActive ? activeStatus : s.status || "done";
               const dayLabel = s.updatedAt
                 ? new Date(s.updatedAt).toLocaleDateString(undefined, { month: "2-digit", day: "2-digit" })
                 : "—";
@@ -1453,11 +1706,9 @@ ${promptText}` : promptText;
                   onClick={() => handleSideSessionClick(s.id)}
                 >
                   <div className="s-title">
-                    <span className={`s-dot ${st}`} />
                     <span className="s-text">{s.title}</span>
                   </div>
                   <div className="s-meta">
-                    <span className={`badge ${st}`}>{BADGE_LABEL[st]}</span>
                     <span style={{ marginLeft: "auto" }}>{dayLabel}</span>
                     <button
                       className="s-del-btn"
@@ -1478,14 +1729,12 @@ ${promptText}` : promptText;
 
           {/* 底部 user footer */}
           <div className="sb-footer">
-            <div className="avatar" title={oboUsername || "本机用户"}>
-              {oboUsername ? oboUsername.slice(0, 1).toUpperCase() : "U"}
+            <div className="avatar" title={cloudUser || "当前账号"}>
+              {(cloudUser || "U").slice(0, 1).toUpperCase()}
             </div>
             <div className="user-info">
-              <span className="n">{oboUsername || "本机用户"}</span>
-              <span className="r" title={status}>
-                {connected ? "在线" : cloudConnected ? "连接中" : "离线"}
-              </span>
+              <span className="n">{cloudUser || "未登录"}</span>
+              <span className="r" title={status}>v{appVersion}{connected ? " · 在线" : ""}</span>
             </div>
             <button
               className="tb-icon-btn tiny"
@@ -1498,6 +1747,18 @@ ${promptText}` : promptText;
                 <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/>
               </svg>
             </button>
+            <button
+              className="tb-icon-btn tiny"
+              onClick={handleLogout}
+              title="退出登录 / 切换账号"
+              aria-label="退出登录"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+                <polyline points="16 17 21 12 16 7"/>
+                <line x1="21" y1="12" x2="9" y2="12"/>
+              </svg>
+            </button>
           </div>
         </aside>
 
@@ -1507,13 +1768,6 @@ ${promptText}` : promptText;
             <div className="title">
               <span className="cloud">{IconCloud}</span>
               <span>{sessionTitle}</span>
-            </div>
-            <div className="crumbs">
-              <span className="model-crumb" title={modelInfo(model).name}>
-                <img src={modelLogo(model)} alt="" className="crumb-logo" /> {model}
-              </span>
-              <button className="tb-icon-btn tiny" title="分享（v0.2 占位）" onClick={() => setStatus("分享：敬请期待（v0.2）")}>{IconShare}</button>
-              <button className="tb-icon-btn tiny" title="全屏阅读" onClick={() => setStatus("全屏模式：敬请期待（v0.2）")}>{IconFullscreen}</button>
             </div>
           </div>
 
@@ -1731,7 +1985,46 @@ ${promptText}` : promptText;
                     </div>
                   </div>
                 ))}
-                {running && (
+                {(activity.steps.length > 0 || activity.reasoning.trim()) && (
+                  <div className="msg assistant">
+                    <div className="msg-avatar harness">H</div>
+                    <div className="think-card">
+                      <button
+                        className="think-head"
+                        onClick={() => setThinkingOpen((v) => !v)}
+                        title={thinkingOpen ? "收起思考过程" : "展开思考过程"}
+                      >
+                        {running ? <span className="think-spinner" /> : <span className="think-done" />}
+                        <span className="think-title">思考过程</span>
+                        {activity.steps.length > 0 && (
+                          <span className="think-meta">
+                            {activity.steps.filter((x) => x.done).length}/{activity.steps.length} 步
+                          </span>
+                        )}
+                        <span className={`think-caret ${thinkingOpen ? "open" : ""}`}>▸</span>
+                      </button>
+                      {thinkingOpen && (
+                        <div className="think-body" ref={thinkReasonRef}>
+                          {activity.steps.map((st) => (
+                            <div key={st.id} className={`think-step kind-${st.kind}`}>
+                              <span className={`step-dot ${st.done ? "done" : "pending"}`}>
+                                {st.done ? "✓" : "•"}
+                              </span>
+                              <div className="step-text">
+                                <div className="step-title">{st.title}</div>
+                                {st.detail && <div className="step-detail" title={st.detail}>{st.detail}</div>}
+                              </div>
+                            </div>
+                          ))}
+                          {activity.reasoning.trim() && (
+                            <pre className="think-reason">{activity.reasoning}</pre>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+                {running && !(activity.steps.length > 0 || activity.reasoning.trim()) && (
                   <div className="msg assistant">
                     <div className="msg-avatar harness">H</div>
                     <div className="bubble asst-bubble typing">
@@ -1873,12 +2166,18 @@ ${promptText}` : promptText;
                   <button
                     className="auto-mode-pill"
                     onClick={() => setAutoModeOpen((v) => !v)}
-                    title={`切换模型 · ${modelInfo(model).name}`}
+                    title={modelInfo(model).isAuto ? "切换模型 · Auto Model" : `切换模型 · ${modelInfo(model).name}`}
                   >
-                    <span className="auto-logo">
-                      <img src={modelLogo(model)} alt="" className="auto-logo-img" />
-                    </span>
-                    <span className="auto-label">{modelInfo(model).name}</span>
+                    {modelInfo(model).isAuto ? (
+                      <span className="auto-label">Auto Model</span>
+                    ) : (
+                      <>
+                        <span className="auto-logo">
+                          <img src={modelLogo(model)} alt="" className="auto-logo-img" />
+                        </span>
+                        <span className="auto-label">{modelInfo(model).name}</span>
+                      </>
+                    )}
                     <span className="caret" style={{ transform: autoModeOpen ? "rotate(180deg)" : "none", transition: "transform .15s" }}>
                       {IconCaretDown}
                     </span>
@@ -1890,20 +2189,21 @@ ${promptText}` : promptText;
                       <div className="auto-mode-menu">
                         {ALL_MODELS.map((m) => {
                           const isActive = m.id === model;
+                          const label = m.isAuto ? "Auto Model" : m.name;
                           return (
                             <button
                               key={m.id}
                               className={`auto-item ${isActive ? "active" : ""}`}
-                              onClick={() => {
-                                setModel(m.id);
-                                setAutoModeOpen(false);
-                              }}
+                              title={m.multiModal ? "支持图片输入" : "纯文本模型"}
+                              onClick={() => { void switchModel(m.id); }}
                             >
-                              <span className="auto-item-logo">
-                                <img src={modelLogo(m.id)} alt="" className="auto-item-logo-img" />
-                              </span>
-                              <span className="auto-item-name">{m.name}</span>
-                              {m.multiModal && <span className="auto-mm-tag" title="支持图片 / 视频 / 文档">多模态</span>}
+                              {!m.isAuto && (
+                                <span className="auto-item-logo">
+                                  <img src={modelLogo(m.id)} alt="" className="auto-item-logo-img" />
+                                </span>
+                              )}
+                              <span className="auto-item-name">{label}</span>
+                              {m.multiModal && <span className="auto-mm-tag" title="支持图片输入">多模态</span>}
                               {isActive && <span className="auto-item-check">✓</span>}
                             </button>
                           );
@@ -1916,7 +2216,7 @@ ${promptText}` : promptText;
                 {/* 发送按钮 */}
                 <button
                   className="btn-send"
-                  disabled={pending || running || !paths || !input.trim()}
+                  disabled={pending || running || !paths || (!input.trim() && attachments.length === 0)}
                   onClick={send}
                   title="发送 (Enter)"
                 >
@@ -1944,64 +2244,6 @@ ${promptText}` : promptText;
               </div>
             )}
 
-            {/* 薄状态栏：左状态 / 右日志 + 语音 */}
-            <div className="composer-meta">
-              <div className="meta-left">
-                <span className="status-chip" title={status}>{status}</span>
-                <span
-                  className={`skill-chip ${selectedSkill ? "" : "skill-free"}`}
-                  title="点击切换工作流"
-                  onClick={() => { setSkillMenuOpen(true); loadSkillOptions(codexHome); }}
-                >
-                  {selectedSkill ? `✨ ${skillLabel(selectedSkill)}` : "💬 自由对话"}
-                </span>
-                {errCount > 0 && (
-                  <span className="err-chip" title="有错误，点击日志查看详情">
-                    ⚠ {errCount}
-                  </span>
-                )}
-              </div>
-              <div className="meta-right">
-                <button className={`log-toggle ${errCount > 0 ? "has-err" : ""}`} onClick={() => setLogOpen((v) => !v)}>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 17l6-6-6-6M12 19h8"/></svg>
-                  <span>{logOpen ? "收起" : "日志"}</span>
-                  {errCount > 0 && <span className="log-badge">{errCount}</span>}
-                </button>
-                <button className="tb-icon-btn tiny" title="语音输入（v0.2 占位）" onClick={() => setStatus("语音：敬请期待（v0.2）")}>
-                  {IconMic}
-                </button>
-              </div>
-            </div>
-
-            {/* 可折叠错误/日志面板 */}
-            {logOpen && (
-              <div className="log-pane">
-                <div className="log-pane-head">
-                  <span className="log-pane-title">对话运行日志</span>
-                  <div className="log-pane-actions">
-                    <span className="log-pane-count">共 {terminalLines.length} 条 {errCount > 0 && <span className="log-pane-err">· {errCount} 错误</span>}</span>
-                    <button className="log-clear" onClick={() => setTerminalLines([])}>清空</button>
-                    <button className="log-close" onClick={() => setLogOpen(false)}>收起</button>
-                  </div>
-                </div>
-                <div className="log-pane-body">
-                  {terminalLines.length === 0 ? (
-                    <div className="log-empty">暂无日志。发送消息后会在此显示运行轨迹、API key 注入、provider 调用结果等。</div>
-                  ) : terminalLines.map((l, i) => {
-                    const isErr = l.stream === "stderr";
-                    const isMeta = l.stream === "meta";
-                    const time = new Date(l.ts).toLocaleTimeString();
-                    return (
-                      <div key={i} className={`log-line ${l.stream ?? "stdout"} ${isErr ? "is-err" : isMeta ? "is-meta" : ""}`}>
-                        <span className="log-time">{time}</span>
-                        <span className="log-tag">{(l.stream ?? "stdout").toUpperCase()}</span>
-                        <span className="log-text">{l.text}</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
           </footer>
           </>
           )}
@@ -2138,6 +2380,57 @@ ${promptText}` : promptText;
         }}
         onStatus={setStatus}
       />
+
+      {/* ============ 重命名当前任务 ============ */}
+      {renameOpen && (
+        <div className="modal-backdrop" onClick={() => setRenameOpen(false)}>
+          <div className="confirm-delete" onClick={(e) => e.stopPropagation()}>
+            <div className="cd-head">
+              <span className="cd-title">重命名任务</span>
+              <button className="cd-close" onClick={() => setRenameOpen(false)}>×</button>
+            </div>
+            <div className="cd-body">
+              <input
+                className="rename-input"
+                value={renameValue}
+                autoFocus
+                onChange={(e) => setRenameValue(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") submitRename(); }}
+                placeholder="输入新的任务名称"
+              />
+            </div>
+            <div className="cd-foot">
+              <button className="cd-btn ghost" onClick={() => setRenameOpen(false)}>取消</button>
+              <button className="cd-btn primary" onClick={submitRename} disabled={!renameValue.trim()}>保存</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ============ 帮助 / 快捷键 ============ */}
+      {helpOpen && (
+        <div className="modal-backdrop" onClick={() => setHelpOpen(false)}>
+          <div className="confirm-delete help-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="cd-head">
+              <span className="cd-title">帮助 · Codex Harness v{appVersion}</span>
+              <button className="cd-close" onClick={() => setHelpOpen(false)}>×</button>
+            </div>
+            <div className="cd-body">
+              <ul className="help-list">
+                <li><kbd>Enter</kbd> 发送消息</li>
+                <li><kbd>Shift</kbd>+<kbd>Enter</kbd> 换行</li>
+                <li><kbd>Esc</kbd> 关闭弹窗</li>
+                <li>顶部「搜索」可快速查找任务，「编辑」可重命名当前任务</li>
+                <li>输入框左侧可附加图片 / 文档、切换工作流与审批模式</li>
+                <li>文件读写、命令执行、飞书 / 影刀等能力均在本地由 codex 完成</li>
+              </ul>
+            </div>
+            <div className="cd-foot">
+              <button className="cd-btn primary" onClick={() => setHelpOpen(false)}>知道了</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* 插件管理：独立模态页面（v0.5.3 起与设置面板解耦） */}
       <PluginsPanel

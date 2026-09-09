@@ -113,7 +113,7 @@ fn full_turn_roundtrip_via_stdlib() {
     assert!(!thread.is_empty());
 
     client
-        .turn_start(&tid, &cwd, "你好，请回复一句话。")
+        .turn_start(&tid, &cwd, "你好，请回复一句话。", &[], None)
         .expect("turn/start failed");
 
     // 等待 turn/completed

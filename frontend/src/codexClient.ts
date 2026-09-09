@@ -48,22 +48,21 @@ export function threadStart(input: {
   });
 }
 
-/** 开启一轮对话。 */
+/** 开启一轮对话。images 为 data URL 列表（多模态图片输入）。 */
 export function turnStart(input: {
   threadId: string;
   cwd: string;
   text: string;
+  images?: string[];
+  model?: string;
 }): Promise<unknown> {
   return invoke("appserver_turn_start", {
     threadId: input.threadId,
     cwd: input.cwd,
     text: input.text,
+    images: input.images ?? null,
+    model: input.model ?? null,
   });
-}
-
-/** T10：切换当前线程的模型（覆盖随后的 turn；provider 不变）。 */
-export function threadSetModel(threadId: string, model: string): Promise<void> {
-  return invoke("appserver_thread_set_model", { threadId, model });
 }
 
 /** 取走自上次以来缓冲的通知。 */
@@ -530,6 +529,15 @@ export function fsWriteFile(
   content: string
 ): Promise<void> {
   return invoke("fs_write_file", { root, relPath, content });
+}
+
+/** 写入二进制文件（base64），返回落地绝对路径。用于把非图片附件放进 workspace。 */
+export function fsWriteFileB64(
+  root: string,
+  relPath: string,
+  b64: string,
+): Promise<string> {
+  return invoke<string>("fs_write_file_b64", { root, relPath, b64 });
 }
 
 // ---------- v0.3.0 凭据（API key）读写 ----------

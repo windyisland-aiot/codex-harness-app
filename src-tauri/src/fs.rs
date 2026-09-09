@@ -97,3 +97,19 @@ pub fn fs_write_file(root: &str, rel_path: &str, content: &str) -> Result<(), St
     std::fs::write(&target, content).map_err(|e| format!("write {:?}: {e}", target))?;
     Ok(())
 }
+
+/// 写入二进制文件（base64 内容）。用于把用户在对话中附加的 PDF/文档等
+/// 落到 workspace 内，再由本地 codex 直接读取（图片走多模态 data URL，不经此）。
+#[tauri::command]
+pub fn fs_write_file_b64(root: &str, rel_path: &str, b64: String) -> Result<String, String> {
+    use base64::Engine;
+    let target = safe_join(Path::new(root), rel_path)?;
+    if let Some(parent) = target.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("mkdir {:?}: {e}", parent))?;
+    }
+    let raw = base64::engine::general_purpose::STANDARD
+        .decode(b64.trim())
+        .map_err(|e| format!("base64 解码失败: {e}"))?;
+    std::fs::write(&target, raw).map_err(|e| format!("write {:?}: {e}", target))?;
+    Ok(target.to_string_lossy().to_string())
+}

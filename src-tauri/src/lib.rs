@@ -139,7 +139,6 @@ pub fn run() {
             appserver::appserver_start,
             appserver::appserver_thread_start,
             appserver::appserver_turn_start,
-            appserver::appserver_thread_set_model,
             appserver::appserver_poll_events,
             appserver::appserver_poll_approvals,
             appserver::appserver_respond_approval,
@@ -183,6 +182,7 @@ pub fn run() {
             fs::fs_list_dir,
             fs::fs_read_file,
             fs::fs_write_file,
+            fs::fs_write_file_b64,
             harness_resolve_paths,
             // B2 云端 codex 执行桥
             cloud_bridge::cloud_login,
