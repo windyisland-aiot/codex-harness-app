@@ -131,6 +131,12 @@ code {
   color: #4B5563;
 }
 body.theme-dark code { color: #C7D2FE; }
+body.theme-dark .hero-title {
+  background: linear-gradient(135deg, #C4B5FD 0%, #818CF8 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+}
+body.theme-dark .chip:hover { border-color: #6366F1; }
 
 /* ============ 总容器 ============ */
 .app-shell {
@@ -705,6 +711,16 @@ body.theme-dark .ic-wrap.gn { background: rgba(16,185,129,.20); color: #6EE7B7; 
 .msg-avatar.harness {
   background: linear-gradient(135deg, var(--brand-start) 0%, var(--brand-end) 100%);
 }
+.msg-avatar.harness.prism {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  padding: 3px;
+}
+.msg-avatar.harness.prism img {
+  width: 100%; height: 100%;
+  object-fit: contain;
+  display: block;
+}
 .msg.user .msg-avatar {
   background: linear-gradient(135deg, #374151 0%, #1F2937 100%);
 }
@@ -805,7 +821,7 @@ body.theme-dark .ic-wrap.gn { background: rgba(16,185,129,.20); color: #6EE7B7; 
 /* ============ 思考过程（内联流 · 无边框融入背景） ============ */
 .think-inline {
   width: 100%;
-  max-width: 58%;
+  max-width: 66%;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -816,8 +832,8 @@ body.theme-dark .ic-wrap.gn { background: rgba(16,185,129,.20); color: #6EE7B7; 
   align-items: center;
   gap: 5px;
   min-width: 0;
-  font-size: 11px;
-  line-height: 1.35;
+  font-size: 12px;
+  line-height: 1.45;
   color: var(--text-muted);
 }
 .think-action-title { font-weight: 600; flex-shrink: 0; }
@@ -831,7 +847,7 @@ body.theme-dark .ic-wrap.gn { background: rgba(16,185,129,.20); color: #6EE7B7; 
 }
 .think-tick { color: #10B981; font-size: 11px; flex-shrink: 0; }
 .think-spinner {
-  width: 9px; height: 9px;
+  width: 10px; height: 10px;
   border: 2px solid color-mix(in srgb, var(--brand, #6366F1) 30%, transparent);
   border-top-color: var(--brand, #6366F1);
   border-radius: 50%;
@@ -841,10 +857,10 @@ body.theme-dark .ic-wrap.gn { background: rgba(16,185,129,.20); color: #6EE7B7; 
 @keyframes think-spin { to { transform: rotate(360deg); } }
 /* 推理流：2-3 行高、自身滚动、小字弱化、无边框无底色 */
 .think-stream {
-  max-height: 2.8em;
+  max-height: 4.4em;
   overflow-y: auto;
-  font-size: 11px;
-  line-height: 1.35;
+  font-size: 12px;
+  line-height: 1.45;
   color: var(--text-muted);
   white-space: pre-wrap;
   word-break: break-word;
@@ -3197,6 +3213,12 @@ body.theme-dark .plg-card-tag.type-plugin { background: rgba(59,130,246,.15); co
   padding: 28px 32px;
   width: min(400px, 92vw);
   box-shadow: var(--shadow-lg);
+}
+.login-logo {
+  width: 56px; height: 56px;
+  object-fit: contain;
+  margin: 0 auto 4px;
+  display: block;
 }
 .cloud-login-modal h2 {
   margin: 0 0 8px;

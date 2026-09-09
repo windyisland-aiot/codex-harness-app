@@ -481,7 +481,7 @@ export default function App() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState("");
-  const [appVersion, setAppVersion] = useState("0.7.7");
+  const [appVersion, setAppVersion] = useState("0.7.8");
 
   // ------- 主题 -------
   const [theme, setThemeState] = useState<"light" | "dark">(() => {
@@ -1605,7 +1605,8 @@ ${bodyText}` : bodyText;
     return (
       <div className="cloud-login-overlay cloud-login-fullscreen">
         <div className="cloud-login-modal">
-          <h2>Codex Harness 登录</h2>
+          <img src="/prism.svg" alt="Prism" className="login-logo" />
+          <h2>Prism 登录</h2>
           <input
             className="cloud-login-input"
             type="text"
@@ -2053,7 +2054,7 @@ ${bodyText}` : bodyText;
                 {messages.map((m, i) => (
                   <div key={i} className={`msg ${m.role}`}>
                     {m.role === "assistant" && (
-                      <div className="msg-avatar harness" title="Harness Agent">H</div>
+                      <div className="msg-avatar harness prism" title="Prism Agent"><img src="/prism.svg" alt="Prism" /></div>
                     )}
                     <div className={`bubble md ${m.role === "user" ? "user-bubble" : "asst-bubble"}`}>
                       <Markdown text={m.text} />
@@ -2062,7 +2063,7 @@ ${bodyText}` : bodyText;
                 ))}
                 {running && (activity.steps.length > 0 || activity.reasoning.trim()) && (
                   <div className="msg assistant">
-                    <div className="msg-avatar harness">H</div>
+                    <div className="msg-avatar harness prism"><img src="/prism.svg" alt="Prism" /></div>
                     <div className="think-inline">
                       {activity.steps.length > 0 && (() => {
                         const cur = activity.steps[activity.steps.length - 1];
@@ -2084,7 +2085,7 @@ ${bodyText}` : bodyText;
                 )}
                 {running && !(activity.steps.length > 0 || activity.reasoning.trim()) && (
                   <div className="msg assistant">
-                    <div className="msg-avatar harness">H</div>
+                    <div className="msg-avatar harness prism"><img src="/prism.svg" alt="Prism" /></div>
                     <div className="bubble asst-bubble typing">
                       <span className="dots" />
                       <span>Agent 正在执行任务…</span>
@@ -2212,7 +2213,7 @@ ${bodyText}` : bodyText;
                   e.target.style.height = Math.min(e.target.scrollHeight, 200) + "px";
                 }}
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-                placeholder="告诉 Harness 你想做什么，用自然语言下达任务"
+                placeholder="告诉 Prism 你想做什么，用自然语言下达任务"
                 disabled={pending || running || !paths}
                 className="composer-input"
               />
@@ -2371,7 +2372,7 @@ ${bodyText}` : bodyText;
       {onboardingOpen && (
         <div className="onboarding">
           <div className="onboarding-inner">
-            <h1>欢迎使用 Harness AI 工作台</h1>
+            <h1>欢迎使用 Prism AI 工作台</h1>
             <div className="sub">飞书 · 影刀 · 脚本生成，一句话下达任务</div>
             <div className="steps">
               <div className={`step ${onboardingStep >= 1 ? "done" : onboardingStep === 0 ? "now" : ""}`} />
@@ -2480,7 +2481,7 @@ ${bodyText}` : bodyText;
         <div className="modal-backdrop" onClick={() => setHelpOpen(false)}>
           <div className="confirm-delete help-modal" onClick={(e) => e.stopPropagation()}>
             <div className="cd-head">
-              <span className="cd-title">帮助 · Codex Harness v{appVersion}</span>
+              <span className="cd-title">帮助 · Prism v{appVersion}</span>
               <button className="cd-close" onClick={() => setHelpOpen(false)}>×</button>
             </div>
             <div className="cd-body">
