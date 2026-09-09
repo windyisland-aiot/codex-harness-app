@@ -387,6 +387,22 @@ pub async fn appserver_turn_start(
     .map_err(|e| e.to_string())?
 }
 
+/// 恢复磁盘上的历史线程（应用重启后旧会话直接发消息会报 -32600 thread not found）。
+#[tauri::command]
+pub async fn appserver_thread_resume(
+    state: State<'_, CodexHandle>,
+    thread_id: String,
+) -> Result<Value, String> {
+    let st = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut guard = st.client.lock().map_err(|e| e.to_string())?;
+        let client = guard.as_mut().ok_or("app-server 未启动")?;
+        client.thread_resume(&thread_id).map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// 打断正在运行的 turn（对话打断按钮）。
 #[tauri::command]
 pub async fn appserver_turn_interrupt(

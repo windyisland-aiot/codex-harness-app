@@ -140,6 +140,7 @@ pub fn run() {
             appserver::appserver_thread_start,
             appserver::appserver_turn_start,
             appserver::appserver_turn_interrupt,
+            appserver::appserver_thread_resume,
             appserver::appserver_poll_events,
             appserver::appserver_poll_approvals,
             appserver::appserver_respond_approval,

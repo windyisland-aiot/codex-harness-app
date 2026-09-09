@@ -325,6 +325,14 @@ impl AppServerClient {
         )
     }
 
+    /// 恢复磁盘上的历史线程到当前 app-server 进程（thread/resume）。
+    ///
+    /// 应用重启后 app-server 进程内存里没有旧线程，此时直接 turn/start
+    /// 会报 -32600 thread not found；先 resume 加载回来再发消息。
+    pub fn thread_resume(&mut self, thread_id: &str) -> Result<Value> {
+        self.call("thread/resume", serde_json::json!({ "threadId": thread_id }), None)
+    }
+
     /// 回复服务器主动请求（如审批 `item/commandExecution/requestApproval`）。
     ///
     /// `result` 是要写回的 JSON-RPC `result` 载荷（如 `{"decision": "accept"}`）。

@@ -481,7 +481,7 @@ export default function App() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState("");
-  const [appVersion, setAppVersion] = useState("0.7.4");
+  const [appVersion, setAppVersion] = useState("0.7.5");
 
   // ------- 主题 -------
   const [theme, setThemeState] = useState<"light" | "dark">(() => {
@@ -716,6 +716,9 @@ export default function App() {
   const runningRef = useRef(false);
   const pendingRef = useRef(false);
   const activeThreadRef = useRef<string | null>(null);
+  /** 当前 codex 进程已加载的线程 id 集合（thread/start 成功或 thread/resume 成功）。
+      重启后 app-server 进程内存为空，旧会话直接发消息会报 -32600 thread not found。 */
+  const knownThreadsRef = useRef<Set<string>>(new Set());
   const msgsRef = useRef<Msg[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const approvalsRef = useRef<ApprovalRequest[]>([]);
@@ -1403,13 +1406,33 @@ export default function App() {
       const finalText = selectedSkill ? `[skill: ${selectedSkill}]
 ${bodyText}` : bodyText;
 
-      // --- 阶段 1：建线程（如果需要） ---
+      // --- 阶段 1：建线程 / 恢复历史线程 ---
       let threadId = activeThreadRef.current;
+      if (threadId && !knownThreadsRef.current.has(threadId)) {
+        // 历史会话：会话文件在本地，但当前 codex 进程未加载该线程 → 先 thread/resume。
+        setStatus("恢复历史会话…");
+        try {
+          await codex.threadResume(threadId);
+          knownThreadsRef.current.add(threadId);
+          threadProviderRef.current = provider;
+          setTerminalLines((prev) => [
+            ...prev, { ts: Date.now(), text: `[thread/resume] ok → ${threadId}`, stream: "meta" as const },
+          ].slice(-500));
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          setTerminalLines((prev) => [
+            ...prev, { ts: Date.now(), text: `[thread/resume] 失败: ${msg}，退化为新会话`, stream: "stderr" as const },
+          ].slice(-500));
+          setStatus("原会话已无法恢复，将创建新会话继续");
+          threadId = null; // 落到建线程分支，对话记录随新会话继续
+        }
+      }
       if (!threadId) {
         setStatus("创建会话…");
         try {
           const nid = await codex.threadStart({ model, modelProvider: provider, cwd });
           threadId = nid;
+          knownThreadsRef.current.add(nid);
           threadProviderRef.current = provider;
           // 先把本轮消息写进新会话的缓存并同步 ref，否则 setActiveThread 触发的
           // 恢复 effect 会读到空缓存，把刚发出的用户消息清掉（新建对话后不跳转的根因）。
@@ -1446,7 +1469,23 @@ ${bodyText}` : bodyText;
         ].slice(-500));
         setRunning(true);
       } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
+        let msg = e instanceof Error ? e.message : String(e);
+        // codex 进程中途重启（如改设置后重连）→ 内存里线程丢失。
+        // 报 thread not found 时自动 resume 一次并重试，而不是直接把错误甩给用户。
+        if (/thread not found|-32600/i.test(msg)) {
+          try {
+            await codex.threadResume(tid);
+            knownThreadsRef.current.add(tid);
+            await codex.turnStart({ threadId: tid, cwd, text: finalText, images: imageUrls, model });
+            setTerminalLines((prev) => [
+              ...prev, { ts: Date.now(), text: `[thread/resume+turn/start] ok，等待 LLM 回复…`, stream: "meta" as const },
+            ].slice(-500));
+            setRunning(true);
+            return;
+          } catch (e2) {
+            msg = e2 instanceof Error ? e2.message : String(e2);
+          }
+        }
         setLastError(msg);
         setStatus(`发送消息失败: ${msg}`);
         setTerminalLines((prev) => [

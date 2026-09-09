@@ -75,6 +75,11 @@ export function turnInterrupt(threadId: string, turnId: string): Promise<void> {
   return invoke("appserver_turn_interrupt", { threadId, turnId });
 }
 
+/** 恢复磁盘上的历史线程到当前 app-server 进程（重启后旧会话发消息前必须调用）。 */
+export function threadResume(threadId: string): Promise<unknown> {
+  return invoke("appserver_thread_resume", { threadId });
+}
+
 /** T08：取走待处理的审批请求。 */
 export interface ApprovalRequest {
   id: number;
