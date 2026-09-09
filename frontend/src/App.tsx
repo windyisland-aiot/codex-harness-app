@@ -481,7 +481,7 @@ export default function App() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState("");
-  const [appVersion, setAppVersion] = useState("0.7.5");
+  const [appVersion, setAppVersion] = useState("0.7.6");
 
   // ------- 主题 -------
   const [theme, setThemeState] = useState<"light" | "dark">(() => {
@@ -2057,7 +2057,7 @@ ${bodyText}` : bodyText;
                     </div>
                   </div>
                 ))}
-                {(activity.steps.length > 0 || activity.reasoning.trim()) && (
+                {running && (activity.steps.length > 0 || activity.reasoning.trim()) && (
                   <div className="msg assistant">
                     <div className="msg-avatar harness">H</div>
                     <div className="think-inline">
