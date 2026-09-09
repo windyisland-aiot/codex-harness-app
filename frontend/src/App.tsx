@@ -481,7 +481,7 @@ export default function App() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState("");
-  const [appVersion, setAppVersion] = useState("0.7.6");
+  const [appVersion, setAppVersion] = useState("0.7.7");
 
   // ------- 主题 -------
   const [theme, setThemeState] = useState<"light" | "dark">(() => {
@@ -1768,8 +1768,11 @@ ${bodyText}` : bodyText;
             )}
             {filteredSessions.map((s) => {
               const isActive = s.id === activeThread;
-              const dayLabel = s.updatedAt
-                ? new Date(s.updatedAt).toLocaleDateString(undefined, { month: "2-digit", day: "2-digit" })
+              // Rust 端会话时间戳为秒级（老数据），< 1e12 判定为秒并转毫秒，
+              // 否则 new Date 会按毫秒解析成 1970-01-22（历史会话全显示 1/22 的根因）。
+              const tsMs = s.updatedAt ? (s.updatedAt < 1e12 ? s.updatedAt * 1000 : s.updatedAt) : 0;
+              const dayLabel = tsMs
+                ? new Date(tsMs).toLocaleDateString(undefined, { month: "2-digit", day: "2-digit" })
                 : "—";
               return (
                 <li
