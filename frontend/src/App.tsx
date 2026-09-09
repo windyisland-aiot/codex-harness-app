@@ -476,13 +476,12 @@ export default function App() {
   const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
   // 当前轮的「思考过程」：规划/命令/文件/插件动作 + 模型推理流（内部滚动、限高）
   const [activity, setActivity] = useState<TurnActivity>({ steps: [], reasoning: "" });
-  const [thinkingOpen, setThinkingOpen] = useState(true);
   const [sideSearch, setSideSearch] = useState("");
   const sideSearchRef = useRef<HTMLInputElement>(null);
   const [helpOpen, setHelpOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState("");
-  const [appVersion, setAppVersion] = useState("0.7.3");
+  const [appVersion, setAppVersion] = useState("0.7.4");
 
   // ------- 主题 -------
   const [theme, setThemeState] = useState<"light" | "dark">(() => {
@@ -723,6 +722,8 @@ export default function App() {
   const activityRef = useRef<TurnActivity>({ steps: [], reasoning: "" });
   const reasoningBufRef = useRef<Record<string, string>>({});
   const thinkReasonRef = useRef<HTMLDivElement>(null);
+  /** 当前正在运行的 turn id（来自 turn/started），用于对话打断。 */
+  const activeTurnIdRef = useRef<string>("");
   // 轮询 interval 闭包捕获的是创建时的 accessMode，改用 ref 读最新值，
   // 否则切到「完全访问」后仍按旧模式挂起审批。
   const accessModeRef = useRef<"auto" | "full">(accessMode);
@@ -792,10 +793,10 @@ export default function App() {
 
   // 活动流更新时只滚思考块自身（内部滚动），不顶动整条消息
   useEffect(() => {
-    if (thinkReasonRef.current && thinkingOpen) {
+    if (thinkReasonRef.current) {
       thinkReasonRef.current.scrollTop = thinkReasonRef.current.scrollHeight;
     }
-  }, [activity, thinkingOpen]);
+  }, [activity]);
 
 
   // ------- 拉起本地 codex app-server -------
@@ -949,9 +950,16 @@ export default function App() {
         const events = await codex.pollEvents();
         const termAccum: Array<{ ts: number; text: string; stream?: "stdout" | "stderr" | "meta" }> = [];
         for (const e of events) {
+          if (e.method === "turn/started") {
+            const p = e.params as any;
+            const tid = String(p?.turn?.id ?? p?.turnId ?? "");
+            if (tid) activeTurnIdRef.current = tid;
+            continue;
+          }
           if (e.method === "turn/completed") {
             // 收尾：把还挂着的动作标记完成
             patchActivity((a) => ({ ...a, steps: a.steps.map((x) => ({ ...x, done: true })) }));
+            activeTurnIdRef.current = "";
             setRunning(false); setLastError(null);
             lastErrMergeRef.current = null;
             continue;
@@ -1112,7 +1120,6 @@ export default function App() {
     activityRef.current = empty;
     reasoningBufRef.current = {};
     setActivity(empty);
-    setThinkingOpen(true);
   }
   function upsertActivityStep(step: ActivityStep) {
     patchActivity((a) => ({
@@ -1453,6 +1460,32 @@ ${bodyText}` : bodyText;
       setLastError(msg); setStatus(`发送失败: ${msg}`);
       console.error("[send] unexpected", e);
     } finally { setPending(false); }
+  }
+
+  /** 对话打断：向 codex 发 turn/interrupt，停掉当前生成/命令执行。 */
+  async function interruptTurn() {
+    const tid = activeThreadRef.current;
+    const turnId = activeTurnIdRef.current;
+    if (!tid) { setRunning(false); return; }
+    setStatus("正在打断…");
+    try {
+      if (turnId) await codex.turnInterrupt(tid, turnId);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setStatus(`打断失败: ${msg}`);
+      setTerminalLines((prev) => [
+        ...prev, { ts: Date.now(), text: `[turn/interrupt] 失败: ${msg}`, stream: "stderr" as const },
+      ].slice(-500));
+      return;
+    }
+    // 本地立即停转；codex 随后还会发 turn/completed（interrupted），走同一收尾
+    activeTurnIdRef.current = "";
+    patchActivity((a) => ({ ...a, steps: a.steps.map((x) => ({ ...x, done: true })) }));
+    setRunning(false);
+    setStatus("已打断当前任务");
+    setTerminalLines((prev) => [
+      ...prev, { ts: Date.now(), text: `[turn/interrupt] 已打断`, stream: "meta" as const },
+    ].slice(-500));
   }
 
   function newChat() {
@@ -1988,38 +2021,21 @@ ${bodyText}` : bodyText;
                 {(activity.steps.length > 0 || activity.reasoning.trim()) && (
                   <div className="msg assistant">
                     <div className="msg-avatar harness">H</div>
-                    <div className="think-card">
-                      <button
-                        className="think-head"
-                        onClick={() => setThinkingOpen((v) => !v)}
-                        title={thinkingOpen ? "收起思考过程" : "展开思考过程"}
-                      >
-                        {running ? <span className="think-spinner" /> : <span className="think-done" />}
-                        <span className="think-title">思考过程</span>
-                        {activity.steps.length > 0 && (
-                          <span className="think-meta">
-                            {activity.steps.filter((x) => x.done).length}/{activity.steps.length} 步
-                          </span>
-                        )}
-                        <span className={`think-caret ${thinkingOpen ? "open" : ""}`}>▸</span>
-                      </button>
-                      {thinkingOpen && (
-                        <div className="think-body" ref={thinkReasonRef}>
-                          {activity.steps.map((st) => (
-                            <div key={st.id} className={`think-step kind-${st.kind}`}>
-                              <span className={`step-dot ${st.done ? "done" : "pending"}`}>
-                                {st.done ? "✓" : "•"}
-                              </span>
-                              <div className="step-text">
-                                <div className="step-title">{st.title}</div>
-                                {st.detail && <div className="step-detail" title={st.detail}>{st.detail}</div>}
-                              </div>
-                            </div>
-                          ))}
-                          {activity.reasoning.trim() && (
-                            <pre className="think-reason">{activity.reasoning}</pre>
-                          )}
-                        </div>
+                    <div className="think-inline">
+                      {activity.steps.length > 0 && (() => {
+                        const cur = activity.steps[activity.steps.length - 1];
+                        return (
+                          <div className="think-action">
+                            {running && !cur.done
+                              ? <span className="think-spinner" />
+                              : <span className="think-tick">✓</span>}
+                            <span className="think-action-title">{cur.title}</span>
+                            {cur.detail && <span className="think-action-detail" title={cur.detail}>{cur.detail}</span>}
+                          </div>
+                        );
+                      })()}
+                      {activity.reasoning.trim() && (
+                        <div className="think-stream" ref={thinkReasonRef}>{activity.reasoning}</div>
                       )}
                     </div>
                   </div>
@@ -2213,15 +2229,25 @@ ${bodyText}` : bodyText;
                   )}
                 </div>
 
-                {/* 发送按钮 */}
-                <button
-                  className="btn-send"
-                  disabled={pending || running || !paths || (!input.trim() && attachments.length === 0)}
-                  onClick={send}
-                  title="发送 (Enter)"
-                >
-                  {IconSend}
-                </button>
+                {/* 发送 / 打断按钮（运行中显示停止方块） */}
+                {running ? (
+                  <button
+                    className="btn-send btn-stop"
+                    onClick={() => { void interruptTurn(); }}
+                    title="打断当前任务"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2.5"/></svg>
+                  </button>
+                ) : (
+                  <button
+                    className="btn-send"
+                    disabled={pending || !paths || (!input.trim() && attachments.length === 0)}
+                    onClick={send}
+                    title="发送 (Enter)"
+                  >
+                    {IconSend}
+                  </button>
+                )}
               </div>
             </div>
 

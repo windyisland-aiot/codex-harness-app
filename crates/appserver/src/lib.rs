@@ -313,6 +313,18 @@ impl AppServerClient {
         self.call("turn/start", params, None)
     }
 
+    /// 打断正在运行的 turn（turn/interrupt）。
+    ///
+    /// `turn_id` 来自 `turn/started` 通知；打断后服务器照常下发
+    /// `turn/completed`（status 为 interrupted），客户端走原收尾逻辑。
+    pub fn turn_interrupt(&mut self, thread_id: &str, turn_id: &str) -> Result<Value> {
+        self.call(
+            "turn/interrupt",
+            serde_json::json!({ "threadId": thread_id, "turnId": turn_id }),
+            None,
+        )
+    }
+
     /// 回复服务器主动请求（如审批 `item/commandExecution/requestApproval`）。
     ///
     /// `result` 是要写回的 JSON-RPC `result` 载荷（如 `{"decision": "accept"}`）。

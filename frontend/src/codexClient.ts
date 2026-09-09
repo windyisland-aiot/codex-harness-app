@@ -70,6 +70,11 @@ export function pollEvents(): Promise<AppEvent[]> {
   return invoke<AppEvent[]>("appserver_poll_events");
 }
 
+/** 打断正在运行的 turn（对话打断）。turnId 来自 turn/started 通知。 */
+export function turnInterrupt(threadId: string, turnId: string): Promise<void> {
+  return invoke("appserver_turn_interrupt", { threadId, turnId });
+}
+
 /** T08：取走待处理的审批请求。 */
 export interface ApprovalRequest {
   id: number;

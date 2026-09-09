@@ -387,6 +387,24 @@ pub async fn appserver_turn_start(
     .map_err(|e| e.to_string())?
 }
 
+/// 打断正在运行的 turn（对话打断按钮）。
+#[tauri::command]
+pub async fn appserver_turn_interrupt(
+    state: State<'_, CodexHandle>,
+    thread_id: String,
+    turn_id: String,
+) -> Result<(), String> {
+    let st = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut guard = st.client.lock().map_err(|e| e.to_string())?;
+        let client = guard.as_mut().ok_or("app-server 未启动")?;
+        client.turn_interrupt(&thread_id, &turn_id).map_err(|e| e.to_string())?;
+        Ok::<(), String>(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 pub async fn appserver_poll_events(state: State<'_, CodexHandle>) -> Result<Vec<Value>, String> {
     let st = state.inner().clone();
