@@ -481,7 +481,7 @@ export default function App() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState("");
-  const [appVersion, setAppVersion] = useState("0.7.8");
+  const [appVersion, setAppVersion] = useState("0.7.9");
 
   // ------- 主题 -------
   const [theme, setThemeState] = useState<"light" | "dark">(() => {
@@ -646,29 +646,40 @@ export default function App() {
         setInput(contentWithPath);
         setTimeout(() => {
           send();
-          // 异步等待：每 2 秒轮询 msgs 是否还有 assistant 在工作，最多 5 分钟
+          // 完成判定以 turn 生命周期（running：turn/start → turn/completed）为准。
+          // 旧逻辑只看「最后一条是 assistant 消息」，codex 长时间推理/执行工具
+          // 而未产出正文时永远等不到 → 固定 5 分钟误报「执行超时」且状态还是 success。
           const pollStart = Date.now();
+          let sawRunning = false;
           const pollIv = window.setInterval(() => {
             const now = Date.now();
-            if (now - pollStart > 5 * 60 * 1000) {
+            if (now - pollStart > 30 * 60 * 1000) {
               window.clearInterval(pollIv);
-              finalize("执行超时");
+              finalize("failed", "执行超时（超过 30 分钟）");
               return;
             }
-            const last = msgsRef.current[msgsRef.current.length - 1];
-            if (!last || last.role !== "assistant") return;
-            // 如果 pending 为 false 且 session 不再 running，视为完成
-            if (!pendingRef.current) {
+            if (runningRef.current) { sawRunning = true; return; }
+            if (sawRunning && !runningRef.current && !pendingRef.current) {
+              // turn 已结束：按是否有错误标记成败
               window.clearInterval(pollIv);
-              finalize();
+              const err = lastErrorRef.current;
+              finalize(err ? "failed" : "success", err ? `执行失败: ${err}` : undefined);
+              return;
+            }
+            if (!sawRunning && !pendingRef.current && now - pollStart > 15000) {
+              // 15 秒内既没开始执行也不在发送中 → 启动失败（如未登录/配置错误）
+              window.clearInterval(pollIv);
+              const err = lastErrorRef.current;
+              finalize("failed", err ? `执行失败: ${err}` : "任务未能启动（请检查登录与模型配置）");
+              return;
             }
           }, 2000);
 
-          function finalize(note?: string) {
+          function finalize(status: "success" | "failed", note?: string) {
             setAutoHistory((prev) => prev.map((h) => h.id === histId
-              ? { ...h, status: "success", durMs: Date.now() - start, note }
+              ? { ...h, status, durMs: Date.now() - start, note }
               : h));
-            setAutoTasks((prev) => prev.map((t) => t.id === task.id ? { ...t, lastStatus: "success" } : t));
+            setAutoTasks((prev) => prev.map((t) => t.id === task.id ? { ...t, lastStatus: status } : t));
           }
         }, 120);
       }, 200);
@@ -750,6 +761,8 @@ export default function App() {
     }
   }, [showNewTaskModal]);
   useEffect(() => { runningRef.current = running; }, [running]);
+  const lastErrorRef = useRef<string | null>(null);
+  useEffect(() => { lastErrorRef.current = lastError; }, [lastError]);
   useEffect(() => { pendingRef.current = pending; }, [pending]);
   useEffect(() => { activeThreadRef.current = activeThread; }, [activeThread]);
   useEffect(() => { msgsRef.current = messages; }, [messages]);
