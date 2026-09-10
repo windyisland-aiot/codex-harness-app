@@ -1,14 +1,12 @@
-//! v0.3.0 统一设置面板 — Trae Work 风格左侧 nav + 右侧内容。
-//! 覆盖：账号 | 通用 | MCP | 会话 | 搜索 | 关于
-//! （插件/Skill 管理已移至独立的 PluginsPanel，v0.5.3）
-//! （模型板块已移除，v0.7.0 — URL/API Key 在后台硬编码注入）
+//! 统一设置面板 — 左侧 nav + 右侧内容。
+//! 覆盖：账号 | 通用 | MCP | 会话 | 关于
 //! 全部改动实时写 config.toml，保存后提示重启 codex 生效。
 
 import { useEffect, useState } from "react";
 import * as codex from "../codexClient";
 import type { AppConfig, McpServerConfig, SessionMeta } from "../codexClient";
 
-type NavKey = "account" | "general" | "mcp" | "sessions" | "search" | "about";
+type NavKey = "account" | "general" | "mcp" | "sessions" | "about";
 
 interface NavItem {
   key: NavKey;
@@ -23,19 +21,20 @@ const I = (path: JSX.Element) => (
 const NAV: NavItem[] = [
   { key: "account",  label: "账号",   icon: I(<><circle cx="12" cy="8" r="4"/><path d="M4 21v-1a8 8 0 0 1 16 0v1"/></>) },
   { key: "general",  label: "通用",   icon: I(<><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></>) },
-  { key: "search",   label: "搜索",   icon: I(<><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></>) },
   { key: "sessions", label: "会话流", icon: I(<><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></>) },
   { key: "about",    label: "关于",   icon: I(<><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></>) },
 ];
 
 export default function SettingsPanel({
-  open, onClose, codexHome, codexBin,
+  open, onClose, codexHome, codexBin, cloudUser, appVersion,
   onStatus, onSaved,
 }: {
   open: boolean;
   onClose: () => void;
   codexHome: string;
   codexBin: string;
+  cloudUser: string;
+  appVersion: string;
   onStatus: (s: string) => void;
   onSaved: () => void;
 }) {
@@ -204,7 +203,7 @@ export default function SettingsPanel({
         <section className="sp-content">
           <button className="sp-close" onClick={onClose}>×</button>
           {!cfg && <div className="sp-loading">加载中…</div>}
-          {cfg && nav === "account" && <SectionAccount />}
+          {cfg && nav === "account" && <SectionAccount cloudUser={cloudUser} appVersion={appVersion} />}
           {cfg && nav === "general" && <SectionGeneral cfg={cfg} patch={patchCfg} />}
           {cfg && nav === "mcp" && (
             <SectionMcp
@@ -218,8 +217,7 @@ export default function SettingsPanel({
             />
           )}
           {cfg && nav === "sessions" && <SectionSessions codexHome={codexHome} onStatus={onStatus} />}
-          {cfg && nav === "search" && <SectionSearch cfg={cfg} patch={patchCfg} />}
-          {cfg && nav === "about" && <SectionAbout codexHome={codexHome} codexBin={codexBin} />}
+          {cfg && nav === "about" && <SectionAbout codexHome={codexHome} codexBin={codexBin} appVersion={appVersion} />}
         </section>
       </div>
     </div>
@@ -228,19 +226,18 @@ export default function SettingsPanel({
 
 // ======================== section components ========================
 
-function SectionAccount() {
+function SectionAccount({ cloudUser, appVersion }: { cloudUser: string; appVersion: string }) {
   return (
     <div className="sp-section">
       <h2 className="sp-h">账号</h2>
-      <p className="sp-desc">Harness 本地实例暂未接入账号体系。后续可在此接入飞书/企业 SSO 登录。</p>
       <div className="sp-card">
         <div>
-          <div className="sp-label">当前身份</div>
-          <div>本地用户（未认证）</div>
+          <div className="sp-label">当前账号</div>
+          <div>{cloudUser || "未登录"}</div>
         </div>
         <div>
           <div className="sp-label">版本</div>
-          <div>0.3.0</div>
+          <div>v{appVersion}</div>
         </div>
       </div>
     </div>
@@ -252,7 +249,6 @@ function SectionGeneral({ cfg, patch }: { cfg: AppConfig; patch: (p: Partial<App
   return (
     <div className="sp-section">
       <h2 className="sp-h">通用</h2>
-      <p className="sp-desc">审批策略控制 codex 执行命令/写文件前是否弹窗确认。</p>
       <div className="sp-card">
         <div className="sp-row">
           <label className="sp-label">审批策略</label>
@@ -313,7 +309,6 @@ function SectionMcp({
   return (
     <div className="sp-section">
       <h2 className="sp-h">MCP Server</h2>
-      <p className="sp-desc">Codex 启动时会自动拉起已启用的 MCP server（stdio 模式）。</p>
       <div className="sp-actions">
         <button className="sp-btn sp-btn-ghost" onClick={addFeishu}>+ 注册飞书 MCP（lark-mcp）</button>
         <button className="sp-btn sp-btn-primary" onClick={async () => { await addBaseViaTauri(); checkBaseHealth(); }}>
@@ -647,22 +642,12 @@ function SectionSessions({ codexHome, onStatus }: { codexHome: string; onStatus:
   );
 }
 
-function SectionSearch({ cfg, patch: _patch }: { cfg: AppConfig; patch: (p: Partial<AppConfig>) => void }) {
+function SectionAbout({ codexHome, codexBin, appVersion }: { codexHome: string; codexBin: string; appVersion: string }) {
   return (
     <div className="sp-section">
-      <h2 className="sp-h">搜索</h2>
-      <p className="sp-desc">搜索 provider 的 API key 目前由全局 `TAVILY_API_KEY` / `SERPER_API_KEY` 环境变量提供，不在本面板直接管理。</p>
-      <pre className="sp-code">{JSON.stringify(cfg, null, 2)}</pre>
-    </div>
-  );
-}
-
-function SectionAbout({ codexHome, codexBin }: { codexHome: string; codexBin: string }) {
-  return (
-    <div className="sp-section">
-      <h2 className="sp-h">关于 Harness</h2>
-      <p className="sp-desc">基于 OpenAI Codex 的企业内部 Agent 桌面应用。v0.5.4</p>
+      <h2 className="sp-h">关于 Prism</h2>
       <div className="sp-card">
+        <div className="sp-row"><div className="sp-label">版本</div><div>v{appVersion}</div></div>
         <div className="sp-row"><div className="sp-label">codexHome</div><div className="sp-code">{codexHome}</div></div>
         <div className="sp-row"><div className="sp-label">codexBin</div><div className="sp-code">{codexBin}</div></div>
       </div>

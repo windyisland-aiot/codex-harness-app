@@ -82,17 +82,13 @@ jobs:
           codesign --force --sign - src-tauri/resources/codex || echo "codesign ad-hoc 失败（继续，可能仍可运行）"
           file src-tauri/resources/codex || true
 
-      - name: 切换 tauri 配置为 macOS 资源映射 + bundle targets
+      - name: 切换 tauri 配置为 macOS 资源映射
         shell: bash
         run: |
           set -e
           # resources 映射从 codex.exe 换成 codex（Windows job 不受影响）
           sed -i '' 's#"resources/codex.exe": "codex.exe"#"resources/codex": "codex"#' src-tauri/tauri.conf.json
           grep -n "resources/codex" src-tauri/tauri.conf.json
-          # bundle.targets 从 ["msi","nsis"] 改成 ["dmg"]，否则 macOS 上只编译二进制不打 dmg
-          # 用 python 单行改 JSON，避免 sed 处理数组引号的坑
-          python3 -c "import json; p='src-tauri/tauri.conf.json'; d=json.load(open(p)); d['bundle']['targets']=['dmg']; open(p,'w').write(json.dumps(d,indent=2,ensure_ascii=False)+chr(10))"
-          grep -n '"targets"' src-tauri/tauri.conf.json
 
       - name: 安装 tauri-cli
         shell: bash
@@ -137,40 +133,6 @@ jobs:
           if [ "$dmg_count" = "0" ]; then echo "no dmg built"; find "$bundle" -maxdepth 2 -type d; exit 1; fi
           echo "artifacts_path=$bundle/dmg" >> "$GITHUB_OUTPUT"
 
-      - name: 深度 ad-hoc 签名 .app 和 .dmg（避免 macOS Gatekeeper 报"已损坏"）
-        shell: bash
-        run: |
-          set -e
-          bundle=""
-          for c in "$PWD/src-tauri/target/release/bundle" "$PWD/src-tauri/target/aarch64-apple-darwin/release/bundle" "$PWD/target/release/bundle"; do
-            if [ -d "$c" ]; then bundle="$c"; break; fi
-          done
-          app_dir=$(find "$bundle/macos" -name "*.app" -maxdepth 1 -print -quit 2>/dev/null || true)
-          dmg_path=$(find "$bundle/dmg" -name "*.dmg" -maxdepth 1 -print -quit 2>/dev/null || true)
-          echo "app: $app_dir"
-          echo "dmg: $dmg_path"
-          # 1) 深签 .app：递归签所有可执行/Mach-O/库，最后签 .app 本身
-          if [ -n "$app_dir" ]; then
-            # 先签所有嵌套的可执行文件与动态库
-            find "$app_dir" -type f \( -perm +111 -o -name "*.dylib" \) -print0 | while IFS= read -r -d '' f; do
-              if file "$f" | grep -q "Mach-O"; then
-                codesign --force --sign - --timestamp=none "$f" || echo "签 $f 失败（跳过）"
-              fi
-            done
-            # 签所有 .frameworks
-            find "$app_dir" -name "*.framework" -print0 | while IFS= read -r -d '' fw; do
-              codesign --force --sign - --timestamp=none "$fw" || echo "签 $fw 失败（跳过）"
-            done
-            # 最后深签整个 .app
-            codesign --force --deep --sign - --timestamp=none "$app_dir" || echo "深签 .app 失败（继续）"
-            codesign --verify --verbose=4 "$app_dir" 2>&1 | tail -5 || true
-          fi
-          # 2) 签 .dmg
-          if [ -n "$dmg_path" ]; then
-            codesign --force --sign - --timestamp=none "$dmg_path" || echo "签 dmg 失败（继续）"
-            codesign --verify --verbose "$dmg_path" 2>&1 | tail -3 || true
-          fi
-
       - name: 上传 dmg 作为 workflow artifact
         uses: actions/upload-artifact@v4
         continue-on-error: true
@@ -186,7 +148,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.version_raw }}
-          name: Prism v${{ steps.version.outputs.version }} · macOS 安装包
+          name: Prism v${{ steps.version.outputs.version }} · 安装包
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: ${{ steps.artifacts.outputs.artifacts_path }}/*.dmg

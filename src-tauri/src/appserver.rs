@@ -309,9 +309,14 @@ pub async fn appserver_start(
             default_timeout_ms: 180_000,
             on_notification: Some(Box::new(move |method, params| {
                 // 只把重要通知写到 harness.log，避免刷屏
-                let is_important = matches!(method, "turn/completed" | "thread/started" | "error" | "warning" | "turn/started");
+                let is_important = matches!(method, "turn/completed" | "thread/started" | "error" | "warning" | "turn/started"
+                    | "mcpServer/startupStatus/updated" | "item/mcpToolCall/progress");
                 if is_important {
-                    eprintln!("[notif] {method}");
+                    if method == "mcpServer/startupStatus/updated" {
+                        eprintln!("[notif] {method} {}", serde_json::to_string(params).unwrap_or_default());
+                    } else {
+                        eprintln!("[notif] {method}");
+                    }
                 }
                 let mut g = st_notif.events.lock().unwrap();
                 if g.len() > 200_000 {

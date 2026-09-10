@@ -481,7 +481,7 @@ export default function App() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState("");
-  const [appVersion, setAppVersion] = useState("0.7.9");
+  const [appVersion, setAppVersion] = useState("0.8.0");
 
   // ------- 主题 -------
   const [theme, setThemeState] = useState<"light" | "dark">(() => {
@@ -508,6 +508,45 @@ export default function App() {
   const [cloudConnected, setCloudConnected] = useState(false);
   const [cloudUser, setCloudUser] = useState("");
   const [cloudPass, setCloudPass] = useState("");
+  // 记住账号：勾选后凭据存本地，下次启动自动登录
+  const LOGIN_REMEMBER_KEY = "harness.login.remember";
+  const LOGIN_SAVED_KEY = "harness.login.saved";
+  const [rememberLogin, setRememberLogin] = useState<boolean>(() => {
+    try { return window.localStorage.getItem("harness.login.remember") === "1"; } catch { return false; }
+  });
+
+  function readSavedLogin(): { u: string; p: string } | null {
+    try {
+      if (window.localStorage.getItem(LOGIN_REMEMBER_KEY) !== "1") return null;
+      const raw = window.localStorage.getItem(LOGIN_SAVED_KEY);
+      if (!raw) return null;
+      const { u, p } = JSON.parse(decodeURIComponent(escape(atob(raw))));
+      return u && p ? { u, p } : null;
+    } catch { return null; }
+  }
+
+  function persistLoginRemember(username: string, password: string) {
+    try {
+      if (rememberLogin) {
+        window.localStorage.setItem(LOGIN_REMEMBER_KEY, "1");
+        window.localStorage.setItem(
+          LOGIN_SAVED_KEY,
+          btoa(unescape(encodeURIComponent(JSON.stringify({ u: username, p: password })))),
+        );
+      } else {
+        window.localStorage.setItem(LOGIN_REMEMBER_KEY, "0");
+        window.localStorage.removeItem(LOGIN_SAVED_KEY);
+      }
+    } catch { /* 隐私模式等场景下静默失败 */ }
+  }
+
+  function handleRememberChange(v: boolean) {
+    setRememberLogin(v);
+    try {
+      window.localStorage.setItem(LOGIN_REMEMBER_KEY, v ? "1" : "0");
+      if (!v) window.localStorage.removeItem(LOGIN_SAVED_KEY);
+    } catch { /* ignore */ }
+  }
   // 当前选用的 skill（空 = 自由对话；talk-script = 脚本生成工作流，SKILL.md 在本地）
   const [selectedSkill, setSelectedSkill] = useState<string>("");
 
@@ -554,8 +593,10 @@ export default function App() {
     return window.localStorage.getItem("harness.accessMode") === "full" ? "full" : "auto";
   });
   const [automationOpen, setAutomationOpen] = useState(false);
-  const [autoTab, setAutoTab] = useState<"configured" | "templates" | "history">("configured");
+  const [autoTab, setAutoTab] = useState<"configured" | "history">("configured");
   const [showNewTaskModal, setShowNewTaskModal] = useState(false);
+  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
+  const [runningTaskIds, setRunningTaskIds] = useState<string[]>([]);
 
   // ESC 快捷键：退出自动化面板 / 关闭 modal
   useEffect(() => {
@@ -629,6 +670,7 @@ export default function App() {
   /** 执行一个自动化任务：创建新会话 + 发送任务内容 + 把输出路径拼到输入里 */
   function runAutoTask(task: AutoTask, trigger: "定时触发" | "手动触发") {
     const start = Date.now();
+    setRunningTaskIds((prev) => (prev.includes(task.id) ? prev : [...prev, task.id]));
     // 记录一次历史（先插入一条 running，再在下方 on 里替换）
     const histId = `h_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
     setAutoHistory((prev) => [
@@ -676,6 +718,7 @@ export default function App() {
           }, 2000);
 
           function finalize(status: "success" | "failed", note?: string) {
+            setRunningTaskIds((prev) => prev.filter((x) => x !== task.id));
             setAutoHistory((prev) => prev.map((h) => h.id === histId
               ? { ...h, status, durMs: Date.now() - start, note }
               : h));
@@ -684,6 +727,7 @@ export default function App() {
         }, 120);
       }, 200);
     } catch (e) {
+      setRunningTaskIds((prev) => prev.filter((x) => x !== task.id));
       setAutoHistory((prev) => prev.map((h) => h.id === histId
         ? { ...h, status: "failed", durMs: Date.now() - start, note: String(e) }
         : h));
@@ -709,6 +753,36 @@ export default function App() {
         nextRun,
       },
     ]);
+  }
+  function updateAutoTask(id: string, name: string, triggerText: string, content: string, outputPath: string) {
+    const parsed = parseTriggerInput(triggerText);
+    const nextRun = computeNextRun(parsed.kind, parsed.cronExpr);
+    setAutoTasks((prev) => prev.map((t) => t.id === id ? {
+      ...t,
+      name: name.trim() || "未命名任务",
+      kind: parsed.kind,
+      trigger: parsed.display,
+      cronExpr: parsed.cronExpr,
+      content: content.trim(),
+      outputPath: outputPath.trim(),
+      nextRun,
+    } : t));
+  }
+  function openNewTaskModal() {
+    setEditingTaskId(null);
+    setMName("");
+    setMTrigger("每天 09:00");
+    setMContent("");
+    setMOutput("");
+    setShowNewTaskModal(true);
+  }
+  function openEditTaskModal(t: AutoTask) {
+    setEditingTaskId(t.id);
+    setMName(t.name);
+    setMTrigger(t.trigger);
+    setMContent(t.content);
+    setMOutput(t.outputPath);
+    setShowNewTaskModal(true);
   }
   function toggleAutoTask(id: string) {
     setAutoTasks((prev) => prev.map((t) => t.id === id ? { ...t, on: !t.on } : t));
@@ -885,6 +959,14 @@ export default function App() {
         } catch { /* */ }
 
         if (!hasToken) {
+          // 记住账号：有保存的凭据则自动登录（凭据只存本机 localStorage）
+          const saved = readSavedLogin();
+          if (saved) {
+            setCloudUser(saved.u);
+            setCloudPass(saved.p);
+            await performLogin(saved.u, saved.p, { codexHome: p.codexHome, codexBin: p.codexBin });
+            return;
+          }
           setStatus("请先登录");
           return;
         }
@@ -1031,6 +1113,27 @@ export default function App() {
               if (joined.trim()) patchActivity((a) => ({ ...a, reasoning: joined }));
               continue;
             }
+          }
+          if (e.method === "mcpServer/startupStatus/updated") {
+            const p = e.params as any;
+            const name = String(p?.name ?? "mcp");
+            const st = String(p?.status ?? "");
+            const err = p?.error ? String(p.error) : "";
+            upsertActivityStep({
+              id: `mcp-start-${name}`,
+              kind: "tool",
+              title: `插件服务 · ${name}`,
+              detail: st === "ready" ? "已就绪"
+                : st === "failed" ? `启动失败：${err || "命令不可用或超时"}`
+                : st === "cancelled" ? "已取消"
+                : "正在启动（首次运行需下载依赖，可能较慢）…",
+              done: st === "ready" || st === "failed" || st === "cancelled",
+            });
+            if (st === "failed") {
+              termAccum.push({ ts: Date.now(), text: `[MCP] ${name} 启动失败: ${err || "(无错误详情)"}`, stream: "stderr" });
+              setLastError(`插件服务 ${name} 启动失败：${err || "请确认 lark-mcp / lark-openapi-mcp 已安装可用"}`);
+            }
+            continue;
           }
           if (e.method === "item/mcpToolCall/progress") {
             const prm = (e.params as any) ?? {};
@@ -1250,6 +1353,8 @@ export default function App() {
   }
 
   function handleLogout() {
+    // 显式退出后不再自动登录，清掉保存的凭据
+    handleRememberChange(false);
     setCloudConnected(false);
     setConnected(false);
     setRunning(false);
@@ -1317,6 +1422,11 @@ export default function App() {
 
   // ------- 登录（登录成功后拉起本地 codex） -------
   async function handleCloudLogin() {
+    await performLogin(cloudUser, cloudPass);
+  }
+
+  // pathsOverride：开机自动登录时 paths state 尚未落地，直接传入解析好的路径
+  async function performLogin(username: string, password: string, pathsOverride?: { codexHome: string; codexBin: string }) {
     const isTauriEnv = (typeof (window as any).__TAURI_INTERNALS__ !== "undefined" || typeof (window as any).__TAURI__ !== "undefined");
     // 浏览器开发模式：invoke 不可用，直接 mock 登录成功
     if (!isTauriEnv) {
@@ -1329,21 +1439,24 @@ export default function App() {
     try {
       setStatus("登录中…");
       const result = await codex.cloudLogin({
-        username: cloudUser,
-        password: cloudPass,
+        username,
+        password,
       });
       if (!result.ok || !result.token) {
         setStatus("登录失败：请检查用户名和密码");
         return;
       }
+      persistLoginRemember(username, password);
       setCloudConnected(true);
       setStatus("已登录");
 
       // 登录拿到 token 后才能启动 codex（模型请求靠它鉴权）
-      if (codexHome && codexBin) {
-        await bootLocalCodex(codexHome, codexBin);
+      const home = pathsOverride?.codexHome ?? codexHome;
+      const bin = pathsOverride?.codexBin ?? codexBin;
+      if (home && bin) {
+        await bootLocalCodex(home, bin);
         try {
-          const list = await codex.sessionList(codexHome);
+          const list = await codex.sessionList(home);
           setSessions(list.map((m) => ({
             id: m.id, title: m.title || m.id,
             provider: m.provider, model: m.model, status: "done" as const,
@@ -1550,7 +1663,26 @@ ${bodyText}` : bodyText;
       const turns = res?.thread?.turns ?? [];
       const lastTurn = turns[turns.length - 1];
       const status = String(lastTurn?.status ?? "");
-      if (!status || status === "inProgress") return; // 仍在正常执行（如长命令无输出）
+      if (!status || status === "inProgress") {
+        // 仍在执行：把当前卡住的条目（插件调用/命令）显示出来，方便定位
+        const items: any[] = lastTurn?.items ?? [];
+        const pending = [...items].reverse().find((it: any) =>
+          (it?.type === "mcpToolCall" && it?.status !== "completed" && it?.status !== "failed")
+          || it?.type === "commandExecution");
+        if (pending) {
+          const desc = pending.type === "mcpToolCall"
+            ? `调用插件 · ${pending.server ?? "?"}/${pending.tool ?? "?"}`
+            : `执行命令 · ${String(pending.command ?? "").slice(0, 120)}`;
+          upsertActivityStep({
+            id: "watchdog-pending",
+            kind: "tool",
+            title: "仍在执行",
+            detail: `${desc}（已等待较久，如确认卡住可点停止按钮打断）`,
+            done: false,
+          });
+        }
+        return;
+      }
       patchActivity((a) => ({ ...a, steps: a.steps.map((x) => ({ ...x, done: true })) }));
       activeTurnIdRef.current = "";
       setRunning(false);
@@ -1698,6 +1830,7 @@ ${bodyText}` : bodyText;
   if (!cloudConnected) {
     return (
       <div className="cloud-login-overlay cloud-login-fullscreen">
+        <button className="login-quit-btn" title="退出 Prism" onClick={() => doClose(setStatus)}>×</button>
         <div className="cloud-login-modal">
           <img src="/prism.svg" alt="Prism" className="login-logo" />
           <h2>Prism 登录</h2>
@@ -1718,6 +1851,14 @@ ${bodyText}` : bodyText;
             onChange={(e) => setCloudPass(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") handleCloudLogin(); }}
           />
+          <label className="cloud-login-remember">
+            <input
+              type="checkbox"
+              checked={rememberLogin}
+              onChange={(e) => handleRememberChange(e.target.checked)}
+            />
+            <span>记住账号</span>
+          </label>
           <div className="cloud-login-actions">
             <button
               className="primary"
@@ -1953,7 +2094,6 @@ ${bodyText}` : bodyText;
                   <div className="ap-tabs">
                     {([
                       ["configured", "已配置"],
-                      ["templates", "任务模板"],
                       ["history", "执行历史"],
                     ] as const).map(([k, label]) => (
                       <button
@@ -1965,8 +2105,7 @@ ${bodyText}` : bodyText;
                   </div>
                 </div>
                 <div className="ap-actions">
-                  <button className="ap-btn ghost" onClick={() => setStatus("从对话中创建：输入需求即可")}>在对话中创建</button>
-                  <button className="ap-btn primary" onClick={() => setShowNewTaskModal(true)}>+ 手动新建</button>
+                  <button className="ap-btn primary" onClick={openNewTaskModal}>+ 新建任务</button>
                 </div>
               </div>
 
@@ -1979,7 +2118,7 @@ ${bodyText}` : bodyText;
                         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                       </div>
                       <div className="ap-empty-title">暂无自动化任务</div>
-                      <div className="ap-empty-desc">点击右上角「手动新建」或「在对话中创建」来添加你的第一个定时任务</div>
+                      <div className="ap-empty-desc">点击右上角「新建任务」添加第一个定时任务</div>
                     </div>
                   ) : autoTasks.map((t) => (
                     <div key={t.id} className="ap-row">
@@ -1987,6 +2126,7 @@ ${bodyText}` : bodyText;
                         <div className="ap-row-title">
                           <span className={`ap-status-dot ${t.on ? "on" : "off"}`} />
                           {t.name}
+                          {runningTaskIds.includes(t.id) && <span className="ap-status-chip running">● 运行中</span>}
                         </div>
                         <div className="ap-row-meta">
                           <span>⏱ {t.trigger}</span>
@@ -2001,7 +2141,8 @@ ${bodyText}` : bodyText;
                         </div>
                         <div className="ap-row-last">上次：{formatTimeAgo(t.lastRun)}</div>
                         <div className="ap-row-ops">
-                          <button className="ap-row-btn" title="立即运行" onClick={() => runAutoTaskNow(t.id)}>▶</button>
+                          <button className="ap-row-btn" title="编辑" onClick={() => openEditTaskModal(t)}>✎</button>
+                          <button className="ap-row-btn" title="立即运行" disabled={runningTaskIds.includes(t.id)} onClick={() => runAutoTaskNow(t.id)}>▶</button>
                           <button className="ap-row-btn danger" title="删除" onClick={() => deleteAutoTask(t.id)}>×</button>
                         </div>
                         <label className={`ap-switch ${t.on ? "on" : ""}`}>
@@ -2011,19 +2152,6 @@ ${bodyText}` : bodyText;
                       </div>
                     </div>
                   ))}
-                </div>
-              )}
-
-              {/* ---- 任务模板 ---- */}
-              {autoTab === "templates" && (
-                <div className="ap-list">
-                  <div className="ap-empty">
-                    <div className="ap-empty-icon">
-                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                    </div>
-                    <div className="ap-empty-title">暂无可用模板</div>
-                    <div className="ap-empty-desc">后续会把脚本生成、飞书同步、影刀触发等高频场景做成内置模板</div>
-                  </div>
                 </div>
               )}
 
@@ -2068,7 +2196,7 @@ ${bodyText}` : bodyText;
                 <div className="modal-backdrop" onClick={() => setShowNewTaskModal(false)}>
                   <div className="ap-modal" onClick={(e) => e.stopPropagation()}>
                     <div className="ap-modal-head">
-                      <h3>新建自动化任务</h3>
+                      <h3>{editingTaskId ? "编辑自动化任务" : "新建自动化任务"}</h3>
                       <button className="ap-row-btn" onClick={() => setShowNewTaskModal(false)}>×</button>
                     </div>
                     <div className="ap-modal-body">
@@ -2088,7 +2216,6 @@ ${bodyText}` : bodyText;
                       <label className="ap-field">
                         <span className="ap-label">输出文件存储路径（可选）</span>
                         <input className="ap-input" value={mOutput} onChange={(e) => setMOutput(e.target.value)} placeholder="例如：/workspace/outputs/daily-brief/" />
-                        <div className="ap-hint">留空则输出由 Agent 自行决定。支持绝对路径或项目内相对路径。</div>
                       </label>
                     </div>
                     <div className="ap-modal-foot">
@@ -2097,11 +2224,16 @@ ${bodyText}` : bodyText;
                         className="ap-btn primary"
                         disabled={!mName.trim() || !mTrigger.trim() || !mContent.trim()}
                         onClick={() => {
-                          addAutoTask(mName, mTrigger, mContent, mOutput);
+                          if (editingTaskId) {
+                            updateAutoTask(editingTaskId, mName, mTrigger, mContent, mOutput);
+                            setStatus("定时任务已更新 ✅");
+                          } else {
+                            addAutoTask(mName, mTrigger, mContent, mOutput);
+                            setStatus("定时任务已创建 ✅");
+                          }
                           setShowNewTaskModal(false);
-                          setStatus("定时任务已创建 ✅");
                         }}
-                      >创建</button>
+                      >{editingTaskId ? "保存" : "创建"}</button>
                     </div>
                   </div>
                 </div>
@@ -2528,6 +2660,8 @@ ${bodyText}` : bodyText;
         onClose={() => setSettingsOpen(false)}
         codexHome={codexHome}
         codexBin={paths?.codexBin ?? ""}
+        cloudUser={cloudUser}
+        appVersion={appVersion}
         onSaved={async () => {
           // codex 已重启（API key + provider 配置生效），重新读取 config 更新本地状态
           try {

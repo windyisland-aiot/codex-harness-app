@@ -3286,6 +3286,42 @@ body.theme-dark .plg-card-tag.type-plugin { background: rgba(59,130,246,.15); co
   backdrop-filter: none;
   z-index: 9999;
 }
+.login-quit-btn {
+  position: absolute;
+  top: 18px;
+  right: 20px;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+  color: var(--text-secondary);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  transition: all .12s;
+  -webkit-app-region: no-drag;
+}
+.login-quit-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+.cloud-login-remember {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: -2px 0 4px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+.cloud-login-remember input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--brand);
+  cursor: pointer;
+}
 .cloud-login-fullscreen .cloud-login-modal {
   width: min(420px, 92vw);
   padding: 36px 40px;
@@ -3988,6 +4024,15 @@ body.theme-dark .bar-btn-approval.is-full {
 .ap-status-chip.failed {
   background: rgba(239, 68, 68, 0.12);
   color: #EF4444;
+}
+.ap-status-chip.running {
+  background: rgba(59, 130, 246, 0.12);
+  color: #3B82F6;
+  animation: ap-running-pulse 1.6s ease-in-out infinite;
+}
+@keyframes ap-running-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
 }
 .ap-btn:disabled {
   opacity: 0.5;
