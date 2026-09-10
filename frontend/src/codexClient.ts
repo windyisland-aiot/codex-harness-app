@@ -80,6 +80,12 @@ export function threadResume(threadId: string): Promise<unknown> {
   return invoke("appserver_thread_resume", { threadId });
 }
 
+/** 读取线程当前状态（含各 turn 的 items），turn 完成后对账补渲染用。 */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function threadRead(threadId: string): Promise<any> {
+  return invoke("appserver_thread_read", { threadId });
+}
+
 /** T08：取走待处理的审批请求。 */
 export interface ApprovalRequest {
   id: number;

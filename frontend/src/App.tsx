@@ -738,6 +738,10 @@ export default function App() {
   const thinkReasonRef = useRef<HTMLDivElement>(null);
   /** 当前正在运行的 turn id（来自 turn/started），用于对话打断。 */
   const activeTurnIdRef = useRef<string>("");
+  /** 本轮是否已渲染任何 assistant 正文（turn 完成后对账依据）。 */
+  const turnGotAssistantRef = useRef(false);
+  /** 本轮是否收到过流式 delta（item/completed 全文去重依据）。 */
+  const turnSawStreamDeltaRef = useRef(false);
   // 轮询 interval 闭包捕获的是创建时的 accessMode，改用 ref 读最新值，
   // 否则切到「完全访问」后仍按旧模式挂起审批。
   const accessModeRef = useRef<"auto" | "full">(accessMode);
@@ -964,12 +968,15 @@ export default function App() {
           : [...steps, step];
       try {
         const events = await codex.pollEvents();
+        if (events.length > 0) lastEventTsRef.current = Date.now();
         const termAccum: Array<{ ts: number; text: string; stream?: "stdout" | "stderr" | "meta" }> = [];
         for (const e of events) {
           if (e.method === "turn/started") {
             const p = e.params as any;
             const tid = String(p?.turn?.id ?? p?.turnId ?? "");
             if (tid) activeTurnIdRef.current = tid;
+            turnGotAssistantRef.current = false;
+            turnSawStreamDeltaRef.current = false;
             continue;
           }
           if (e.method === "turn/completed") {
@@ -978,6 +985,12 @@ export default function App() {
             activeTurnIdRef.current = "";
             setRunning(false); setLastError(null);
             lastErrMergeRef.current = null;
+            // 偶发「思考半天无回复」：流式事件丢失时正文一条都没渲染。
+            // 用 thread/read 拉权威内容补回；失败/打断的 turn 不补（错误气泡已提示）。
+            const turnStatus = String((e.params as any)?.turn?.status ?? "completed");
+            if (!turnGotAssistantRef.current && turnStatus !== "failed" && turnStatus !== "interrupted") {
+              void recoverMissingReply();
+            }
             continue;
           }
           // ------- 思考过程：规划 / 推理流 / 工具动作 -------
@@ -1065,6 +1078,10 @@ export default function App() {
 
           const d = codex.textDelta(e);
           if (d === null) continue;
+          // 已通过 delta 流式渲染过的消息，item/completed 里的全文是同一内容，跳过防重复
+          if (e.method === "item/completed" && turnSawStreamDeltaRef.current) continue;
+          turnGotAssistantRef.current = true;
+          if (e.method === "item/agentMessage/delta") turnSawStreamDeltaRef.current = true;
           const cur = msgsRef.current;
           if (cur.length > 0 && cur[cur.length - 1].role === "assistant") {
             const list = [...cur];
@@ -1076,6 +1093,12 @@ export default function App() {
         }
         if (termAccum.length > 0) {
           setTerminalLines((prev) => [...prev, ...termAccum].slice(-500));
+        }
+        // 看门狗：240s 无事件且距上次探测 60s+ → 对账 turn 状态
+        const nowMs = Date.now();
+        if (nowMs - lastEventTsRef.current > 240_000 && nowMs - lastReconcileRef.current > 60_000) {
+          lastReconcileRef.current = nowMs;
+          void reconcileSilentTurn();
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);
@@ -1512,6 +1535,64 @@ ${bodyText}` : bodyText;
       setLastError(msg); setStatus(`发送失败: ${msg}`);
       console.error("[send] unexpected", e);
     } finally { setPending(false); }
+  }
+
+  /** 静默看门狗：running 中超过 240s 无任何事件（turn/completed 可能丢失），
+      用 thread/read 探测 turn 真实状态；已结束则按正常路径收尾 + 补渲染。 */
+  const lastEventTsRef = useRef(Date.now());
+  const lastReconcileRef = useRef(0);
+  async function reconcileSilentTurn() {
+    const tid = activeThreadRef.current;
+    if (!tid) return;
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const res: any = await codex.threadRead(tid);
+      const turns = res?.thread?.turns ?? [];
+      const lastTurn = turns[turns.length - 1];
+      const status = String(lastTurn?.status ?? "");
+      if (!status || status === "inProgress") return; // 仍在正常执行（如长命令无输出）
+      patchActivity((a) => ({ ...a, steps: a.steps.map((x) => ({ ...x, done: true })) }));
+      activeTurnIdRef.current = "";
+      setRunning(false);
+      lastErrMergeRef.current = null;
+      setStatus(status === "completed" ? "已收尾（事件补偿）" : "本轮已结束");
+      if (!turnGotAssistantRef.current && status === "completed") {
+        await recoverMissingReply(res);
+      }
+    } catch { /* 下轮再试 */ }
+  }
+
+  /** turn 结束但本轮没有渲染任何正文：用 thread/read 拉权威内容补回；
+      仍无内容则给出明确提示，不再静默。 */
+  async function recoverMissingReply(prefetched?: unknown) {
+    const tid = activeThreadRef.current;
+    if (!tid) return;
+    const appendOnce = (text: string) => {
+      const cur = msgsRef.current;
+      // 防竞态：期间用户重发/事件补到就不再覆盖
+      if (cur.length > 0 && cur[cur.length - 1].role === "assistant" && cur[cur.length - 1].text.trim()) return;
+      setMessages([...msgsRef.current, { role: "assistant", text }]);
+    };
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const res: any = prefetched ?? await codex.threadRead(tid);
+      const turns = res?.thread?.turns ?? [];
+      const lastTurn = turns[turns.length - 1];
+      const texts: string[] = [];
+      for (const it of lastTurn?.items ?? []) {
+        if (it?.type === "agentMessage" && typeof it.text === "string" && it.text.trim()) {
+          texts.push(it.text);
+        }
+      }
+      if (texts.length > 0) {
+        appendOnce(texts.join("\n\n"));
+        setStatus("已补回本轮回复");
+        return;
+      }
+      appendOnce("（本轮没有产生回复内容：可能是推理耗尽输出上限或上游截断。建议重试发送，或新建会话缩短上下文后再试）");
+    } catch {
+      appendOnce("（回复内容拉取失败，请重试发送）");
+    }
   }
 
   /** 对话打断：向 codex 发 turn/interrupt，停掉当前生成/命令执行。 */

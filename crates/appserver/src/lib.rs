@@ -333,6 +333,14 @@ impl AppServerClient {
         self.call("thread/resume", serde_json::json!({ "threadId": thread_id }), None)
     }
 
+    /// 读取线程当前状态（thread/read，含各 turn 的 items）。
+    ///
+    /// 用于 turn/completed 后对账：流式事件偶发丢失导致正文没渲染时，
+    /// 从这里拉权威内容补回。
+    pub fn thread_read(&mut self, thread_id: &str) -> Result<Value> {
+        self.call("thread/read", serde_json::json!({ "threadId": thread_id }), None)
+    }
+
     /// 回复服务器主动请求（如审批 `item/commandExecution/requestApproval`）。
     ///
     /// `result` 是要写回的 JSON-RPC `result` 载荷（如 `{"decision": "accept"}`）。
