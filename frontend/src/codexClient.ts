@@ -75,6 +75,21 @@ export function turnInterrupt(threadId: string, turnId: string): Promise<void> {
   return invoke("appserver_turn_interrupt", { threadId, turnId });
 }
 
+/** 向进行中的 turn 追加补充输入（turn/steer），下一个工具调用边界被模型接收。 */
+export function turnSteer(input: {
+  threadId: string;
+  text: string;
+  images: string[];
+  expectedTurnId?: string;
+}): Promise<{ turnId: string }> {
+  return invoke("appserver_turn_steer", {
+    threadId: input.threadId,
+    text: input.text,
+    images: input.images,
+    expectedTurnId: input.expectedTurnId,
+  });
+}
+
 /** 恢复磁盘上的历史线程到当前 app-server 进程（重启后旧会话发消息前必须调用）。 */
 export function threadResume(threadId: string): Promise<unknown> {
   return invoke("appserver_thread_resume", { threadId });

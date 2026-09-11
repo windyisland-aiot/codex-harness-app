@@ -325,6 +325,38 @@ impl AppServerClient {
         )
     }
 
+    /// 向进行中的 turn 追加用户输入（turn/steer）。
+    ///
+    /// 不触发 turn/started；输入在下一个工具调用边界被模型接收。
+    /// 仅普通对话轮次可追加（review / 手动压缩轮次会拒绝，
+    /// 服务端返回 ActiveTurnNotSteerable 或类似错误，原样透传给前端）。
+    pub fn turn_steer(
+        &mut self,
+        thread_id: &str,
+        text: &str,
+        images: &[String],
+        expected_turn_id: Option<&str>,
+    ) -> Result<Value> {
+        let mut input = vec![serde_json::json!({
+            "type": "text", "text": text, "text_elements": []
+        })];
+        for url in images {
+            let url = url.trim();
+            if url.is_empty() {
+                continue;
+            }
+            input.push(serde_json::json!({ "type": "image", "url": url }));
+        }
+        let mut params = serde_json::json!({
+            "threadId": thread_id,
+            "input": input,
+        });
+        if let Some(t) = expected_turn_id.map(str::trim).filter(|t| !t.is_empty()) {
+            params["expectedTurnId"] = t.into();
+        }
+        self.call("turn/steer", params, None)
+    }
+
     /// 恢复磁盘上的历史线程到当前 app-server 进程（thread/resume）。
     ///
     /// 应用重启后 app-server 进程内存里没有旧线程，此时直接 turn/start

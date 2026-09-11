@@ -4030,6 +4030,13 @@ body.theme-dark .bar-btn-approval.is-full {
   color: #3B82F6;
   animation: ap-running-pulse 1.6s ease-in-out infinite;
 }
+
+/* composer 运行中：发送（补充输入）+ 停止 并排 */
+.composer-actions-running {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
 @keyframes ap-running-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.45; }

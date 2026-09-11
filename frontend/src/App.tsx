@@ -1584,6 +1584,32 @@ export default function App() {
       const finalText = selectedSkill ? `[skill: ${selectedSkill}]
 ${bodyText}` : bodyText;
 
+      // --- 轮次进行中：走 turn/steer 追加补充输入（下一个工具调用边界被模型接收） ---
+      if (runningRef.current && activeThreadRef.current) {
+        const steerTid = activeThreadRef.current;
+        try {
+          await codex.turnSteer({
+            threadId: steerTid,
+            text: finalText,
+            images: imageUrls,
+            expectedTurnId: activeTurnIdRef.current || undefined,
+          });
+          setStatus("已追加补充输入，将在当前任务的下一步生效");
+          setTerminalLines((prev) => [
+            ...prev, { ts: Date.now(), text: `[turn/steer] 已追加补充输入`, stream: "meta" as const },
+          ].slice(-500));
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          setLastError(msg);
+          setStatus(`补充发送失败: ${msg}`);
+          setMessages([...msgsRef.current, { role: "assistant", text: `⚠️ 补充消息未能送达：${msg}` }]);
+          setTerminalLines((prev) => [
+            ...prev, { ts: Date.now(), text: `[turn/steer] 失败: ${msg}`, stream: "stderr" as const },
+          ].slice(-500));
+        }
+        return;
+      }
+
       // --- 阶段 1：建线程 / 恢复历史线程 ---
       let threadId = activeThreadRef.current;
       if (threadId && !knownThreadsRef.current.has(threadId)) {
@@ -2525,8 +2551,8 @@ ${bodyText}` : bodyText;
                   e.target.style.height = Math.min(e.target.scrollHeight, 200) + "px";
                 }}
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-                placeholder="告诉 Prism 你想做什么，用自然语言下达任务"
-                disabled={pending || running || !paths}
+                placeholder={running ? "补充输入，将在下一个工具调用时生效…" : "告诉 Prism 你想做什么，用自然语言下达任务"}
+                disabled={pending || !paths}
                 className="composer-input"
               />
 
@@ -2584,15 +2610,25 @@ ${bodyText}` : bodyText;
                   )}
                 </div>
 
-                {/* 发送 / 打断按钮（运行中显示停止方块） */}
+                {/* 发送 / 打断按钮（运行中可同时补充输入） */}
                 {running ? (
-                  <button
-                    className="btn-send btn-stop"
-                    onClick={() => { void interruptTurn(); }}
-                    title="打断当前任务"
-                  >
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2.5"/></svg>
-                  </button>
+                  <div className="composer-actions-running">
+                    <button
+                      className="btn-send"
+                      disabled={pending || (!input.trim() && attachments.length === 0)}
+                      onClick={send}
+                      title="补充输入 (Enter)：追加到当前任务，下一个工具调用时生效"
+                    >
+                      {IconSend}
+                    </button>
+                    <button
+                      className="btn-send btn-stop"
+                      onClick={() => { void interruptTurn(); }}
+                      title="打断当前任务"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2.5"/></svg>
+                    </button>
+                  </div>
                 ) : (
                   <button
                     className="btn-send"
