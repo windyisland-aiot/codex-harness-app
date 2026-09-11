@@ -481,7 +481,7 @@ export default function App() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState("");
-  const [appVersion, setAppVersion] = useState("0.8.0");
+  const [appVersion, setAppVersion] = useState("0.8.1");
 
   // ------- 主题 -------
   const [theme, setThemeState] = useState<"light" | "dark">(() => {
@@ -1065,12 +1065,32 @@ export default function App() {
             // 收尾：把还挂着的动作标记完成
             patchActivity((a) => ({ ...a, steps: a.steps.map((x) => ({ ...x, done: true })) }));
             activeTurnIdRef.current = "";
-            setRunning(false); setLastError(null);
+            setRunning(false);
             lastErrMergeRef.current = null;
-            // 偶发「思考半天无回复」：流式事件丢失时正文一条都没渲染。
-            // 用 thread/read 拉权威内容补回；失败/打断的 turn 不补（错误气泡已提示）。
             const turnStatus = String((e.params as any)?.turn?.status ?? "completed");
-            if (!turnGotAssistantRef.current && turnStatus !== "failed" && turnStatus !== "interrupted") {
+            if (turnStatus === "failed") {
+              // 失败不再静默：之前 error 事件写入的 lastError 不能被清掉，
+              // 且要在对话里留下显式失败气泡（原来是什么都不显示）。
+              const turnErr = String((e.params as any)?.turn?.error?.message ?? "").trim();
+              const errText = turnErr
+                || (lastErrorRef.current ?? "").trim()
+                || "上游未返回错误详情（可能是当前模型不可用或鉴权过期，换个模型重试）";
+              setLastError(errText);
+              setStatus(`本轮失败: ${errText.slice(0, 80)}`);
+              setTerminalLines((prev) => [
+                ...prev, { ts: Date.now(), text: `[turn/failed] ${errText}`, stream: "stderr" as const },
+              ].slice(-500));
+              const cur = msgsRef.current;
+              const lastMsg = cur[cur.length - 1];
+              if (!(lastMsg && lastMsg.role === "assistant" && lastMsg.text.trim())) {
+                setMessages([...cur, { role: "assistant", text: `⚠️ 本轮执行失败：${errText}` }]);
+              }
+              continue;
+            }
+            setLastError(null);
+            // 偶发「思考半天无回复」：流式事件丢失时正文一条都没渲染。
+            // 用 thread/read 拉权威内容补回；打断的 turn 不补。
+            if (!turnGotAssistantRef.current && turnStatus !== "interrupted") {
               void recoverMissingReply();
             }
             continue;
@@ -1150,6 +1170,7 @@ export default function App() {
             // 健壮解析错误信息（递归遍历 params 拿可读字段）
             const msg = extractErrorText(e.params);
             setLastError(msg);
+            lastErrorRef.current = msg; // 同步 ref，同批次 turn/completed(failed) 能立刻取到
             // 合并连续相同错误：上次一样就只累乘不重复打 stderr 行
             const last = lastErrMergeRef.current;
             if (last && last.text === msg) {
@@ -1687,6 +1708,23 @@ ${bodyText}` : bodyText;
       activeTurnIdRef.current = "";
       setRunning(false);
       lastErrMergeRef.current = null;
+      if (status === "failed") {
+        // 与 turn/completed 失败分支一致：显式失败气泡 + 保留错误
+        const errText = String(lastTurn?.error?.message ?? "").trim()
+          || (lastErrorRef.current ?? "").trim()
+          || "上游未返回错误详情（可能是当前模型不可用或鉴权过期，换个模型重试）";
+        setLastError(errText);
+        setStatus(`本轮失败: ${errText.slice(0, 80)}`);
+        setTerminalLines((prev) => [
+          ...prev, { ts: Date.now(), text: `[turn/failed·watchdog] ${errText}`, stream: "stderr" as const },
+        ].slice(-500));
+        const cur = msgsRef.current;
+        const lastMsg = cur[cur.length - 1];
+        if (!(lastMsg && lastMsg.role === "assistant" && lastMsg.text.trim())) {
+          setMessages([...cur, { role: "assistant", text: `⚠️ 本轮执行失败：${errText}` }]);
+        }
+        return;
+      }
       setStatus(status === "completed" ? "已收尾（事件补偿）" : "本轮已结束");
       if (!turnGotAssistantRef.current && status === "completed") {
         await recoverMissingReply(res);
