@@ -1057,6 +1057,7 @@ export default function App() {
             const p = e.params as any;
             const tid = String(p?.turn?.id ?? p?.turnId ?? "");
             if (tid) activeTurnIdRef.current = tid;
+            else termAccum.push({ ts: Date.now(), text: `[turn/started] 未解析到轮次ID: ${JSON.stringify(p ?? {}).slice(0, 200)}`, stream: "stderr" as const });
             turnGotAssistantRef.current = false;
             turnSawStreamDeltaRef.current = false;
             continue;
@@ -1560,6 +1561,13 @@ export default function App() {
     const userMsg: Msg = { role: "user", text: displayText };
     const next = [...msgsRef.current, userMsg];
     setMessages(next);
+    // 发送链路失败时在对话里留显式气泡（状态栏一行字容易被忽略，表现为"无回复无报错"）
+    const sendFailBubble = (msg: string) => {
+      const cur = msgsRef.current;
+      const lastMsg = cur[cur.length - 1];
+      if (lastMsg && lastMsg.role === "assistant" && lastMsg.text.trim()) return;
+      setMessages([...cur, { role: "assistant", text: `⚠️ 发送失败：${msg}` }]);
+    };
     setTerminalLines((prev) => [
       ...prev, { ts: Date.now(), text: `[user]: ${text.slice(0, 160)}${text.length > 160 ? "…" : ""}`, stream: "meta" as const },
     ].slice(-500));
@@ -1621,6 +1629,7 @@ ${bodyText}` : bodyText;
           const msg = e instanceof Error ? e.message : String(e);
           setLastError(msg);
           setStatus(`创建会话失败（provider/model 配置不正确或 API Key 无效）：${msg}`);
+          sendFailBubble(`创建会话失败：${msg}`);
           setTerminalLines((prev) => [
             ...prev, { ts: Date.now(), text: `[thread/start] 失败: ${msg}`, stream: "stderr" as const },
           ].slice(-500));
@@ -1658,6 +1667,7 @@ ${bodyText}` : bodyText;
         }
         setLastError(msg);
         setStatus(`发送消息失败: ${msg}`);
+        sendFailBubble(msg);
         setTerminalLines((prev) => [
           ...prev, { ts: Date.now(), text: `[turn/start] 失败: ${msg}`, stream: "stderr" as const },
         ].slice(-500));
@@ -1667,6 +1677,7 @@ ${bodyText}` : bodyText;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setLastError(msg); setStatus(`发送失败: ${msg}`);
+      sendFailBubble(msg);
       console.error("[send] unexpected", e);
     } finally { setPending(false); }
   }
@@ -1768,11 +1779,28 @@ ${bodyText}` : bodyText;
   /** 对话打断：向 codex 发 turn/interrupt，停掉当前生成/命令执行。 */
   async function interruptTurn() {
     const tid = activeThreadRef.current;
-    const turnId = activeTurnIdRef.current;
     if (!tid) { setRunning(false); return; }
     setStatus("正在打断…");
+    let turnId = activeTurnIdRef.current;
+    if (!turnId) {
+      // turn/started 通知丢失或参数结构不符 → 用 thread/read 找进行中的轮次，
+      // 否则会跳过打断却谎称成功（轮次继续后台跑，后续消息全被堵住）。
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const res: any = await codex.threadRead(tid);
+        const turns = res?.thread?.turns ?? [];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const cur = [...turns].reverse().find((t: any) => String(t?.status ?? "") === "inProgress");
+        turnId = String(cur?.id ?? "");
+      } catch { /* 落到下面的无轮次提示 */ }
+    }
+    if (!turnId) {
+      setRunning(false);
+      setStatus("没有找到进行中的轮次（可能已结束）");
+      return;
+    }
     try {
-      if (turnId) await codex.turnInterrupt(tid, turnId);
+      await codex.turnInterrupt(tid, turnId);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setStatus(`打断失败: ${msg}`);
@@ -1787,8 +1815,28 @@ ${bodyText}` : bodyText;
     setRunning(false);
     setStatus("已打断当前任务");
     setTerminalLines((prev) => [
-      ...prev, { ts: Date.now(), text: `[turn/interrupt] 已打断`, stream: "meta" as const },
+      ...prev, { ts: Date.now(), text: `[turn/interrupt] 已请求打断 turn=${turnId}`, stream: "meta" as const },
     ].slice(-500));
+    // 打断校验：4s 后确认轮次真的停了；没停则如实提示（避免"以为停了其实还在跑"）
+    const checkTid = tid;
+    const checkTurn = turnId;
+    window.setTimeout(() => {
+      void (async () => {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const res: any = await codex.threadRead(checkTid);
+          const turns = res?.thread?.turns ?? [];
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const t = turns.find((x: any) => String(x?.id ?? "") === checkTurn);
+          if (t && String(t?.status ?? "") === "inProgress") {
+            setStatus("打断未生效，该轮仍在后台执行（可再次打断，或重启应用释放）");
+            setTerminalLines((prev) => [
+              ...prev, { ts: Date.now(), text: `[turn/interrupt] 校验：轮次仍在执行 turn=${checkTurn}`, stream: "stderr" as const },
+            ].slice(-500));
+          }
+        } catch { /* 校验失败忽略 */ }
+      })();
+    }, 4000);
   }
 
   function newChat() {

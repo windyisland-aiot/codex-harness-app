@@ -156,14 +156,20 @@ pub async fn appserver_start(
         // 初始化日志文件（便于用户在生产环境排查问题）
         let _ = std::fs::create_dir_all(&codex_home_log);
         let log_path = std::path::Path::new(&codex_home_log).join("harness.log");
+        // 共享句柄：log() 与通知回调都写同一个 harness.log
+        // （Windows GUI 应用 eprintln 直接丢弃，之前通知根本没落盘 → harness.log 看似"无信息"）
         let log_f = std::fs::OpenOptions::new()
             .create(true).append(true).open(&log_path)
             .ok();
+        let log_shared = std::sync::Arc::new(std::sync::Mutex::new(log_f));
+        let log_notif = log_shared.clone();
         let mut log = |msg: &str| {
             let line = format!("[{}] {msg}\n", chrono_like_now());
             eprint!("{}", line);
-            if let Some(mut f) = log_f.as_ref() {
-                let _ = std::io::Write::write_all(&mut f, line.as_bytes());
+            if let Ok(mut g) = log_shared.lock() {
+                if let Some(f) = g.as_mut() {
+                    let _ = std::io::Write::write_all(&mut *f, line.as_bytes());
+                }
             }
         };
 
@@ -308,14 +314,20 @@ pub async fn appserver_start(
             cwd: None,
             default_timeout_ms: 180_000,
             on_notification: Some(Box::new(move |method, params| {
-                // 只把重要通知写到 harness.log，避免刷屏
+                // 只把重要通知写到 harness.log（带截断 params），避免刷屏
                 let is_important = matches!(method, "turn/completed" | "thread/started" | "error" | "warning" | "turn/started"
                     | "mcpServer/startupStatus/updated" | "item/mcpToolCall/progress");
                 if is_important {
-                    if method == "mcpServer/startupStatus/updated" {
-                        eprintln!("[notif] {method} {}", serde_json::to_string(params).unwrap_or_default());
-                    } else {
-                        eprintln!("[notif] {method}");
+                    let raw = serde_json::to_string(params).unwrap_or_default();
+                    let short = if raw.chars().count() > 600 {
+                        format!("{}…(截断)", raw.chars().take(600).collect::<String>())
+                    } else { raw };
+                    let line = format!("[{}] [notif] {method} {short}\n", chrono_like_now());
+                    eprint!("{}", line);
+                    if let Ok(mut g) = log_notif.lock() {
+                        if let Some(f) = g.as_mut() {
+                            let _ = std::io::Write::write_all(&mut *f, line.as_bytes());
+                        }
                     }
                 }
                 let mut g = st_notif.events.lock().unwrap();
