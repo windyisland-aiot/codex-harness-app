@@ -8,7 +8,8 @@ import urllib.request, urllib.error
 
 PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8791
 ARK = "https://ark.cn-beijing.volces.com/api/coding/v3/responses"
-ARK_KEY = "ark-9219d6e8-6264-437e-aeab-95fdb650a043-2c85b"
+# 从环境变量读取，禁止把真实 key 提交进仓库
+ARK_KEY = os.environ.get("VOLCENGINE_ARK_API_KEY", "")
 
 
 class Handler(BaseHTTPRequestHandler):

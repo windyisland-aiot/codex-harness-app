@@ -94,7 +94,7 @@ Content-Type: application/json
 
 {
   "username": "admin",
-  "password": "byyynhy1017"
+  "password": "<账号密码>"
 }
 ```
 

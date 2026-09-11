@@ -1,9 +1,9 @@
 //! 单模型配置 — 所有模型都走火山方舟统一端点。
 //!
-//! 硬编码（前端不暴露给用户编辑，后端自动注入）：
+//! 说明（前端不暴露给用户编辑，密钥由服务端注入）：
 //!   BASE_URL    = https://ark.cn-beijing.volces.com/api/plan/v3
 //!   ENV_KEY     = VOLCENGINE_ARK_API_KEY
-//!   API_KEY     = ark-504d682a-6c53-4ee5-9c63-6ce31ffb8fa3-fd87a
+//!   API_KEY     = 由服务端管理后台配置，客户端不持有
 //!   WIRE_API    = responses
 
 /** 单模型条目（扁平列表，无品牌分组）。 */
@@ -94,12 +94,5 @@ export const MODEL_PRESETS: ModelPreset[] = [{
 export const VISIBLE_MODEL_PRESETS: ModelPreset[] = MODEL_PRESETS;
 export function presetFor(_id: string): ModelPreset | undefined { return MODEL_PRESETS[0]; }
 
-/** 全局硬编码的 API key（前端展示 / 写入配置用）。 */
-export const ARK_HARDCODED = {
-  api_key: "ark-504d682a-6c53-4ee5-9c63-6ce31ffb8fa3-fd87a",
-  base_url: VOLCES_BASE_URL,
-  env_key: VOLCES_ENV_KEY,
-  wire_api: "responses" as const,
-};
 export const DEFAULT_PROVIDER_ID = "volcengine-ark";
 export const DEFAULT_MODEL = "ark-code-latest";
