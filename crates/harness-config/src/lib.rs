@@ -100,9 +100,13 @@ pub fn read(codex_home: &str) -> Result<AppConfig> {
 
     cfg.model = conv::get_str(&table, "model", "top")?.unwrap_or("").to_string();
     let raw_provider = conv::get_str(&table, "model_provider", "top")?.unwrap_or("").to_string();
-    // 迁移：codex 不允许 model_provider = "openai"（保留内置 ID）
+    // 迁移：codex 内置 ID（openai / volcengine）不能作为自定义 provider 使用，
+    // 否则 codex 会直连硬编码官方端点（volcengine → /api/coding/v3），
+    // 而本地注入的是服务端登录 token，必报 401 API key format incorrect。
     cfg.model_provider = if raw_provider == "openai" {
         "openai-custom".to_string()
+    } else if raw_provider == "volcengine" {
+        "volcengine-ark".to_string()
     } else {
         raw_provider
     };
