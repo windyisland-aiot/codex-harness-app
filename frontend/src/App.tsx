@@ -1052,6 +1052,11 @@ export default function App() {
         const events = await codex.pollEvents();
         if (events.length > 0) lastEventTsRef.current = Date.now();
         const termAccum: Array<{ ts: number; text: string; stream?: "stdout" | "stderr" | "meta" }> = [];
+        // 流式追加必须以「同步更新的 msgsRef」为基座：React 的 msgsRef 同步
+        // 靠 useEffect，要等渲染提交后才生效；同一批事件里连续 setMessages
+        // 会都基于过期快照，互相覆盖 → 一批里只有最后一个 delta 存活，
+        // 回复就变成零散碎片（v0.8.x 偶发乱码回复的根因）。
+        const applyMsgs = (next: Msg[]) => { msgsRef.current = next; setMessages(next); };
         for (const e of events) {
           if (e.method === "turn/started") {
             const p = e.params as any;
@@ -1084,7 +1089,7 @@ export default function App() {
               const cur = msgsRef.current;
               const lastMsg = cur[cur.length - 1];
               if (!(lastMsg && lastMsg.role === "assistant" && lastMsg.text.trim())) {
-                setMessages([...cur, { role: "assistant", text: `⚠️ 本轮执行失败：${errText}` }]);
+                applyMsgs([...cur, { role: "assistant", text: `⚠️ 本轮执行失败：${errText}` }]);
               }
               continue;
             }
@@ -1211,9 +1216,9 @@ export default function App() {
           if (cur.length > 0 && cur[cur.length - 1].role === "assistant") {
             const list = [...cur];
             list[list.length - 1] = { ...list[list.length - 1], text: list[list.length - 1].text + d };
-            setMessages(list);
+            applyMsgs(list);
           } else {
-            setMessages([...cur, { role: "assistant", text: d }]);
+            applyMsgs([...cur, { role: "assistant", text: d }]);
           }
         }
         if (termAccum.length > 0) {
