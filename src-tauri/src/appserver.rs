@@ -454,6 +454,27 @@ pub async fn appserver_turn_interrupt(
     .map_err(|e| e.to_string())?
 }
 
+/// 向进行中的 turn 追加补充输入（turn/steer），下一个工具调用边界被模型接收。
+#[tauri::command]
+pub async fn appserver_turn_steer(
+    state: State<'_, CodexHandle>,
+    thread_id: String,
+    text: String,
+    images: Vec<String>,
+    expected_turn_id: Option<String>,
+) -> Result<Value, String> {
+    let st = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut guard = st.client.lock().map_err(|e| e.to_string())?;
+        let client = guard.as_mut().ok_or("app-server 未启动")?;
+        client
+            .turn_steer(&thread_id, &text, &images, expected_turn_id.as_deref())
+            .map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 pub async fn appserver_poll_events(state: State<'_, CodexHandle>) -> Result<Vec<Value>, String> {
     let st = state.inner().clone();
