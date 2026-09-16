@@ -481,7 +481,7 @@ export default function App() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState("");
-  const [appVersion, setAppVersion] = useState("0.8.3");
+  const [appVersion, setAppVersion] = useState("0.8.1");
 
   // ------- 主题 -------
   const [theme, setThemeState] = useState<"light" | "dark">(() => {
@@ -1057,7 +1057,6 @@ export default function App() {
             const p = e.params as any;
             const tid = String(p?.turn?.id ?? p?.turnId ?? "");
             if (tid) activeTurnIdRef.current = tid;
-            else termAccum.push({ ts: Date.now(), text: `[turn/started] 未解析到轮次ID: ${JSON.stringify(p ?? {}).slice(0, 200)}`, stream: "stderr" as const });
             turnGotAssistantRef.current = false;
             turnSawStreamDeltaRef.current = false;
             continue;
@@ -1561,13 +1560,6 @@ export default function App() {
     const userMsg: Msg = { role: "user", text: displayText };
     const next = [...msgsRef.current, userMsg];
     setMessages(next);
-    // 发送链路失败时在对话里留显式气泡（状态栏一行字容易被忽略，表现为"无回复无报错"）
-    const sendFailBubble = (msg: string) => {
-      const cur = msgsRef.current;
-      const lastMsg = cur[cur.length - 1];
-      if (lastMsg && lastMsg.role === "assistant" && lastMsg.text.trim()) return;
-      setMessages([...cur, { role: "assistant", text: `⚠️ 发送失败：${msg}` }]);
-    };
     setTerminalLines((prev) => [
       ...prev, { ts: Date.now(), text: `[user]: ${text.slice(0, 160)}${text.length > 160 ? "…" : ""}`, stream: "meta" as const },
     ].slice(-500));
@@ -1583,32 +1575,6 @@ export default function App() {
       const bodyText = attachmentNote ? `${promptText}${promptText ? "\n\n" : ""}${attachmentNote}` : promptText;
       const finalText = selectedSkill ? `[skill: ${selectedSkill}]
 ${bodyText}` : bodyText;
-
-      // --- 轮次进行中：走 turn/steer 追加补充输入（下一个工具调用边界被模型接收） ---
-      if (runningRef.current && activeThreadRef.current) {
-        const steerTid = activeThreadRef.current;
-        try {
-          await codex.turnSteer({
-            threadId: steerTid,
-            text: finalText,
-            images: imageUrls,
-            expectedTurnId: activeTurnIdRef.current || undefined,
-          });
-          setStatus("已追加补充输入，将在当前任务的下一步生效");
-          setTerminalLines((prev) => [
-            ...prev, { ts: Date.now(), text: `[turn/steer] 已追加补充输入`, stream: "meta" as const },
-          ].slice(-500));
-        } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e);
-          setLastError(msg);
-          setStatus(`补充发送失败: ${msg}`);
-          setMessages([...msgsRef.current, { role: "assistant", text: `⚠️ 补充消息未能送达：${msg}` }]);
-          setTerminalLines((prev) => [
-            ...prev, { ts: Date.now(), text: `[turn/steer] 失败: ${msg}`, stream: "stderr" as const },
-          ].slice(-500));
-        }
-        return;
-      }
 
       // --- 阶段 1：建线程 / 恢复历史线程 ---
       let threadId = activeThreadRef.current;
@@ -1655,7 +1621,6 @@ ${bodyText}` : bodyText;
           const msg = e instanceof Error ? e.message : String(e);
           setLastError(msg);
           setStatus(`创建会话失败（provider/model 配置不正确或 API Key 无效）：${msg}`);
-          sendFailBubble(`创建会话失败：${msg}`);
           setTerminalLines((prev) => [
             ...prev, { ts: Date.now(), text: `[thread/start] 失败: ${msg}`, stream: "stderr" as const },
           ].slice(-500));
@@ -1693,7 +1658,6 @@ ${bodyText}` : bodyText;
         }
         setLastError(msg);
         setStatus(`发送消息失败: ${msg}`);
-        sendFailBubble(msg);
         setTerminalLines((prev) => [
           ...prev, { ts: Date.now(), text: `[turn/start] 失败: ${msg}`, stream: "stderr" as const },
         ].slice(-500));
@@ -1703,7 +1667,6 @@ ${bodyText}` : bodyText;
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setLastError(msg); setStatus(`发送失败: ${msg}`);
-      sendFailBubble(msg);
       console.error("[send] unexpected", e);
     } finally { setPending(false); }
   }
@@ -1805,28 +1768,11 @@ ${bodyText}` : bodyText;
   /** 对话打断：向 codex 发 turn/interrupt，停掉当前生成/命令执行。 */
   async function interruptTurn() {
     const tid = activeThreadRef.current;
+    const turnId = activeTurnIdRef.current;
     if (!tid) { setRunning(false); return; }
     setStatus("正在打断…");
-    let turnId = activeTurnIdRef.current;
-    if (!turnId) {
-      // turn/started 通知丢失或参数结构不符 → 用 thread/read 找进行中的轮次，
-      // 否则会跳过打断却谎称成功（轮次继续后台跑，后续消息全被堵住）。
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const res: any = await codex.threadRead(tid);
-        const turns = res?.thread?.turns ?? [];
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const cur = [...turns].reverse().find((t: any) => String(t?.status ?? "") === "inProgress");
-        turnId = String(cur?.id ?? "");
-      } catch { /* 落到下面的无轮次提示 */ }
-    }
-    if (!turnId) {
-      setRunning(false);
-      setStatus("没有找到进行中的轮次（可能已结束）");
-      return;
-    }
     try {
-      await codex.turnInterrupt(tid, turnId);
+      if (turnId) await codex.turnInterrupt(tid, turnId);
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       setStatus(`打断失败: ${msg}`);
@@ -1841,28 +1787,8 @@ ${bodyText}` : bodyText;
     setRunning(false);
     setStatus("已打断当前任务");
     setTerminalLines((prev) => [
-      ...prev, { ts: Date.now(), text: `[turn/interrupt] 已请求打断 turn=${turnId}`, stream: "meta" as const },
+      ...prev, { ts: Date.now(), text: `[turn/interrupt] 已打断`, stream: "meta" as const },
     ].slice(-500));
-    // 打断校验：4s 后确认轮次真的停了；没停则如实提示（避免"以为停了其实还在跑"）
-    const checkTid = tid;
-    const checkTurn = turnId;
-    window.setTimeout(() => {
-      void (async () => {
-        try {
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const res: any = await codex.threadRead(checkTid);
-          const turns = res?.thread?.turns ?? [];
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          const t = turns.find((x: any) => String(x?.id ?? "") === checkTurn);
-          if (t && String(t?.status ?? "") === "inProgress") {
-            setStatus("打断未生效，该轮仍在后台执行（可再次打断，或重启应用释放）");
-            setTerminalLines((prev) => [
-              ...prev, { ts: Date.now(), text: `[turn/interrupt] 校验：轮次仍在执行 turn=${checkTurn}`, stream: "stderr" as const },
-            ].slice(-500));
-          }
-        } catch { /* 校验失败忽略 */ }
-      })();
-    }, 4000);
   }
 
   function newChat() {
@@ -2551,8 +2477,8 @@ ${bodyText}` : bodyText;
                   e.target.style.height = Math.min(e.target.scrollHeight, 200) + "px";
                 }}
                 onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-                placeholder={running ? "补充输入，将在下一个工具调用时生效…" : "告诉 Prism 你想做什么，用自然语言下达任务"}
-                disabled={pending || !paths}
+                placeholder="告诉 Prism 你想做什么，用自然语言下达任务"
+                disabled={pending || running || !paths}
                 className="composer-input"
               />
 
@@ -2610,25 +2536,15 @@ ${bodyText}` : bodyText;
                   )}
                 </div>
 
-                {/* 发送 / 打断按钮（运行中可同时补充输入） */}
+                {/* 发送 / 打断按钮（运行中显示停止方块） */}
                 {running ? (
-                  <div className="composer-actions-running">
-                    <button
-                      className="btn-send"
-                      disabled={pending || (!input.trim() && attachments.length === 0)}
-                      onClick={send}
-                      title="补充输入 (Enter)：追加到当前任务，下一个工具调用时生效"
-                    >
-                      {IconSend}
-                    </button>
-                    <button
-                      className="btn-send btn-stop"
-                      onClick={() => { void interruptTurn(); }}
-                      title="打断当前任务"
-                    >
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2.5"/></svg>
-                    </button>
-                  </div>
+                  <button
+                    className="btn-send btn-stop"
+                    onClick={() => { void interruptTurn(); }}
+                    title="打断当前任务"
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14" rx="2.5"/></svg>
+                  </button>
                 ) : (
                   <button
                     className="btn-send"
