@@ -73,8 +73,9 @@ mod conv {
 /// （首次启动即可出模型能力，用户后续可在配置面板切换 / 覆盖）。
 ///
 /// **配置迁移（自动）**：读取后若发现任一 provider 使用已废弃的
-/// `wire_api = "chat"`，或 Ark 提供商 base_url 未指向本机内嵌网关，
-/// 则自动修正并写回磁盘（保证旧版用户升级后立即可用，无需手动改配置）。
+/// `wire_api = "chat"`，或 env_key / name 缺失，则自动修正并写回磁盘。
+/// 注意：base_url 不在此处迁移，统一由 appserver_start 在启动 codex 前
+/// 强制对齐到服务端 LLM 代理（见本文件迁移段注释）。
 pub fn read(codex_home: &str) -> Result<AppConfig> {
     let path = config_path(codex_home);
     let mut cfg = AppConfig::default();
@@ -256,11 +257,16 @@ pub fn read(codex_home: &str) -> Result<AppConfig> {
         return Ok(def);
     }
 
-    // ---------- 配置自动迁移（2026-08-30 单模型直连版） ----------
+    // ---------- 配置自动迁移 ----------
     // 1) 废弃 wire_api=chat 强制升级 → responses
-    // 2) 火山方舟 Ark base_url：旧版本机网关 127.0.0.1:18762 → 直接真实 Responses 地址
-    //    `https://ark.cn-beijing.volces.com/api/v3`（用户要求无需再经网关翻译/路由）。
-    // 若有任何字段被修正，立即写回磁盘以保证下次 codex app-server 读取即生效。
+    // 2) 补齐 volcengine-ark 的 env_key / name（不动 base_url！）
+    //
+    // ⚠️ base_url 的所有权在 appserver_start：它在 spawn codex 前把 base_url
+    // 强制对齐到服务端 LLM 代理。这里绝不能再把 base_url "归一化"回官方端点——
+    // 否则 appserver 写入代理地址后，任意一次 read()（配置面板 / 插件同步 /
+    // 飞书·搜索·知识库开关）都会把磁盘改回官方端点，codex 重启后即直连
+    // ark.cn-beijing.volces.com，用服务端登录 token 当 API key → 401
+    // 「The API key format is incorrect」（v0.8.2 仍复发即此原因）。
     let mut migrated = false;
     for p in cfg.model_providers.iter_mut() {
         // 1) 废弃 wire_api=chat 强制升级
@@ -268,22 +274,14 @@ pub fn read(codex_home: &str) -> Result<AppConfig> {
             p.wire_api = "responses".to_string();
             migrated = true;
         }
-        // 2) Ark 提供商：base_url 归一化到 Coding Plan 企业版 Responses 端点
-        //    `https://ark.cn-beijing.volces.com/api/coding/v3`。
-        //    （普通大模型 /api/v3 不支持 ark-code-latest 别名）
+        // 2) Ark 提供商：仅补齐空 env_key / name，base_url 由 appserver 统一管理
         if p.id == "volcengine-ark" {
-            let official = "https://ark.cn-beijing.volces.com/api/coding/v3";
-            let url = p.base_url.trim();
-            if url != official {
-                p.base_url = official.to_string();
-                migrated = true;
-            }
             if p.env_key.trim().is_empty() {
                 p.env_key = "VOLCENGINE_ARK_API_KEY".to_string();
                 migrated = true;
             }
             if p.name.trim().is_empty() {
-                p.name = "火山方舟 Ark Code".to_string();
+                p.name = "Prism 云端模型代理".to_string();
                 migrated = true;
             }
         }
@@ -319,11 +317,12 @@ pub fn read(codex_home: &str) -> Result<AppConfig> {
     Ok(cfg)
 }
 
-/// 火山方舟 Ark 编码模型默认配置（首次启动 / 配置文件缺失时使用）。
+/// 默认模型配置（首次启动 / 配置文件缺失时使用）。
 ///
-/// 2026-08-30 起：对接火山方舟 Coding Plan 企业版，
-/// base_url = `https://ark.cn-beijing.volces.com/api/coding/v3`（Responses 协议兼容）
-/// model   = `ark-code-latest`（控制台 Auto 模式下自动挑选底层模型）
+/// base_url 指向服务端 LLM 代理（与 appserver.rs 的 DEFAULT_LLM_PROXY 一致），
+/// 由服务端用管理员配置的 Ark key 向上游转发；本地注入的
+/// VOLCENGINE_ARK_API_KEY 是服务端登录 token，绝不能直连官方端点。
+/// model = `ark-code-latest`（控制台 Auto 模式下自动挑选底层模型）
 pub fn default_ark_config() -> AppConfig {
     use crate::model::{AppConfig, ProviderConfig};
     AppConfig {
@@ -332,9 +331,9 @@ pub fn default_ark_config() -> AppConfig {
         approval_policy: "on-request".to_string(),
         model_providers: vec![ProviderConfig {
             id: "volcengine-ark".to_string(),
-            name: "火山方舟 Ark Code".to_string(),
+            name: "Prism 云端模型代理".to_string(),
             provider_type: "Custom".to_string(),
-            base_url: "https://ark.cn-beijing.volces.com/api/coding/v3".to_string(),
+            base_url: "http://118.31.107.214/api/v1/llm".to_string(),
             env_key: "VOLCENGINE_ARK_API_KEY".to_string(),
             wire_api: "responses".to_string(),
         }],
