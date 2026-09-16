@@ -202,6 +202,18 @@ pub async fn appserver_start(
         let cfg_mutated = {
             let mut c = cfg.clone();
             let mut changed = false;
+            // codex 内置 provider 黑名单：这些 id 会让 codex 忽略自定义配置，
+            // 直连其硬编码端点（如 volcengine → ark /api/coding/v3），
+            // 而注入的 VOLCENGINE_ARK_API_KEY 是服务端登录 token，
+            // 打到官方端点必报「API key format is incorrect」401。
+            const BUILTIN_IDS: &[&str] = &["openai", "volcengine"];
+            for p in &mut c.model_providers {
+                if BUILTIN_IDS.contains(&p.id.as_str()) {
+                    log(&format!("  ⚠️ 内置 provider id {} 重命名为 volcengine-ark（禁止直连官方端点）", p.id));
+                    p.id = "volcengine-ark".to_string();
+                    changed = true;
+                }
+            }
             for p in &mut c.model_providers {
                 if p.base_url != gateway_base_url {
                     log(&format!("  ⚠️ provider {} base_url={} → 强制覆盖为 {}",
@@ -214,16 +226,43 @@ pub async fn appserver_start(
                     p.env_key = "VOLCENGINE_ARK_API_KEY".to_string();
                     changed = true;
                 }
+                // 必须 Custom 类型，否则 codex 可能按内置 provider 处理
+                if p.provider_type != "Custom" {
+                    p.provider_type = "Custom".to_string();
+                    changed = true;
+                }
                 // 确保 wire_api 为 responses
                 if !p.wire_api.is_empty() && p.wire_api != "responses" {
                     p.wire_api = "responses".to_string();
                     changed = true;
                 }
             }
+            // 代理 provider 必须存在（旧配置可能完全没有 model_providers）
+            if !c.model_providers.iter().any(|p| p.id == "volcengine-ark") {
+                c.model_providers.push(harness_config::ProviderConfig {
+                    id: "volcengine-ark".to_string(),
+                    name: "Prism 云端模型代理".to_string(),
+                    provider_type: "Custom".to_string(),
+                    base_url: gateway_base_url.clone(),
+                    env_key: "VOLCENGINE_ARK_API_KEY".to_string(),
+                    wire_api: "responses".to_string(),
+                });
+                changed = true;
+            }
+            // model_provider 必须指向自定义代理：为空 / 内置 id / 找不到条目时纠正
+            let provider_ok = c.model_providers.iter().any(|p| p.id == c.model_provider);
+            if c.model_provider.trim().is_empty()
+                || BUILTIN_IDS.contains(&c.model_provider.as_str())
+                || !provider_ok
+            {
+                log(&format!("  ⚠️ model_provider={} 非法或指向内置 provider → volcengine-ark", c.model_provider));
+                c.model_provider = "volcengine-ark".to_string();
+                changed = true;
+            }
             if changed {
                 let _ = harness_config::write(&codex_home_log, &c)
                     .map_err(|e| log(&format!("  ⚠️ config 写回失败: {e}")));
-                log("  ✅ config.toml base_url/env_key/wire_api 已强制对齐 v0.6.0 规范");
+                log("  ✅ config.toml provider/base_url/env_key/wire_api 已强制对齐代理规范");
             }
             c
         };
