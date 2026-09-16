@@ -787,3 +787,27 @@ export function cloudHealth(): Promise<CloudHealthResult> {
 export function cloudSkillsSync(): Promise<{ ok: boolean; synced?: string[] }> {
   return invoke("cloud_skills_sync");
 }
+
+// ===== 影刀 RPA =====
+
+export interface YingdaoTask {
+  id: number;
+  name: string;
+  description: string;
+}
+
+export interface YingdaoTriggerResult {
+  ok: boolean;
+  status_code?: number;
+  response?: string;
+  error?: string;
+  task_name?: string;
+}
+
+export function yingdaoListTasks(): Promise<{ items: YingdaoTask[] }> {
+  return invoke("yingdao_list_tasks") as Promise<{ items: YingdaoTask[] }>;
+}
+
+export function yingdaoTriggerTask(taskId: number, payload?: Record<string, unknown>): Promise<YingdaoTriggerResult> {
+  return invoke("yingdao_trigger_task", { taskId, payload: payload ?? null }) as Promise<YingdaoTriggerResult>;
+}

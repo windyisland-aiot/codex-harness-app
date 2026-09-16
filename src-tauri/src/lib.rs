@@ -194,6 +194,8 @@ pub fn run() {
             cloud_bridge::cloud_mode_get,
             cloud_bridge::cloud_health,
             cloud_bridge::cloud_skills_sync,
+            cloud_bridge::yingdao_list_tasks,
+            cloud_bridge::yingdao_trigger_task,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

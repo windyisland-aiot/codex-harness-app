@@ -187,3 +187,47 @@ pub async fn cloud_skills_sync(state: State<'_, CloudHandle>) -> Result<Value, S
 
     resp.into_json().map_err(|e| format!("解析响应失败: {e}"))
 }
+
+/// 影刀 RPA 任务列表（GET /api/v1/yingdao/tasks）。
+#[tauri::command]
+pub async fn yingdao_list_tasks(state: State<'_, CloudHandle>) -> Result<Value, String> {
+    let (base, token) = {
+        let cfg = state.inner().lock().map_err(|e| e.to_string())?;
+        (cfg.api_base.clone(), cfg.token.clone())
+    };
+    let token = token.ok_or("未登录")?;
+    let url = format!("{}/api/v1/yingdao/tasks", base.trim_end_matches('/'));
+
+    let resp = ureq::get(&url)
+        .set("Authorization", &format!("Bearer {token}"))
+        .timeout(SHORT_TIMEOUT)
+        .call()
+        .map_err(|e| format!("获取影刀任务失败: {e}"))?;
+
+    resp.into_json().map_err(|e| format!("解析响应失败: {e}"))
+}
+
+/// 触发指定影刀任务（POST /api/v1/yingdao/tasks/{id}/trigger）。
+#[tauri::command]
+pub async fn yingdao_trigger_task(
+    state: State<'_, CloudHandle>,
+    task_id: u64,
+    payload: Option<Value>,
+) -> Result<Value, String> {
+    let (base, token) = {
+        let cfg = state.inner().lock().map_err(|e| e.to_string())?;
+        (cfg.api_base.clone(), cfg.token.clone())
+    };
+    let token = token.ok_or("未登录")?;
+    let url = format!("{}/api/v1/yingdao/tasks/{task_id}/trigger", base.trim_end_matches('/'));
+
+    let body = payload.unwrap_or(json!({}));
+    let resp = ureq::post(&url)
+        .set("Authorization", &format!("Bearer {token}"))
+        .set("Content-Type", "application/json")
+        .timeout(Duration::from_secs(30))
+        .send_string(&body.to_string())
+        .map_err(|e| format!("触发影刀任务失败: {e}"))?;
+
+    resp.into_json().map_err(|e| format!("解析响应失败: {e}"))
+}

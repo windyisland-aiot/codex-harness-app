@@ -597,6 +597,44 @@ export default function App() {
   const [showNewTaskModal, setShowNewTaskModal] = useState(false);
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [runningTaskIds, setRunningTaskIds] = useState<string[]>([]);
+  // 影刀 RPA 面板
+  const [yingdaoOpen, setYingdaoOpen] = useState(false);
+  const [yingdaoTasks, setYingdaoTasks] = useState<codex.YingdaoTask[]>([]);
+  const [yingdaoLoading, setYingdaoLoading] = useState(false);
+  const [yingdaoTriggering, setYingdaoTriggering] = useState<number | null>(null);
+  const [yingdaoMsg, setYingdaoMsg] = useState<{ type: "ok" | "err"; text: string } | null>(null);
+
+  async function loadYingdaoTasks() {
+    if (!cloudConnected) { setYingdaoTasks([]); return; }
+    setYingdaoLoading(true);
+    try {
+      const r = await codex.yingdaoListTasks();
+      setYingdaoTasks(r.items ?? []);
+      setYingdaoMsg(null);
+    } catch (e) {
+      setYingdaoTasks([]);
+      setYingdaoMsg({ type: "err", text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setYingdaoLoading(false);
+    }
+  }
+
+  async function triggerYingdao(id: number) {
+    setYingdaoTriggering(id);
+    setYingdaoMsg(null);
+    try {
+      const r = await codex.yingdaoTriggerTask(id);
+      if (r.ok) {
+        setYingdaoMsg({ type: "ok", text: `已触发「${r.task_name ?? "任务"}」，状态 ${r.status_code ?? 200}` });
+      } else {
+        setYingdaoMsg({ type: "err", text: r.error || "触发失败" });
+      }
+    } catch (e) {
+      setYingdaoMsg({ type: "err", text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setYingdaoTriggering(null);
+    }
+  }
 
   // ESC 快捷键：退出自动化面板 / 关闭 modal
   useEffect(() => {
@@ -606,10 +644,11 @@ export default function App() {
       if (helpOpen) { setHelpOpen(false); return; }
       if (showNewTaskModal) { setShowNewTaskModal(false); return; }
       if (automationOpen) { setAutomationOpen(false); return; }
+      if (yingdaoOpen) { setYingdaoOpen(false); return; }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [automationOpen, showNewTaskModal, helpOpen, renameOpen]);
+  }, [automationOpen, yingdaoOpen, showNewTaskModal, helpOpen, renameOpen]);
 
   // ---------- 自动化任务状态（localStorage 持久化） ----------
   const AUTO_TASKS_KEY = "harness.auto.tasks.v1";
@@ -2080,11 +2119,11 @@ ${bodyText}` : bodyText;
               </span>
               <span>自动化</span>
             </button>
-            <button className="sb-menu-item" onClick={() => setSettingsOpen(true)}>
-              <span className="ic-wrap gn">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            <button className={`sb-menu-item ${yingdaoOpen ? "active" : ""}`} onClick={() => { setYingdaoOpen((v) => !v); if (!yingdaoOpen) void loadYingdaoTasks(); }}>
+              <span className="ic-wrap yl">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
               </span>
-              <span>办公助理</span>
+              <span>影刀RPA</span>
             </button>
           </nav>
 
@@ -2199,8 +2238,75 @@ ${bodyText}` : bodyText;
             </div>
           </div>
 
-          {/* ============ 自动化面板（Trae Work 风格：定时任务管理） ============ */}
-          {automationOpen ? (
+          {/* ============ 影刀 RPA 面板 ============ */}
+          {yingdaoOpen ? (
+            <div className="automation-panel">
+              <div className="ap-top">
+                <div className="ap-top-left">
+                  <button className="ap-back-btn" onClick={() => setYingdaoOpen(false)} title="返回对话 (Esc)">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="19" y1="12" x2="5" y2="12"/><polyline points="12 19 5 12 12 5"/></svg>
+                    <span>返回对话</span>
+                  </button>
+                  <div className="ap-tabs">
+                    <button className="ap-tab on">影刀任务</button>
+                  </div>
+                </div>
+                <div className="ap-actions">
+                  <button className="ap-btn ghost" onClick={loadYingdaoTasks} disabled={yingdaoLoading}>
+                    {yingdaoLoading ? "加载中…" : "刷新"}
+                  </button>
+                </div>
+              </div>
+              <div className="ap-list">
+                {yingdaoMsg && (
+                  <div style={{
+                    padding: "12px 16px", margin: "12px 16px", borderRadius: 8, fontSize: 13,
+                    background: yingdaoMsg.type === "ok" ? "rgba(34,197,94,0.1)" : "rgba(239,68,68,0.1)",
+                    color: yingdaoMsg.type === "ok" ? "#15803d" : "#b91c1c",
+                    border: `1px solid ${yingdaoMsg.type === "ok" ? "#86efac" : "#fecaca"}`,
+                  }}>{yingdaoMsg.text}</div>
+                )}
+                {yingdaoLoading && yingdaoTasks.length === 0 && (
+                  <div className="ap-empty">
+                    <div className="ap-empty-icon">
+                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    </div>
+                    <div className="ap-empty-title">加载中…</div>
+                  </div>
+                )}
+                {!yingdaoLoading && yingdaoTasks.length === 0 && !yingdaoMsg && (
+                  <div className="ap-empty">
+                    <div className="ap-empty-icon">
+                      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></svg>
+                    </div>
+                    <div className="ap-empty-title">暂无影刀任务</div>
+                    <div className="ap-empty-desc">请联系管理员在服务端为你的账号配置影刀 webhook 任务</div>
+                  </div>
+                )}
+                {yingdaoTasks.map((t) => (
+                  <div key={t.id} className="ap-row">
+                    <div className="ap-row-main">
+                      <div className="ap-row-title">
+                        <span className="ap-status-dot on" />
+                        {t.name}
+                      </div>
+                      {t.description && <div className="ap-row-meta">{t.description}</div>}
+                    </div>
+                    <div className="ap-row-ops">
+                      <button
+                        className="ap-btn primary"
+                        style={{ fontSize: 12, padding: "6px 14px", height: 28 }}
+                        disabled={yingdaoTriggering === t.id}
+                        onClick={() => void triggerYingdao(t.id)}
+                      >
+                        {yingdaoTriggering === t.id ? "触发中…" : "启动"}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : automationOpen ? (
             <div className="automation-panel">
               <div className="ap-top">
                 <div className="ap-top-left">
