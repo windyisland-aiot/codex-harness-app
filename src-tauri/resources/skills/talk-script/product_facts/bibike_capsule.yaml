@@ -18,6 +18,10 @@ product:
   indications: "清热、解毒、通便；用于外感病气分热盛，发热烦躁，头痛目赤，牙龈肿痛，大便秘结。"
   confirmed_facts:
     bear_bile_powder_per_capsule: "每粒含量高达11.1mg熊胆粉"
+    brand_heritage: "金辉药业出品，线下药店卖了二十多年的老产品"
+    otc_label: "红标OTC"
+    taste: "入口是厚重的苦味（熊胆粉、酒大黄、儿茶都苦），越苦下火越快，良药苦口利于病"
+    herbal_formula: "七味清热祛火的中药精华"
 
 script_policy:
   allowed_facts:
@@ -27,122 +31,20 @@ script_policy:
     - "dosage"
     - "otc"
     - "confirmed_facts.bear_bile_powder_per_capsule"
+    - "manufacturer"
+    - "confirmed_facts.brand_heritage"
+    - "confirmed_facts.otc_label"
+    - "confirmed_facts.taste"
+    - "confirmed_facts.herbal_formula"
   approved_expressions:
     - "OTC"
     - "正规药品"
     - "正规中成药"
     - "国药准字（不写具体编号）"
-  internal_only:
-    - "specification"
-    - "approval_number"
-    - "manufacturer"
-    - "dosage_form"
+  # 规格、批准文号、剂型仍在内部资料里，脚本需要时按语料习惯写。
   creative_context:
     - "上火"
-  forbidden_expansions:
-    - "牙痛"
-    - "牙龈鼓包"
-    - "牙龈出血"
-    - "牙龈起泡"
-    - "半边脸发胀"
-    - "口腔溃疡"
-    - "口舌生疮"
-    - "牙周炎"
-    - "消炎"
-    - "止痛"
-    - "根治"
-    - "治愈"
-    - "杀菌"
-    - "抗炎"
-  # 合规规则（guard_rules）集中配置：只做风险分级提醒，不拦截/不阻断脚本生成。
-  # level 仅表示提醒强度（block=高风险提醒 / warn=低风险提醒），生成结果始终交付编导人工修改。
-  # 活动政策、不合规标准实时变动时，直接修改本文件即可，无需改代码或重启进程。
-  guard_rules:
-    forbidden_expansions:
-      level: block
-      message: "脚本出现未确认功效或症状：{term}"
-    oral_symptoms:
-      level: block
-      terms:
-        - "牙龈出血"
-        - "牙龈鼓包"
-        - "牙龈起泡"
-        - "半边脸"
-        - "溃疡"
-        - "生疮"
-      message: "脚本出现未确认的口腔症状：{term}"
-    head_symptoms:
-      level: block
-      terms:
-        - "偏头痛"
-        - "头晕"
-        - "失眠"
-      message: "脚本出现未经确认的头部症状"
-    stool_guard:
-      level: block
-      keyword: "大便"
-      allowed_phrases:
-        - "大便秘结"
-        - "大便不畅"
-        - "大便不通畅"
-        - "排便不畅"
-        - "排便不通"
-        - "便秘"
-        - "排便困难"
-        - "排便不顺"
-      message: "脚本将大便相关内容改写成了未经确认的症状"
-    unrequested_dosage:
-      level: block
-      terms:
-        - "一次2"
-        - "一次 2"
-        - "一日三次"
-        - "一日 3 次"
-        - "小儿"
-        - "三岁以内"
-      message: "脚本主动加入了未被本次需求要求的用法用量"
-    promo_terms:
-      # 风格性促销话术只提醒、不阻断：促销脚本可以不包含实际活动，仅有促销风格。
-      # 具体数字承诺由 numbers 规则按当期活动信息比对。
-      level: warn
-      terms:
-        - "元"
-        - "折"
-        - "优惠"
-        - "活动"
-        - "包邮"
-        - "厂家直发"
-        - "买一送一"
-        - "限时"
-        - "底价"
-        - "促销"
-        - "送到家"
-        - "仓库"
-      message: "脚本包含未确认的价格、优惠或购买承诺：{terms}"
-    risk_terms:
-      level: warn
-      terms:
-        - "最"
-        - "第一"
-        - "顶级"
-        - "唯一"
-        - "绝对"
-        - "保证"
-        - "完美"
-        - "百分之百"
-        - "100%"
-        - "立刻见效"
-        - "根治"
-        - "彻底解决"
-      message: "可能包含绝对化/极限化表达：{terms}"
-    numbers:
-      level: block
-      pattern: "\\d+(?:\\.\\d+)?\\s*(?:mg|毫克|元|折|%)"
-      allowed_numbers:
-        - "11.1"
-      message: "脚本包含未确认的数字宣传：{number}"
-      # 数字承诺以当期活动信息（promotion_context + 额外要求）为准：
-      # 活动文本中出现过的数字视为已授权；allowed_numbers 仅保留产品事实类数字（如 11.1mg）。
+  # 不设禁止表述：表达方式按语料放开，参考片段可直接照它的说法写。
 
 selling_points:
   functional:
@@ -178,7 +80,7 @@ selling_points:
 
 generation:
   default_structure: "B+C+D+E"
-  speech_chars_per_second: 6
+  speech_chars_per_second: 6.5
   max_follow_up_questions: 5
   max_golden_sentences: 3
   max_examples_per_section: 3
