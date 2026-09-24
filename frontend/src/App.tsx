@@ -481,7 +481,7 @@ export default function App() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState("");
-  const [appVersion, setAppVersion] = useState("0.8.5");
+  const [appVersion, setAppVersion] = useState("0.8.6");
 
   // ------- 主题 -------
   const [theme, setThemeState] = useState<"light" | "dark">(() => {

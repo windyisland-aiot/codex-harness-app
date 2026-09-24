@@ -1,6 +1,6 @@
 [package]
 name = "harness-app"
-version = "0.8.5"
+version = "0.8.6"
 description = "Prism 桌面应用（Windows 目标）"
 edition = "2021"
 
