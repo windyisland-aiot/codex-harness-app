@@ -248,6 +248,8 @@ export interface SkillInfo {
   version?: string;
   /** 来源：bundled（随安装包分发）/ codex-home / custom（v0.5.3） */
   source?: "bundled" | "codex-home" | "custom" | string;
+  /** 随安装包内置：删掉也会在下次启动被同步回来，面板里禁用删除。 */
+  bundled?: boolean;
 }
 export interface PluginInfo {
   id: string;
@@ -320,6 +322,10 @@ export interface CloudMarketItem {
   downloadUrl: string;
   size?: number;
   updatedAt?: string;
+  /** 本地 codex_home 里已经装过这个条目（按目录名 / .harness-meta.json 的 itemId 匹配）。 */
+  installed?: boolean;
+  installedDir?: string;
+  installedEnabled?: boolean;
 }
 export interface CloudMarketResponse {
   ok: boolean;
@@ -338,9 +344,20 @@ export function pluginsCloudHealth(baseUrl?: string): Promise<CloudHealth> {
   return invoke<CloudHealth>("plugins_cloud_health", { baseUrl: baseUrl ?? null });
 }
 
-/** 拉取云端市场可下载的插件/技能清单。 */
-export function pluginsCloudList(baseUrl?: string): Promise<CloudMarketResponse> {
-  return invoke<CloudMarketResponse>("plugins_cloud_list", { baseUrl: baseUrl ?? null });
+/**
+ * 拉取云端市场可下载的插件/技能清单。
+ *
+ * 传 codexHome 时后端会给每个条目补 `installed` / `installedDir`，
+ * 市场页据此显示「已安装」，避免重复下载同一个包。
+ */
+export function pluginsCloudList(input?: {
+  codexHome?: string;
+  baseUrl?: string;
+}): Promise<CloudMarketResponse> {
+  return invoke<CloudMarketResponse>("plugins_cloud_list", {
+    baseUrl: input?.baseUrl ?? null,
+    codexHome: input?.codexHome ?? null,
+  });
 }
 
 /** 从云端下载并安装单个插件/skill 到 codex_home 下对应目录。 */
@@ -372,6 +389,23 @@ export function pluginsImportLocal(input: {
     codexHome: input.codexHome,
     sourcePath: input.sourcePath ?? null,
     kind: input.kind ?? "auto",
+  });
+}
+
+/**
+ * 卸载 skill / 插件：删除 codex_home 下的安装目录，并清理 config.toml 里对应的启用规则。
+ *
+ * 只允许删除安装目录里的项；随安装包内置的资源由后端拒绝（删了下次启动也会回来）。
+ */
+export function pluginsDelete(input: {
+  codexHome: string;
+  path: string;
+  kind?: "skill" | "plugin";
+}): Promise<{ ok: boolean; message?: string; removedDir?: string; removedRules?: number }> {
+  return invoke("plugins_delete", {
+    codexHome: input.codexHome,
+    path: input.path,
+    kind: input.kind ?? null,
   });
 }
 

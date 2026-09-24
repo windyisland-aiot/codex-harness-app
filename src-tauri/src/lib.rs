@@ -175,6 +175,7 @@ pub fn run() {
             plugins::plugins_cloud_list,
             plugins::plugins_cloud_install,
             plugins::plugins_import_local,
+            plugins::plugins_delete,
             search::search_execute,
             search::search_register_mcp,
             search::search_status,

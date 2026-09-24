@@ -3058,7 +3058,13 @@ body.theme-dark .plg-card-tag.type-plugin { background: rgba(59,130,246,.15); co
   border-color: transparent;
 }
 .plg-card-btn.primary:hover { background: linear-gradient(135deg, #000, #05070A); }
-.plg-card-btn.danger:hover { background: #FEF2F2; color: #DC2626; border-color: #FECACA; }
+.plg-card-btn.danger { border-color: #FECACA; color: #DC2626; }
+.plg-card-btn.danger:hover { background: #DC2626; color: #FFFFFF; border-color: #DC2626; }
+.plg-card-btn:disabled { opacity: .55; cursor: not-allowed; }
+
+/* 云端市场：已安装条目标记 */
+.plg-card-tag.installed { background: #ECFDF5; color: #065F46; }
+body.theme-dark .plg-card-tag.installed { background: rgba(16,185,129,.15); color: #6EE7B7; }
 
 /* 卡片式开关 */
 .plg-card-switch {

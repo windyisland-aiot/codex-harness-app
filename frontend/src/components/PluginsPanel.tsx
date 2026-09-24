@@ -59,6 +59,10 @@ export default function PluginsPanel({
   const [cloudItems, setCloudItems] = useState<codex.CloudMarketItem[]>([]);
   const [cloudLoaded, setCloudLoaded] = useState(false);
 
+  // 删除确认（两步点击，避免误删）：存待确认的目录路径
+  const [confirmPath, setConfirmPath] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState<string | null>(null);
+
   // 本地导入
   const [importPath, setImportPath] = useState("");
   const [importKind, setImportKind] = useState<"auto" | "skill" | "plugin">("auto");
@@ -95,7 +99,7 @@ export default function PluginsPanel({
       setCloudMsg(h.message);
       if (withList && h.ok) {
         try {
-          const resp = await codex.pluginsCloudList();
+          const resp = await codex.pluginsCloudList({ codexHome });
           setCloudItems(resp.items as codex.CloudMarketItem[]);
           if (resp.message) setCloudMsg(`${h.message}｜${resp.message}`);
         } catch (e: any) {
@@ -118,7 +122,7 @@ export default function PluginsPanel({
       const h = await codex.pluginsCloudHealth();
       setCloudOk(h.ok);
       if (h.ok) {
-        const resp = await codex.pluginsCloudList();
+        const resp = await codex.pluginsCloudList({ codexHome });
         setCloudItems(resp.items as codex.CloudMarketItem[]);
         setCloudMsg(resp.message || h.message);
         onStatus(`云端市场：${resp.items.length} 项`);
@@ -197,13 +201,73 @@ export default function PluginsPanel({
       if (r.ok) {
         onStatus(`已安装：${item.name} → ${r.installedDir}`);
         await loadInstalled();
-        setTab("installed");
+        // 留在市场页：刷新后该条目会显示「已安装」，便于继续装下一个
+        await refreshCloudList();
       } else {
         onStatus(`安装失败：${r.message}`);
       }
     } catch (e: any) {
       onStatus(`云端安装异常: ${e?.message ?? e}`);
     }
+  }
+
+  // ============== 卸载（删除安装目录 + 清理配置规则） ==============
+  async function doDelete(path: string, kind: "skill" | "plugin") {
+    setDeleting(path);
+    try {
+      const r = await codex.pluginsDelete({ codexHome, path, kind });
+      if (r.ok) {
+        onStatus(r.message || `已删除 ${path}`);
+        setConfirmPath(null);
+        await loadInstalled();
+        if (cloudLoaded) await refreshCloudList();
+      } else {
+        onStatus(`删除失败：${r.message}`);
+      }
+    } catch (e: any) {
+      onStatus(`删除异常: ${e?.message ?? e}`);
+    } finally {
+      setDeleting(null);
+    }
+  }
+
+  /** 卡片底部的删除区：内置项禁用，其余两步确认。 */
+  function deleteControl(path: string, kind: "skill" | "plugin", bundled?: boolean) {
+    if (bundled) {
+      return (
+        <span
+          className="plg-card-tag source-bundled"
+          title="随安装包内置的 skill，删除后下次启动会被重新同步"
+        >
+          内置
+        </span>
+      );
+    }
+    if (confirmPath !== path) {
+      return (
+        <button className="plg-card-btn" onClick={() => setConfirmPath(path)} disabled={busy || !!deleting}>
+          删除
+        </button>
+      );
+    }
+    return (
+      <>
+        <button
+          className="plg-card-btn danger"
+          onClick={() => doDelete(path, kind)}
+          disabled={!!deleting}
+        >
+          {deleting === path ? "删除中…" : "确认删除"}
+        </button>
+        <button
+          className="plg-card-btn"
+          onClick={() => setConfirmPath(null)}
+          disabled={!!deleting}
+        >
+          取消
+        </button>
+      </>
+    );
   }
 
   // ============== 本地导入 ==============
@@ -416,6 +480,7 @@ export default function PluginsPanel({
                               {s.dir}
                             </span>
                             <div className="plg-card-actions">
+                              {deleteControl(s.dir, "skill", s.bundled)}
                               <button
                                 className={`plg-card-switch ${s.enabled ? "on" : ""}`}
                                 aria-label={s.enabled ? "禁用" : "启用"}
@@ -469,6 +534,7 @@ export default function PluginsPanel({
                               {p.dir}
                             </span>
                             <div className="plg-card-actions">
+                              {deleteControl(p.dir, "plugin")}
                               <button
                                 className={`plg-card-switch ${p.enabled ? "on" : ""}`}
                                 aria-label={p.enabled ? "禁用" : "启用"}
@@ -561,7 +627,9 @@ export default function PluginsPanel({
                         >
                           {c.type === "skill" ? "skill" : "插件"}
                         </span>
-                        <span className="plg-card-tag">云端</span>
+                        <span className={`plg-card-tag ${c.installed ? "installed" : ""}`}>
+                          {c.installed ? "已安装" : "云端"}
+                        </span>
                         {(c.tags ?? []).slice(0, 3).map((t) => (
                           <span key={t} className="plg-card-tag">
                             {t}
@@ -572,16 +640,26 @@ export default function PluginsPanel({
                         )}
                       </div>
                       <div className="plg-card-foot">
-                        <span className="plg-card-path" title={c.downloadUrl}>
-                          {c.downloadUrl}
+                        <span
+                          className="plg-card-path"
+                          title={c.installed && c.installedDir ? c.installedDir : c.downloadUrl}
+                        >
+                          {c.installed && c.installedDir ? `已装到 ${c.installedDir}` : c.downloadUrl}
                         </span>
                         <div className="plg-card-actions">
                           <button
-                            className="plg-card-btn primary"
+                            className={`plg-card-btn ${c.installed ? "" : "primary"}`}
+                            disabled={c.installed}
+                            title={c.installed ? "已安装（如需更新先删除再安装）" : "下载并安装到 codex_home"}
                             onClick={() => installFromCloud(c)}
                           >
-                            安装
+                            {c.installed ? "已安装" : "安装"}
                           </button>
+                          {c.installed &&
+                            deleteControl(
+                              c.installedDir ?? "",
+                              c.type === "plugin" ? "plugin" : "skill"
+                            )}
                         </div>
                       </div>
                     </div>

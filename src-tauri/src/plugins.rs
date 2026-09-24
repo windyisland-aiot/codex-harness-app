@@ -82,15 +82,92 @@ fn sync_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> Result<bo
 ///
 /// 云端下载的包解压后只剩 SKILL.md，展示名会退回成目录/slug 名，
 /// 安装时把市场里的名字与描述写进这个文件，面板优先用它展示。
-fn read_install_meta(dir: &Path) -> Option<(String, String)> {
+fn read_install_meta_raw(dir: &Path) -> Option<serde_json::Value> {
     let text = std::fs::read_to_string(dir.join(".harness-meta.json")).ok()?;
-    let v: serde_json::Value = serde_json::from_str(&text).ok()?;
+    serde_json::from_str(&text).ok()
+}
+
+fn read_install_meta(dir: &Path) -> Option<(String, String)> {
+    let v = read_install_meta_raw(dir)?;
     let name = v.get("name").and_then(|x| x.as_str()).unwrap_or("").trim().to_string();
     let description = v.get("description").and_then(|x| x.as_str()).unwrap_or("").trim().to_string();
     if name.is_empty() && description.is_empty() {
         return None;
     }
     Some((name, description))
+}
+
+/// 已安装条目（市场页用它判断某个云端条目是否已经装过）。
+struct InstalledEntry {
+    dir: String,
+    /// 目录名（skill 的 slug / 插件目录）
+    slug: String,
+    /// SKILL.md 的 name 或 plugin.toml 的 id
+    decl_name: String,
+    /// `.harness-meta.json` 里记录的市场条目 id / 展示名（云端安装时落盘）
+    meta_id: String,
+    meta_name: String,
+    enabled: bool,
+}
+
+/// 扫描 `<codex_home>/skills` 与 `<codex_home>/plugins`，返回已安装条目。
+///
+/// 只扫 codex_home：随安装包分发的内置 skill 会被同步到这里，因此本地目录
+/// 就是「已安装」的唯一真源；隐藏目录（如 `.system`）不算用户安装项。
+fn installed_entries(codex_home: &str) -> Vec<InstalledEntry> {
+    let home = PathBuf::from(codex_home);
+    let cfg = harness_config::read(codex_home).ok();
+    let mut out = Vec::new();
+    for (kind, root) in [("skill", home.join("skills")), ("plugin", home.join("plugins"))] {
+        let Ok(rd) = std::fs::read_dir(&root) else { continue };
+        for e in rd.flatten() {
+            let p = e.path();
+            if !p.is_dir() {
+                continue;
+            }
+            let slug = p.file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
+            if slug.is_empty() || slug.starts_with('.') {
+                continue;
+            }
+            let is_skill = kind == "skill";
+            let meta = read_install_meta_raw(&p).unwrap_or(serde_json::Value::Null);
+            let meta_id = meta.get("itemId").and_then(|x| x.as_str()).unwrap_or("").trim().to_string();
+            let meta_name = meta.get("name").and_then(|x| x.as_str()).unwrap_or("").trim().to_string();
+            let decl_name = if is_skill { slug.clone() } else { plugin_id_from(&p) };
+            let dir = p.to_string_lossy().to_string();
+            let enabled = match cfg.as_ref() {
+                Some(c) if is_skill => c
+                    .skills
+                    .iter()
+                    .find(|r| (!r.path.is_empty() && r.path == dir) || (!r.name.is_empty() && r.name == decl_name))
+                    .map(|r| r.enabled)
+                    .unwrap_or(true),
+                Some(c) => c
+                    .plugins
+                    .iter()
+                    .find(|r| r.id == decl_name)
+                    .map(|r| r.enabled)
+                    .unwrap_or(true),
+                None => true,
+            };
+            out.push(InstalledEntry { dir, slug, decl_name, meta_id, meta_name, enabled });
+        }
+    }
+    out
+}
+
+/// 云端市场条目 ↔ 本地已安装目录的匹配（安装时目录名取自 item id，
+/// 老版本随机目录名则靠 `.harness-meta.json` 里的 itemId 兜底）。
+fn market_match(item_id: &str, item_name: &str, entries: &[InstalledEntry]) -> Option<usize> {
+    let id = item_id.trim().to_ascii_lowercase();
+    let name = item_name.trim().to_lowercase();
+    let id_slug = sanitize_name(item_id.trim()).to_ascii_lowercase();
+    entries.iter().position(|e| {
+        (!e.meta_id.is_empty() && e.meta_id.to_ascii_lowercase() == id)
+            || (!e.meta_name.is_empty() && e.meta_name.to_lowercase() == name && !name.is_empty())
+            || (!id.is_empty() && e.decl_name.to_ascii_lowercase() == id)
+            || (!id_slug.is_empty() && e.slug.to_ascii_lowercase() == id_slug)
+    })
 }
 
 /// v0.5.4：把随安装包分发的内置 skills 同步到 `<codex_home>/skills/`。
@@ -191,6 +268,22 @@ pub async fn plugins_list(
             }
         }
 
+        // 随安装包内置的 skill（资源目录里存在，且启动时会被同步回 codex_home）：
+        // 面板据此把「删除」置灰 —— 删掉下次启动也会被重新同步回来。
+        let mut bundled_slugs: Vec<String> = Vec::new();
+        for (root, src) in dedup_roots.iter().filter(|(_, s)| *s == "bundled") {
+            if let Ok(rd) = std::fs::read_dir(root) {
+                for e in rd.flatten() {
+                    let p = e.path();
+                    if p.is_dir() && p.join("SKILL.md").is_file() {
+                        if let Some(n) = p.file_name() {
+                            bundled_slugs.push(n.to_string_lossy().to_string());
+                        }
+                    }
+                }
+            }
+        }
+
         let mut skills: Vec<harness_plugins::SkillInfo> = Vec::new();
         let mut skill_sources: Vec<&'static str> = Vec::new();
         for (root, src) in &dedup_roots {
@@ -232,6 +325,7 @@ pub async fn plugins_list(
                     "dir": s.dir.to_string_lossy(),
                     "enabled": enabled,
                     "source": skill_sources.get(i).copied().unwrap_or("custom"),
+                    "bundled": bundled_slugs.iter().any(|n| n.eq_ignore_ascii_case(&s.name)),
                 })
             })
             .collect();
@@ -394,8 +488,12 @@ pub async fn plugins_cloud_health(base_url: Option<String>) -> Result<serde_json
 /// 当前 bibike 服务端尚未暴露 /api/v1/market 端点（404），这里先请求；
 /// 失败时返回空列表并标注「服务端尚未开启市场」，前端 UI 仍可正常渲染。
 #[tauri::command]
-pub async fn plugins_cloud_list(base_url: Option<String>) -> Result<serde_json::Value, String> {
+pub async fn plugins_cloud_list(
+    base_url: Option<String>,
+    codex_home: Option<String>,
+) -> Result<serde_json::Value, String> {
     let base = cloud_base(base_url.as_deref());
+    let home = codex_home.map(|s| s.trim().to_string()).filter(|s| !s.is_empty());
     tauri::async_runtime::spawn_blocking(move || {
         // 尝试 1) /api/v1/market 2) /api/v1/plugins 3) /api/v1/admin/plugins
         let candidates = [
@@ -411,7 +509,27 @@ pub async fn plugins_cloud_list(base_url: Option<String>) -> Result<serde_json::
                     match r.into_json::<serde_json::Value>() {
                         Ok(v) => {
                             // 规范化：兼容 { data: { items: [...] } } 或 { items: [...] } 或 [ ... ]
-                            let items = extract_items(&v);
+                            let mut items = extract_items(&v);
+                            // 市场页要能看出「哪些已经装过」：按目录名 / .harness-meta.json
+                            // 里的市场 itemId 比对本地已安装清单。
+                            if let Some(home) = home.as_deref() {
+                                let entries = installed_entries(home);
+                                for item in items.iter_mut() {
+                                    let Some(obj) = item.as_object_mut() else { continue };
+                                    let id = obj.get("id").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                                    let name = obj.get("name").and_then(|x| x.as_str()).unwrap_or("").to_string();
+                                    match market_match(&id, &name, &entries) {
+                                        Some(idx) => {
+                                            obj.insert("installed".into(), serde_json::Value::Bool(true));
+                                            obj.insert("installedDir".into(), entries[idx].dir.clone().into());
+                                            obj.insert("installedEnabled".into(), serde_json::Value::Bool(entries[idx].enabled));
+                                        }
+                                        None => {
+                                            obj.insert("installed".into(), serde_json::Value::Bool(false));
+                                        }
+                                    }
+                                }
+                            }
                             return Ok::<serde_json::Value, String>(serde_json::json!({
                                 "ok": true,
                                 "items": items,
@@ -496,7 +614,8 @@ pub async fn plugins_cloud_install(
         std::io::copy(&mut reader, &mut f).map_err(|e| e.to_string())?;
         drop(f);
 
-        let installed = install_from_zip(&tmp, &codex_home)?;
+        // 目录名固定用市场 item id：老版本用临时目录名落盘，卸载/识别都得靠 meta 兜底。
+        let installed = install_from_zip(&tmp, &codex_home, Some(item_id.as_str()))?;
         let _ = std::fs::remove_file(&tmp);
 
         // 把市场条目的展示名/描述一起落盘：ZIP 里只有 SKILL.md，
@@ -575,7 +694,7 @@ pub async fn plugins_import_local(
             Some((_, stored_k)) => stored_k,
             None => k,
         };
-        let installed = install_from_dir(&final_src, &codex_home, k)?;
+        let installed = install_from_dir(&final_src, &codex_home, k, None)?;
 
         // 写回启用规则
         let mut cfg = harness_config::read(&codex_home).map_err(|e| e.to_string())?;
@@ -610,6 +729,98 @@ pub async fn plugins_import_local(
 
 // ============== helpers ==============
 
+/// 从配置里摘掉指向已删除目录的规则，返回清理条数。
+///
+/// skill 规则可能按 path 或 name 写（老版本两套都写过），插件规则按 id 写。
+fn prune_rules_for(cfg: &mut AppConfig, dir_str: &str, slug: &str, plugin_id: &str) -> usize {
+    let before = cfg.skills.len() + cfg.plugins.len();
+    cfg.skills.retain(|r| {
+        !((!r.path.is_empty() && r.path == dir_str)
+            || (!r.name.is_empty() && !slug.is_empty() && r.name == slug))
+    });
+    cfg.plugins.retain(|r| r.id != plugin_id);
+    before - (cfg.skills.len() + cfg.plugins.len())
+}
+
+/// 删除已安装的 skill / 插件目录，并清理 config.toml 里指向它的启用规则。
+///
+/// 只允许删除 `<codex_home>/skills|plugins` 下的目录：随安装包分发的内置资源
+/// 在资源目录里，删不了也不该删；路径校验放在后端，避免前端传错路径删掉用户目录。
+#[tauri::command]
+pub async fn plugins_delete(
+    codex_home: String,
+    path: String,
+    kind: Option<String>,
+) -> Result<serde_json::Value, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let home = PathBuf::from(codex_home.trim());
+        let target = PathBuf::from(path.trim());
+        let label = kind.unwrap_or_default();
+        let kind_label = if label == "plugin" { "插件" } else { "skill" };
+
+        if target.as_os_str().is_empty() {
+            return Ok(serde_json::json!({ "ok": false, "message": "缺少要删除的目录路径" }));
+        }
+        let canon_target = match target.canonicalize() {
+            Ok(p) => p,
+            Err(_) => {
+                return Ok(serde_json::json!({
+                    "ok": false,
+                    "message": format!("目录不存在或已被删除：{}", target.display()),
+                }))
+            }
+        };
+        let in_root = |kind: &str| -> bool {
+            match home.join(kind).canonicalize() {
+                Ok(root) => canon_target.starts_with(&root) && canon_target != root,
+                Err(_) => false,
+            }
+        };
+        if !in_root("skills") && !in_root("plugins") {
+            return Ok(serde_json::json!({
+                "ok": false,
+                "message": "只能删除安装目录下的 skill / 插件；随安装包内置的资源不在这里。",
+            }));
+        }
+
+        // 删除前先取名字：插件规则按 id 匹配，删完就读不到 plugin.toml 了。
+        let slug = target
+            .file_name()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let plugin_id = plugin_id_from(&target);
+        let dir_str = target.to_string_lossy().to_string();
+        let had_meta = target.join(".harness-meta.json").is_file();
+
+        std::fs::remove_dir_all(&target)
+            .map_err(|e| format!("删除失败 {}: {e}", target.display()))?;
+
+        // 清理 config.toml：skill 按 path/name，插件按 id。
+        let mut pruned = 0usize;
+        if let Ok(mut cfg) = harness_config::read(home.to_string_lossy().as_ref()) {
+            pruned = prune_rules_for(&mut cfg, &dir_str, &slug, &plugin_id);
+            if pruned > 0 {
+                harness_config::write(home.to_string_lossy().as_ref(), &cfg).map_err(|e| e.to_string())?;
+            }
+        }
+
+        Ok::<serde_json::Value, String>(serde_json::json!({
+            "ok": true,
+            "removedDir": dir_str,
+            "removedRules": pruned,
+            "message": format!(
+                "已删除{}{}（清理 {} 条配置规则）",
+                kind_label,
+                if slug.is_empty() { String::new() } else { format!("：{slug}") },
+                pruned
+            ),
+            "hadMarketMeta": had_meta,
+        }))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 fn auto_detect_kind(p: &Path) -> &'static str {
     if p.is_dir() {
         if p.join("SKILL.md").is_file() { return "skill"; }
@@ -628,9 +839,16 @@ fn auto_detect_kind(p: &Path) -> &'static str {
     "skill" // 无法判断时默认 skill
 }
 
-fn install_from_dir(src: &Path, codex_home: &str, kind: &str) -> Result<PathBuf, String> {
-    let name = src.file_name()
-        .map(|s| s.to_string_lossy().to_string())
+fn install_from_dir(
+    src: &Path,
+    codex_home: &str,
+    kind: &str,
+    name_hint: Option<&str>,
+) -> Result<PathBuf, String> {
+    let name = name_hint
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .or_else(|| src.file_name().map(|s| s.to_string_lossy().to_string()))
         .filter(|s| !s.is_empty())
         .unwrap_or_else(|| format!("imported-{}", rand_suffix()));
     let target_root = PathBuf::from(codex_home).join(if kind == "plugin" { "plugins" } else { "skills" });
@@ -639,12 +857,12 @@ fn install_from_dir(src: &Path, codex_home: &str, kind: &str) -> Result<PathBuf,
     Ok(target)
 }
 
-fn install_from_zip(zip_path: &Path, codex_home: &str) -> Result<String, String> {
+fn install_from_zip(zip_path: &Path, codex_home: &str, name_hint: Option<&str>) -> Result<String, String> {
     let tmp = std::env::temp_dir().join(format!("harness-cloud-install-{}-{}", std::process::id(), rand_suffix()));
     std::fs::create_dir_all(&tmp).map_err(|e| e.to_string())?;
     let extracted = extract_zip_to(zip_path, &tmp)?;
     let kind = auto_detect_kind(&extracted);
-    let installed = install_from_dir(&extracted, codex_home, kind)?;
+    let installed = install_from_dir(&extracted, codex_home, kind, name_hint)?;
     let _ = std::fs::remove_dir_all(&tmp);
     Ok(installed.to_string_lossy().to_string())
 }
@@ -772,5 +990,77 @@ mod sync_tests {
             .iter()
             .any(|r| (!r.path.is_empty() && r.path == new_dir));
         assert!(!has_rule);
+    }
+
+    fn write_skill(dir: &Path, name: &str) {
+        std::fs::create_dir_all(dir).unwrap();
+        std::fs::write(dir.join("SKILL.md"), format!("---\nname: {name}\n---\nbody")).unwrap();
+    }
+
+    /// 已安装清单：跳过隐藏目录（.system），云端安装包按 .harness-meta.json 的 itemId 识别。
+    #[test]
+    fn installed_entries_skips_hidden_and_market_match_by_meta() {
+        let home = tdir("home");
+        let home_str = home.to_string_lossy().to_string();
+        write_skill(&home.join("skills/talk-script"), "talk-script");
+        write_skill(&home.join("skills/.system/foo"), "foo");
+        // 老版本云端安装：目录名是临时名，只能靠 meta 里的 itemId 认出来。
+        let legacy = home.join("skills/harness-cloud-install-123-abc");
+        write_skill(&legacy, "ad-script-master");
+        std::fs::write(
+            legacy.join(".harness-meta.json"),
+            r#"{"name":"广告脚本大师","description":"desc","itemId":"ad-script-master"}"#,
+        )
+        .unwrap();
+        let plugin_dir = home.join("plugins/demo-plugin");
+        std::fs::create_dir_all(&plugin_dir).unwrap();
+        std::fs::write(plugin_dir.join("plugin.toml"), "id = \"demo-plugin\"\n").unwrap();
+
+        let entries = installed_entries(&home_str);
+        assert_eq!(entries.len(), 3, "隐藏目录 .system 不应出现");
+        assert!(entries.iter().all(|e| !e.slug.starts_with('.')));
+
+        // 目录名即 item id（新版本安装）→ 直接命中
+        assert!(market_match("talk-script", "比拜克广告脚本", &entries).is_some());
+        // 随机目录名（老版本）→ 靠 meta.itemId / meta.name 命中
+        assert_eq!(
+            entries[market_match("ad-script-master", "任意名字", &entries).unwrap()].slug,
+            "harness-cloud-install-123-abc"
+        );
+        assert!(market_match("x", "广告脚本大师", &entries).is_some());
+        // 未安装的条目
+        assert!(market_match("not-installed", "没装过", &entries).is_none());
+
+        let _ = std::fs::remove_dir_all(&home);
+    }
+
+    /// 删除后清理配置规则：skill 的 path/name 规则与插件 id 规则都要摘掉，无关规则保留。
+    #[test]
+    fn prune_rules_removes_deleted_target_only() {
+        let mut cfg = AppConfig::default();
+        cfg.skills.push(SkillRule {
+            name: String::new(),
+            path: "/home/u/.codex/skills/foo".into(),
+            enabled: true,
+        });
+        cfg.skills.push(SkillRule {
+            name: "foo".into(),
+            path: String::new(),
+            enabled: false,
+        });
+        cfg.skills.push(SkillRule {
+            name: String::new(),
+            path: "/home/u/.codex/skills/keep".into(),
+            enabled: true,
+        });
+        cfg.plugins.push(PluginRule { id: "demo-plugin".into(), enabled: true });
+        cfg.plugins.push(PluginRule { id: "keep-plugin".into(), enabled: true });
+
+        let pruned = prune_rules_for(&mut cfg, "/home/u/.codex/skills/foo", "foo", "demo-plugin");
+        assert_eq!(pruned, 3);
+        assert_eq!(cfg.skills.len(), 1);
+        assert_eq!(cfg.skills[0].path, "/home/u/.codex/skills/keep");
+        assert_eq!(cfg.plugins.len(), 1);
+        assert_eq!(cfg.plugins[0].id, "keep-plugin");
     }
 }
