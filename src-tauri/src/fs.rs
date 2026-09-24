@@ -98,6 +98,92 @@ pub fn fs_write_file(root: &str, rel_path: &str, content: &str) -> Result<(), St
     Ok(())
 }
 
+/// 可直接内联预览的媒体扩展名（两条命令共用的白名单）。
+const MEDIA_EXTS: &[&str] = &[
+    "png", "jpg", "jpeg", "gif", "webp", "bmp", "avif", "svg", "ico",
+    "mp4", "webm", "mov", "m4v", "ogv", "mkv",
+    "mp3", "wav", "m4a", "ogg", "flac", "aac",
+];
+
+fn media_ext_of(path: &Path) -> Option<String> {
+    let ext = path.extension()?.to_string_lossy().to_ascii_lowercase();
+    if MEDIA_EXTS.contains(&ext.as_str()) {
+        Some(ext)
+    } else {
+        None
+    }
+}
+
+fn mime_of(ext: &str) -> &'static str {
+    match ext {
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "bmp" => "image/bmp",
+        "avif" => "image/avif",
+        "svg" => "image/svg+xml",
+        "ico" => "image/x-icon",
+        "mp4" => "video/mp4",
+        "webm" => "video/webm",
+        "mov" => "video/quicktime",
+        "m4v" => "video/x-m4v",
+        "ogv" => "video/ogg",
+        "mkv" => "video/x-matroska",
+        "mp3" => "audio/mpeg",
+        "wav" => "audio/wav",
+        "m4a" => "audio/mp4",
+        "ogg" => "audio/ogg",
+        "flac" => "audio/flac",
+        "aac" => "audio/aac",
+        _ => "application/octet-stream",
+    }
+}
+
+/// 批量探测媒体文件：按输入顺序返回字节数，不存在 / 非媒体扩展名返回 0。
+///
+/// 前端在渲染一条回复前先探测，只把真实存在的媒体渲染成内联预览，
+/// 避免路径写错时出现一堆坏图。
+#[tauri::command]
+pub fn fs_probe_media(paths: Vec<String>) -> Vec<u64> {
+    paths
+        .iter()
+        .map(|raw| {
+            let p = PathBuf::from(raw.trim().trim_matches('"'));
+            if media_ext_of(&p).is_none() {
+                return 0;
+            }
+            std::fs::metadata(&p).map(|m| m.len()).unwrap_or(0)
+        })
+        .collect()
+}
+
+/// 以 data URL 读取媒体文件，供 `<img src>` 在 asset 协议取不到时兜底
+/// （例如文件落在 `$CODEX_HOME` 之外、不在协议白名单里）。
+///
+/// 只放行媒体扩展名 + 体积上限，不作为任意文件读取接口使用。
+#[tauri::command]
+pub fn fs_read_media(path: String, max_bytes: Option<u64>) -> Result<String, String> {
+    use base64::Engine;
+    let p = PathBuf::from(path.trim().trim_matches('"'));
+    let ext = media_ext_of(&p).ok_or_else(|| format!("不是可预览的媒体文件：{}", p.display()))?;
+    if !p.is_file() {
+        return Err(format!("文件不存在：{}", p.display()));
+    }
+    let limit = max_bytes.unwrap_or(24 * 1024 * 1024);
+    let len = std::fs::metadata(&p).map_err(|e| e.to_string())?.len();
+    if len > limit {
+        return Err(format!(
+            "文件过大（{:.1} MB > {:.1} MB），已跳过内联预览",
+            len as f64 / 1048576.0,
+            limit as f64 / 1048576.0
+        ));
+    }
+    let raw = std::fs::read(&p).map_err(|e| format!("读取失败：{e}"))?;
+    let b64 = base64::engine::general_purpose::STANDARD.encode(raw);
+    Ok(format!("data:{};base64,{}", mime_of(&ext), b64))
+}
+
 /// 写入二进制文件（base64 内容）。用于把用户在对话中附加的 PDF/文档等
 /// 落到 workspace 内，再由本地 codex 直接读取（图片走多模态 data URL，不经此）。
 #[tauri::command]

@@ -4158,3 +4158,115 @@ body.theme-dark .bar-btn-approval.is-full {
   align-items: center;
   gap: 8px;
 }
+
+/* ============ v0.8.5：对话内媒体预览（图片 / 视频 / 音频） ============ */
+.md-media {
+  margin: 8px 0;
+  max-width: min(100%, 520px);
+}
+.md-media-body {
+  display: block;
+  max-width: 100%;
+  max-height: 420px;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+.md-media-image.compact .md-media-body,
+.md-media-video.compact .md-media-body {
+  max-height: 300px;
+}
+.md-media-audio .md-media-body {
+  width: min(100%, 420px);
+  border: none;
+  background: transparent;
+}
+.md-media-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 2px 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  max-width: 100%;
+}
+.md-media-name {
+  background: none;
+  border: none;
+  padding: 0;
+  font: inherit;
+  color: var(--brand);
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 62%;
+}
+.md-media-name:hover { text-decoration: underline; }
+.md-media-size { opacity: .72; flex-shrink: 0; }
+.md-media-expand {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1.4;
+  padding: 0 7px;
+  flex-shrink: 0;
+}
+.md-media-expand:hover { background: var(--bg-hover); color: var(--text); }
+.md-media.failed {
+  font-size: 12px;
+  color: var(--text-muted);
+  word-break: break-all;
+}
+
+/* 全屏媒体浮层 */
+.media-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 12000;
+  background: rgba(10, 12, 16, .88);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 56px 24px 32px;
+}
+.media-overlay-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  color: #E5E7EB;
+  font-size: 12.5px;
+}
+.media-overlay-bar > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 70%;
+  opacity: .85;
+}
+.media-overlay-bar button {
+  margin-left: auto;
+  background: #374151;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 4px 14px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.media-overlay-bar button:hover { background: #4B5563; }
+.media-overlay-body {
+  max-width: 100%;
+  max-height: calc(100vh - 96px);
+  object-fit: contain;
+  border-radius: 8px;
+}

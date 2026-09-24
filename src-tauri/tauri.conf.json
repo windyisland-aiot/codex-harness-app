@@ -25,7 +25,11 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self' ipc: http://127.0.0.1: https://127.0.0.1: asset: https://asset.localhost; script-src 'self' 'unsafe-inline' asset: https://asset.localhost; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: http: blob: asset: https://asset.localhost; connect-src 'self' ipc: http://127.0.0.1: https://127.0.0.1: ws: wss: https: asset: https://asset.localhost; media-src 'self' data: blob: asset: https://asset.localhost; font-src 'self' data: asset: https://asset.localhost; worker-src 'self' blob: asset: https://asset.localhost"
+      "csp": "default-src 'self' ipc: http://127.0.0.1: https://127.0.0.1: asset: https://asset.localhost; script-src 'self' 'unsafe-inline' asset: https://asset.localhost; style-src 'self' 'unsafe-inline'; img-src 'self' data: https: http: blob: asset: http://asset.localhost https://asset.localhost; connect-src 'self' ipc: http://127.0.0.1: https://127.0.0.1: ws: wss: https: asset: https://asset.localhost; media-src 'self' data: blob: asset: http://asset.localhost https://asset.localhost; font-src 'self' data: asset: https://asset.localhost; worker-src 'self' blob: asset: https://asset.localhost",
+      "assetProtocol": {
+        "enable": true,
+        "scope": []
+      }
     }
   },
   "bundle": {

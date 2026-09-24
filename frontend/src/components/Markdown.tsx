@@ -4,6 +4,7 @@
 //! - 表格样式、blockquote 竖线样式、列表缩进、图片 max-width
 import { useEffect, useMemo, useRef } from "react";
 import { marked } from "marked";
+import { hydrateMedia } from "../media";
 // DOMPurify：ESM 风格导入 + 运行时 fallback。
 // tsc 构建阶段即便未安装 @types/dompurify，只要有 dompurify 包即可用 any 方式。
 import DOMPurify from "dompurify";
@@ -36,7 +37,7 @@ function extractLang(codeEl: Element): string {
 }
 
 /** 追加片段时，通过 key 区分，避免把半截多字节字符破坏转义。 */
-export default function Markdown({ text }: { text: string }) {
+export default function Markdown({ text, cwd }: { text: string; cwd?: string }) {
   const html = useMemo(() => render(text), [text]);
   const wrapRef = useRef<HTMLDivElement>(null);
 
@@ -110,6 +111,16 @@ export default function Markdown({ text }: { text: string }) {
       }
     });
   }, [html]);
+
+  // v0.8.5：把消息里指向本地文件的图片/视频/音频渲染成可直接查看的卡片。
+  // 先探测文件是否存在，再替换（路径写错时保持原文，不会出现坏图）。
+  useEffect(() => {
+    const wrap = wrapRef.current;
+    if (!wrap) return;
+    // 去抖：流式输出时 html 频繁变化，等这一波稳定下来再探测文件是否存在。
+    const timer = window.setTimeout(() => void hydrateMedia(wrap, cwd), 250);
+    return () => window.clearTimeout(timer);
+  }, [html, cwd]);
 
   return (
     <div className="md-wrap" ref={wrapRef}>

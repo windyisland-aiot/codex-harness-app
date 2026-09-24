@@ -104,6 +104,15 @@ fn harness_resolve_paths(app: AppHandle) -> Result<ResolvedPaths, String> {
     let codex_home = fn_ensure(&base)?;
     let default_cwd = fn_ensure(&codex_home.join("workspace"))?;
 
+    // v0.8.5：把 codexHome（含 workspace）与临时目录加进 asset 协议白名单。
+    // 会话里 Agent 产出的图片/视频要用 <img src="asset://…"> 内联预览，
+    // 不在白名单里的路径会被协议层 403 掉。这里只放行这两个目录，保持最小面。
+    {
+        let scope = app.asset_protocol_scope();
+        let _ = scope.allow_directory(&codex_home, true);
+        let _ = scope.allow_directory(std::env::temp_dir(), true);
+    }
+
     // codex 二进制：资源目录 > HARNESS_CODEX_BIN > PATH
     let resource_dir = app
         .path()
@@ -187,6 +196,9 @@ pub fn run() {
             fs::fs_read_file,
             fs::fs_write_file,
             fs::fs_write_file_b64,
+            // v0.8.5：对话内媒体预览（图片/视频/音频）
+            fs::fs_probe_media,
+            fs::fs_read_media,
             harness_resolve_paths,
             // B2 云端 codex 执行桥
             cloud_bridge::cloud_login,

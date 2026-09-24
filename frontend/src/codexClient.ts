@@ -578,6 +578,18 @@ export function fsWriteFileB64(
   return invoke<string>("fs_write_file_b64", { root, relPath, b64 });
 }
 
+// ---------- v0.8.5：对话内媒体预览 ----------
+
+/** 批量探测媒体文件，返回每个路径的字节数（不存在 / 非媒体扩展名 → 0）。 */
+export function fsProbeMedia(paths: string[]): Promise<number[]> {
+  return invoke<number[]>("fs_probe_media", { paths });
+}
+
+/** 读取媒体文件为 data URL（asset 协议取不到时的兜底预览）。 */
+export function fsReadMedia(path: string, maxBytes?: number): Promise<string> {
+  return invoke<string>("fs_read_media", { path, maxBytes: maxBytes ?? null });
+}
+
 // ---------- v0.3.0 凭据（API key）读写 ----------
 
 /** 读取 `<codexHome>/.env-provider`：env_key → api_value。 */

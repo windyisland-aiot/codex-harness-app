@@ -2512,7 +2512,7 @@ ${bodyText}` : bodyText;
                       <div className="msg-avatar harness prism" title="Prism Agent"><img src="/prism.svg" alt="Prism" /></div>
                     )}
                     <div className={`bubble md ${m.role === "user" ? "user-bubble" : "asst-bubble"}`}>
-                      <Markdown text={m.text} />
+                      <Markdown text={m.text} cwd={cwd} />
                     </div>
                   </div>
                 ))}
