@@ -40,6 +40,41 @@ pub fn config_path(codex_home: &str) -> PathBuf {
     Path::new(codex_home).join(CONFIG_FILE)
 }
 
+/// 强制对齐 `developer_instructions`（顶层字符串，codex 原生键）。
+///
+/// 单独用一个函数而不是给 [`AppConfig`] 加字段：该键不由配置面板管理，
+/// 走原始 TOML 表读写可以保留用户在 config.toml 里手写的其它未托管配置，
+/// 也不会因为新增结构体字段而破坏已有调用方。
+///
+/// 返回值：`true` 表示内容有变化并已写盘，`false` 表示已是最新（跳过写）。
+pub fn ensure_developer_instructions(codex_home: &str, text: &str) -> Result<bool> {
+    let path = config_path(codex_home);
+    let mut table: toml::map::Map<String, toml::Value> = if path.exists() {
+        std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|t| toml::from_str(&t).ok())
+            .unwrap_or_default()
+    } else {
+        Default::default()
+    };
+    let current = table
+        .get("developer_instructions")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if current == text {
+        return Ok(false);
+    }
+    table.insert(
+        "developer_instructions".to_string(),
+        toml::Value::String(text.to_string()),
+    );
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&path, toml::to_string(&toml::Value::Table(table))?)?;
+    Ok(true)
+}
+
 mod conv {
     use super::Result;
     use crate::ConfigError;

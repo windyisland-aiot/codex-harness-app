@@ -18,16 +18,16 @@ const DEFAULT_CLOUD_BASE: &str = "http://118.31.107.214";
 
 /// 计算默认扫描根目录（v0.5.3：飞书等内置 skill 随安装包分发）。
 ///
-/// 依次包含三类，`discover_*` 自带按 canonicalize 去重，重叠无副作用：
-/// 1. 打包资源目录 `<resource_dir>/skills|plugins`（tauri.conf.json bundle.resources）
-/// 2. `<codex_home>/skills|plugins`（如 `~/.codex/skills`，用户放置的自定义 skill）
+/// 顺序即优先级，调用方按名字去重——**同一个 skill 只会出现一次**：
+/// 1. `<codex_home>/skills|plugins`（唯一真源：内置 skill 会被同步到这里）
+/// 2. 打包资源目录 `<resource_dir>/skills|plugins`（tauri.conf.json bundle.resources）
 /// 3. 开发模式兜底 `src-tauri/resources/skills|plugins`（未打包时 resource_dir 不指向源码）
 fn default_roots(app: &tauri::AppHandle, codex_home: &str, kind: &str) -> Vec<(PathBuf, &'static str)> {
     let mut roots = Vec::new();
+    roots.push((PathBuf::from(codex_home).join(kind), "codex-home"));
     if let Ok(rd) = app.path().resource_dir() {
         roots.push((rd.join(kind), "bundled"));
     }
-    roots.push((PathBuf::from(codex_home).join(kind), "codex-home"));
     roots.push((
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("resources").join(kind),
         "bundled",
@@ -51,6 +51,48 @@ fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> Result<()
     Ok(())
 }
 
+/// 递归同步目录：只写内容不同的文件，返回本次是否存在变更。
+///
+/// 内置 skill 每次启动都会被检查一遍，逐字节比较后跳过相同文件，
+/// 避免每个会话都重写磁盘、也避免日志里出现「又在重新同步」的假象。
+fn sync_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> Result<bool, String> {
+    std::fs::create_dir_all(dst).map_err(|e| format!("mkdir {}: {e}", dst.display()))?;
+    let mut changed = false;
+    for entry in std::fs::read_dir(src).map_err(|e| format!("read {}: {e}", src.display()))? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let p = entry.path();
+        let target = dst.join(entry.file_name());
+        if p.is_dir() {
+            changed |= sync_dir_recursive(&p, &target)?;
+        } else {
+            let same = match (std::fs::read(&p), std::fs::read(&target)) {
+                (Ok(a), Ok(b)) => a == b,
+                _ => false,
+            };
+            if !same {
+                std::fs::copy(&p, &target).map_err(|e| format!("copy {}: {e}", p.display()))?;
+                changed = true;
+            }
+        }
+    }
+    Ok(changed)
+}
+
+/// 读取安装时落盘的云端元数据（`name`/`description` 来自市场条目）。
+///
+/// 云端下载的包解压后只剩 SKILL.md，展示名会退回成目录/slug 名，
+/// 安装时把市场里的名字与描述写进这个文件，面板优先用它展示。
+fn read_install_meta(dir: &Path) -> Option<(String, String)> {
+    let text = std::fs::read_to_string(dir.join(".harness-meta.json")).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&text).ok()?;
+    let name = v.get("name").and_then(|x| x.as_str()).unwrap_or("").trim().to_string();
+    let description = v.get("description").and_then(|x| x.as_str()).unwrap_or("").trim().to_string();
+    if name.is_empty() && description.is_empty() {
+        return None;
+    }
+    Some((name, description))
+}
+
 /// v0.5.4：把随安装包分发的内置 skills 同步到 `<codex_home>/skills/`。
 ///
 /// 为什么这样做：codex 子进程通过 `CODEX_HOME` 环境变量只扫描 `$CODEX_HOME/skills`，
@@ -58,11 +100,15 @@ fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> Result<()
 /// 所以在每次 appserver_start（codex 拉起前）把资源目录下的 skills 物理拷贝过去，
 /// 三方路径（codex 进程 / 插件面板扫描 / config.toml 规则）即完全对齐。
 ///
+/// v0.8.5：同步改为**内容比较**（只写有差异的文件），并且面板只以
+/// `$CODEX_HOME/skills` 为唯一路径来源 —— 同一个 skill 不再出现多份路径，
+/// 新开会话也不会重复拷贝已经同步过的文件。
+///
 /// 同时做规则合并：对刚同步进来的 skill，若 config.toml 中**没有任何**对应规则，
 /// 追加一条 `[[skills.config]] path=<dir> enabled=true`（首次安装默认启用）；
 /// 已有规则（无论开关）不动，尊重用户在插件面板里的选择。
 ///
-/// 返回同步的 skill 个数。
+/// 返回本次**内容有变化**的 skill 个数（已是最新时为 0）。
 pub fn sync_bundled_skills(app: &tauri::AppHandle, codex_home: &str) -> Result<usize, String> {
     // 资源目录优先，开发模式兜底 src-tauri/resources/skills。
     let bundled_roots: Vec<PathBuf> = {
@@ -83,8 +129,9 @@ pub fn sync_bundled_skills(app: &tauri::AppHandle, codex_home: &str) -> Result<u
             let p = entry.path();
             if p.is_dir() && p.join("SKILL.md").is_file() {
                 let target = dest_root.join(entry.file_name());
-                copy_dir_recursive(&p, &target)?;
-                synced.push(target);
+                if sync_dir_recursive(&p, &target)? {
+                    synced.push(target);
+                }
             }
         }
     }
@@ -148,10 +195,13 @@ pub async fn plugins_list(
         let mut skill_sources: Vec<&'static str> = Vec::new();
         for (root, src) in &dedup_roots {
             for s in discover_skills(&[root.clone()]) {
-                if !skills.iter().any(|x| x.dir == s.dir) {
-                    skills.push(s);
-                    skill_sources.push(src);
+                // 按名字去重（根目录已按优先级排序）：内置 skill 同时存在于安装目录和
+                // $CODEX_HOME/skills 时只保留后者，面板里每个 skill 路径唯一。
+                if skills.iter().any(|x| x.name.eq_ignore_ascii_case(&s.name)) {
+                    continue;
                 }
+                skills.push(s);
+                skill_sources.push(src);
             }
         }
         // 标记当前配置里的开关（按 name 或 path 匹配）。
@@ -163,9 +213,22 @@ pub async fn plugins_list(
                     (!r.name.is_empty() && r.name == s.name) || (!r.path.is_empty() && r.path == s.dir.to_string_lossy())
                 });
                 let enabled = rule.map(|r| r.enabled).unwrap_or(true);
+                // 云端安装的包保留市场里的展示名与描述（本地 SKILL.md 只有 slug 名）。
+                let meta = read_install_meta(&s.dir);
+                let display_name = meta
+                    .as_ref()
+                    .map(|(n, _)| n.clone())
+                    .filter(|n| !n.is_empty())
+                    .unwrap_or_else(|| s.name.clone());
+                let description = meta
+                    .as_ref()
+                    .map(|(_, d)| d.clone())
+                    .filter(|d| !d.is_empty())
+                    .unwrap_or_else(|| s.description.clone());
                 serde_json::json!({
                     "name": s.name,
-                    "description": s.description,
+                    "displayName": display_name,
+                    "description": description,
                     "dir": s.dir.to_string_lossy(),
                     "enabled": enabled,
                     "source": skill_sources.get(i).copied().unwrap_or("custom"),
@@ -181,9 +244,10 @@ pub async fn plugins_list(
         let mut plugins: Vec<harness_plugins::PluginInfo> = Vec::new();
         for (root, _src) in &all_plugin_roots {
             for p in discover_plugins(&[root.clone()]) {
-                if !plugins.iter().any(|x| x.dir == p.dir) {
-                    plugins.push(p);
+                if plugins.iter().any(|x| x.id == p.id) {
+                    continue;
                 }
+                plugins.push(p);
             }
         }
         let plugins_json: Vec<serde_json::Value> = plugins
@@ -400,6 +464,8 @@ pub async fn plugins_cloud_install(
     codex_home: String,
     item_id: String,
     base_url: Option<String>,
+    name: Option<String>,
+    description: Option<String>,
 ) -> Result<serde_json::Value, String> {
     let base = cloud_base(base_url.as_deref());
     let item_id = item_id.clone();
@@ -433,10 +499,28 @@ pub async fn plugins_cloud_install(
         let installed = install_from_zip(&tmp, &codex_home)?;
         let _ = std::fs::remove_file(&tmp);
 
+        // 把市场条目的展示名/描述一起落盘：ZIP 里只有 SKILL.md，
+        // 不记下来面板就只能显示 slug 名（用户反馈的「下载后变成默认名」）。
+        let meta_name = name.unwrap_or_default().trim().to_string();
+        let meta_desc = description.unwrap_or_default().trim().to_string();
+        let label = if meta_name.is_empty() { item_id.clone() } else { meta_name.clone() };
+        if !meta_name.is_empty() || !meta_desc.is_empty() {
+            let meta = serde_json::json!({
+                "name": &meta_name,
+                "description": &meta_desc,
+                "source": "cloud",
+                "itemId": &item_id,
+            });
+            let _ = std::fs::write(
+                PathBuf::from(&installed).join(".harness-meta.json"),
+                serde_json::to_string_pretty(&meta).unwrap_or_default(),
+            );
+        }
+
         Ok::<serde_json::Value, String>(serde_json::json!({
             "ok": true,
             "installedDir": installed,
-            "message": "安装成功，点击刷新后可在「已安装」页看到",
+            "message": format!("「{label}」安装成功，点击刷新后可在「已安装」页看到"),
         }))
     })
     .await

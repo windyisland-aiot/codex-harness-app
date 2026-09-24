@@ -6,8 +6,12 @@
 //! - 命令从 `env_vars` 读 FEISHU_APP_ID / FEISHU_APP_SECRET（Harness 启动时自动注入）。
 //! - 幂等：重复调用 `base_register_mcp` 只会 retain+push，不会产生重复条目。
 //! - 健康检查 `base_health` 直接调飞书开放平台 auth 端点，失败时给安装 hint。
+//! - v0.8.5：`provision_lark_mcp` 启动时做一次性预装（带标记文件），
+//!   避免每个新会话都重新 `npm install` 一遍。
 
-use std::time::Duration;
+use std::path::Path;
+use std::process::Command;
+use std::time::{Duration, SystemTime};
 
 use harness_config::McpServerConfig;
 
@@ -196,6 +200,136 @@ pub async fn base_health(app_token: Option<String>) -> Result<BaseHealth, String
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+// ============== v0.8.5：lark-mcp 一次性预装 ==============
+
+/// 标记文件：记录上次预装结果，避免每次启动（每个新会话）都重复 `npm install`。
+const LARK_MCP_MARKER: &str = ".lark-mcp-provisioned";
+/// 安装失败后多久允许再试一次（避免断网时每次启动都卡在 npm 上）。
+const LARK_MCP_RETRY_SECS: u64 = 24 * 3600;
+
+fn now_unix() -> u64 {
+    SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
+}
+
+/// Windows 上 npm 是 `npm.cmd`，`Command::new("npm")` 不会走 PATHEXT，必须经 `cmd /C`。
+fn npm_command() -> Command {
+    if let Ok(bin) = std::env::var("HARNESS_NPM_BIN") {
+        if !bin.trim().is_empty() {
+            return Command::new(bin);
+        }
+    }
+    if cfg!(windows) {
+        let mut c = Command::new("cmd");
+        c.arg("/C").arg("npm");
+        c
+    } else {
+        Command::new("npm")
+    }
+}
+
+/// `lark-mcp` 是否已在 PATH 上可用。
+///
+/// 不做「起进程试跑」：Windows 上 npm 全局安装出来的是 `lark-mcp.cmd`（`Command::new`
+/// 不走 PATHEXT），`--version` 也未必被 CLI 支持，探针会误判成未安装。直接按
+/// PATH × 可执行扩展名查文件，跨平台且零副作用。
+fn lark_mcp_available() -> bool {
+    let exts: Vec<String> = if cfg!(windows) {
+        let raw = std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".into());
+        let mut v: Vec<String> = raw
+            .split(';')
+            .map(|e| e.trim().to_ascii_lowercase())
+            .filter(|e| !e.is_empty())
+            .collect();
+        v.push(String::new());
+        v
+    } else {
+        vec![String::new()]
+    };
+    let Some(path) = std::env::var_os("PATH") else {
+        return false;
+    };
+    for dir in std::env::split_paths(&path) {
+        for ext in &exts {
+            if dir.join(format!("lark-mcp{ext}")).is_file() {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// 标记文件里记着上次预装的尝试时间：`LARK_MCP_RETRY_SECS` 内不重复尝试
+/// （成功过也一样 —— 正常情况下 `lark_mcp_available()` 会先短路，走到这里说明
+/// 二进制又不见了，此时按天级重试即可）。
+fn marker_allows_attempt(marker: &Path) -> bool {
+    let Ok(text) = std::fs::read_to_string(marker) else {
+        return true;
+    };
+    let mut at = 0u64;
+    for line in text.lines() {
+        if let Some(("at", v)) = line.split_once('=') {
+            at = v.trim().parse().unwrap_or(0);
+        }
+    }
+    now_unix().saturating_sub(at) >= LARK_MCP_RETRY_SECS
+}
+
+fn write_marker(marker: &Path, status: &str) {
+    let body = format!("status={status}\nat={}\n", now_unix());
+    let _ = std::fs::write(marker, body);
+}
+
+/// 启动时的一次性预装：`lark-mcp` 不在 PATH 上才 `npm install -g`，并用标记文件记住结果。
+///
+/// 返回值是**给日志用的文案**：`None` 表示「已就绪/本次无需动作」。
+pub fn provision_lark_mcp(codex_home: &str) -> Option<String> {
+    let marker = Path::new(codex_home).join(LARK_MCP_MARKER);
+
+    if lark_mcp_available() {
+        write_marker(&marker, "ok");
+        return None;
+    }
+    if !marker_allows_attempt(&marker) {
+        return None;
+    }
+
+    let out = npm_command()
+        .args(["install", "-g", "@larksuiteoapi/lark-mcp"])
+        .output();
+    let message = match out {
+        Ok(o) if o.status.success() => {
+            if lark_mcp_available() {
+                write_marker(&marker, "ok");
+                "lark-mcp 预装完成".to_string()
+            } else {
+                // npm 装完但 PATH 里还看不到（常见于刚写入 PATH、进程未重启）
+                write_marker(&marker, "installed");
+                "lark-mcp 已安装到全局，PATH 生效后可用".to_string()
+            }
+        }
+        Ok(o) => {
+            write_marker(&marker, "failed");
+            let tail: String = String::from_utf8_lossy(&o.stderr)
+                .chars()
+                .rev()
+                .take(300)
+                .collect::<String>()
+                .chars()
+                .rev()
+                .collect();
+            format!("lark-mcp 自动安装失败（可手动 npm i -g @larksuiteoapi/lark-mcp）：{tail}")
+        }
+        Err(e) => {
+            write_marker(&marker, "failed");
+            format!("未找到 npm，跳过 lark-mcp 预装（飞书表格能力需先装 Node.js）：{e}")
+        }
+    };
+    Some(message)
 }
 
 fn sanitize_body(body: String) -> String {

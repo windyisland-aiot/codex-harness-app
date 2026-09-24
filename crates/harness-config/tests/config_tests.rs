@@ -312,6 +312,42 @@ fn skills_and_plugins_roundtrip() {
 
 // ================ T19 + T18 · MCP register 幂等（retain + push 语义） ================
 
+/// `developer_instructions` 是 codex 原生键（身份提示词）：写入后不能被
+/// 其它键的写盘吞掉，并且内容相同时不重复写。
+#[test]
+fn developer_instructions_written_preserved_and_idempotent() {
+    let dir = std::env::temp_dir().join(format!("harness-cfg-devins-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    let home = dir.to_str().unwrap();
+
+    fs::write(
+        format!("{home}/config.toml"),
+        "model = \"mock-model\"\nexperimental_realtime_ws_base_url = \"wss://example.com\"\n",
+    )
+    .unwrap();
+
+    assert!(harness_config::ensure_developer_instructions(home, "你是 Prism 助手").unwrap());
+    // 已是最新时不再写盘
+    assert!(!harness_config::ensure_developer_instructions(home, "你是 Prism 助手").unwrap());
+
+    let raw = fs::read_to_string(format!("{home}/config.toml")).unwrap();
+    let doc: toml::Value = toml::from_str(&raw).unwrap();
+    assert_eq!(doc.get("developer_instructions").and_then(|v| v.as_str()), Some("你是 Prism 助手"));
+    assert_eq!(doc.get("experimental_realtime_ws_base_url").and_then(|v| v.as_str()), Some("wss://example.com"));
+
+    // 后续用 AppConfig 写盘（配置面板路径）不能丢身份提示词。
+    let mut cfg = harness_config::read(home).unwrap();
+    cfg.model = "another-model".into();
+    harness_config::write(home, &cfg).unwrap();
+    let raw = fs::read_to_string(format!("{home}/config.toml")).unwrap();
+    let doc: toml::Value = toml::from_str(&raw).unwrap();
+    assert_eq!(doc.get("developer_instructions").and_then(|v| v.as_str()), Some("你是 Prism 助手"));
+    assert_eq!(doc.get("model").and_then(|v| v.as_str()), Some("another-model"));
+
+    let _ = fs::remove_dir_all(&dir);
+}
+
 fn push_server(home: &str, server: McpServerConfig) {
     let mut cfg = harness_config::read(home).unwrap();
     cfg.mcp_servers.retain(|m| m.id != server.id);

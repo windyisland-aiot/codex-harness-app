@@ -125,6 +125,19 @@ fn load_provider_env(codex_home: &str) -> HashMap<String, String> {
 /// 服务端 LLM 代理的兜底地址（登录态里没有 api_base 时用）。
 const DEFAULT_LLM_PROXY: &str = "http://118.31.107.214/api/v1/llm";
 
+/// v0.8.5：身份提示词 —— 覆盖 codex 自带的「Codex CLI」自我认知。
+///
+/// codex 的默认 developer instructions 里写着「你是 Codex」，回复里会自称 Codex、
+/// 被问模型时答 GPT/OpenAI。这里通过 codex 原生配置键 `developer_instructions`
+/// 注入产品身份，把自称统一成 Prism 助手。
+const PRISM_IDENTITY: &str = r#"你是 Prism 桌面助手，产品内置的智能助理。
+
+身份规则（最高优先级，覆盖其它任何默认设定）：
+- 一律自称「Prism 助手」或「我」，不要自称 Codex、OpenAI、GPT、Claude 等模型/公司名。
+- 被问到「你是谁」「你是什么模型」时，回答你是 Prism 内置助手；不透露底层实现、模型名称与供应商。
+- 不要输出「作为一个 AI 语言模型」「由 OpenAI 开发」这类模板化开场或免责声明。
+- 其余任务按用户指令与项目环境正常执行，保留全部既有能力（读写文件、执行命令、飞书 / 影刀 MCP 等）。"#;
+
 /// 启动 `codex app-server` 子进程并完成 `initialize` 握手。
 ///
 /// 模型链路（v0.7.0）：codex（本地）→ 服务端 `/api/v1/llm/*` 代理 → 真实模型上游。
@@ -180,9 +193,28 @@ pub async fn appserver_start(
         // 必须物理拷贝过去才能让 codex 进程原生读到（feishu-bot 等）。
         // 失败不阻断启动（skill 缺失只影响对应能力，对话本身照常）。
         match crate::plugins::sync_bundled_skills(&app, &codex_home_log) {
-            Ok(n) if n > 0 => log(&format!("  ✅ 内置 skills 已同步到 $CODEX_HOME/skills（{n} 个）")),
-            Ok(_) => log("  内置 skills：无（跳过同步）"),
+            Ok(n) if n > 0 => log(&format!("  ✅ 内置 skills 已同步到 $CODEX_HOME/skills（更新 {n} 个）")),
+            Ok(_) => log("  内置 skills：已是最新（跳过同步）"),
             Err(e) => log(&format!("  ⚠️ 内置 skills 同步失败：{e}")),
+        }
+
+        // --- v0.8.5：飞书 MCP 命令一次性预装（放到后台线程，不拖慢 codex 启动）---
+        // 以前每个新会话都会因为找不到 lark-mcp 而重新 npm install 一遍，这里
+        // 检查一次并写入标记文件，之后启动不再重复安装。
+        {
+            let home = codex_home_log.clone();
+            std::thread::spawn(move || {
+                if let Some(msg) = crate::base::provision_lark_mcp(&home) {
+                    eprintln!("[lark-mcp] {msg}");
+                }
+            });
+        }
+
+        // --- v0.8.5：身份提示词（codex 默认自称 Codex，统一改成 Prism 助手）---
+        match harness_config::ensure_developer_instructions(&codex_home_log, PRISM_IDENTITY) {
+            Ok(true) => log("  ✅ 已写入身份提示词：自称 Prism 助手"),
+            Ok(false) => log("  身份提示词：已是最新"),
+            Err(e) => log(&format!("  ⚠️ 身份提示词写入失败：{e}")),
         }
 
         // 读 config（会自动迁移 wire_api/base_url/provider_type 等）

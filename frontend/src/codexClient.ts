@@ -240,6 +240,8 @@ export function feishuRefresh(p: OAuthParams, refreshToken: string): Promise<Tok
 
 export interface SkillInfo {
   name: string;
+  /** 展示名：云端安装的包优先用市场条目名（本地 SKILL.md 里只有 slug） */
+  displayName?: string;
   description: string;
   dir: string;
   enabled: boolean;
@@ -346,11 +348,16 @@ export function pluginsCloudInstall(input: {
   codexHome: string;
   itemId: string;
   baseUrl?: string;
+  /** 市场条目的展示名/描述：安装时落盘到 .harness-meta.json，否则列表只能显示 slug */
+  name?: string;
+  description?: string;
 }): Promise<{ ok: boolean; installedDir: string; message?: string }> {
   return invoke("plugins_cloud_install", {
     codexHome: input.codexHome,
     itemId: input.itemId,
     baseUrl: input.baseUrl ?? null,
+    name: input.name ?? null,
+    description: input.description ?? null,
   });
 }
 

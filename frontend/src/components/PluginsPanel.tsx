@@ -169,7 +169,9 @@ export default function PluginsPanel({
       for (const p of l.plugins) plugins[p.id] = p.enabled;
       await codex.pluginsApply({
         codexHome,
-        skills: l.skills.map((s) => ({ name: s.name, path: s.dir, enabled: s.enabled })),
+        // 只写 path 规则：skill 目录在磁盘上唯一，比 name 匹配更可靠
+        // （旧版本同时写 name+path，config 里会残留两套规则指向同一个 skill）。
+        skills: l.skills.map((s) => ({ name: "", path: s.dir, enabled: s.enabled })),
         plugins,
         bundledSkillsEnabled: l.bundledSkillsEnabled,
         skillsIncludeInstructions: l.skillsIncludeInstructions,
@@ -186,7 +188,12 @@ export default function PluginsPanel({
   async function installFromCloud(item: codex.CloudMarketItem) {
     onStatus(`正在下载 ${item.name} …`);
     try {
-      const r = await codex.pluginsCloudInstall({ codexHome, itemId: item.id });
+      const r = await codex.pluginsCloudInstall({
+        codexHome,
+        itemId: item.id,
+        name: item.name,
+        description: item.description,
+      });
       if (r.ok) {
         onStatus(`已安装：${item.name} → ${r.installedDir}`);
         await loadInstalled();
@@ -231,6 +238,7 @@ export default function PluginsPanel({
         (s) =>
           !needle ||
           s.name.toLowerCase().includes(needle) ||
+          (s.displayName ?? "").toLowerCase().includes(needle) ||
           s.description.toLowerCase().includes(needle) ||
           s.dir.toLowerCase().includes(needle)
       ),
@@ -384,12 +392,13 @@ export default function PluginsPanel({
                   <div className="plg-grid">
                     {filteredSkills.map((s) => {
                       const gi = list!.skills.findIndex((x) => x.dir === s.dir);
+                      const shown = s.displayName?.trim() || s.name;
                       return (
                         <div className="plg-card" key={s.dir} title={s.description}>
                           <div className="plg-card-head">
-                            <div className="plg-card-icon skill">{iconGlyph(s.name)}</div>
+                            <div className="plg-card-icon skill">{iconGlyph(shown)}</div>
                             <div className="plg-card-title">
-                              <div className="name">{s.name}</div>
+                              <div className="name">{shown}</div>
                               <div className="version">{s.version ?? "skill"}</div>
                             </div>
                           </div>

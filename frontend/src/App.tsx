@@ -481,7 +481,7 @@ export default function App() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [renameValue, setRenameValue] = useState("");
-  const [appVersion, setAppVersion] = useState("0.8.4");
+  const [appVersion, setAppVersion] = useState("0.8.5");
 
   // ------- 主题 -------
   const [theme, setThemeState] = useState<"light" | "dark">(() => {
@@ -1912,6 +1912,9 @@ ${bodyText}` : bodyText;
   function newChat() {
     setActiveThread(null); setMessages([]); setApprovals([]); setRunning(false);
     setLastError(null); threadProviderRef.current = null;
+    // 影刀/自动化面板会占据主工作区，新建任务时必须先收起，否则看起来「点了没反应」。
+    setYingdaoOpen(false);
+    setAutomationOpen(false);
   }
 
   function requestDelete(id: string, title: string) {
@@ -1938,6 +1941,9 @@ ${bodyText}` : bodyText;
   function handleLoadSession(d: codex.SessionDetail) {
     setActiveThread(d.meta.id);
     threadProviderRef.current = d.meta.provider ?? null;
+    // 同上：从影刀/自动化面板里点任务列表，要能直接回到对话。
+    setYingdaoOpen(false);
+    setAutomationOpen(false);
     setMessages(d.messages.map((m) => ({ role: m.role === "user" ? "user" : "assistant", text: m.text })));
     if (d.meta.provider) setProvider(d.meta.provider);
     if (d.meta.model) setModel(d.meta.model);

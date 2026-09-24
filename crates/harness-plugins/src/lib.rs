@@ -78,9 +78,17 @@ fn walk_skill(dir: &Path, seen: &mut BTreeMap<PathBuf, SkillInfo>) {
     };
     for entry in read.flatten() {
         let p = entry.path();
-        if p.is_dir() {
-            walk_skill(&p, seen);
+        if !p.is_dir() {
+            continue;
         }
+        // 跳过隐藏目录：codex 自带 skill 位于 `.system/` 下，默认启用且不需要在面板里展示。
+        if p.file_name()
+            .map(|n| n.to_string_lossy().starts_with('.'))
+            .unwrap_or(false)
+        {
+            continue;
+        }
+        walk_skill(&p, seen);
     }
 }
 
@@ -97,29 +105,19 @@ fn walk_skill(dir: &Path, seen: &mut BTreeMap<PathBuf, SkillInfo>) {
 pub fn parse_skill_dir(dir: &Path) -> Option<SkillInfo> {
     let skill_md = dir.join("SKILL.md");
     let text = std::fs::read_to_string(&skill_md).ok()?;
-    // 仅提取 `---` 包裹的 frontmatter（允许结尾无第二个 `---`）。
-    let content = text
-        .strip_prefix("---")
-        .and_then(|rest| rest.split_once("---").map(|(fm, _)| fm.trim()))
-        .unwrap_or("");
     let mut name = dir
         .file_name()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_default();
     let mut description = String::new();
-    if !content.is_empty() {
-        // frontmatter 是 YAML；用 toml 引擎解析最宽松的 key: value 行子集。
-        for line in content.lines() {
-            let line = line.trim();
-            if let Some((k, v)) = line.split_once(':') {
-                let k = k.trim();
-                let v = v.trim().trim_matches('"').trim_matches('\'');
-                if k == "name" && !v.is_empty() {
-                    name = v.to_string();
-                } else if k == "description" && !v.is_empty() {
-                    description = v.to_string();
-                }
+    if let Some(fm) = frontmatter(&text) {
+        if let Some(v) = frontmatter_field(fm, "name") {
+            if !v.is_empty() {
+                name = v;
             }
+        }
+        if let Some(v) = frontmatter_field(fm, "description") {
+            description = v;
         }
     }
     if name.is_empty() {
@@ -130,6 +128,62 @@ pub fn parse_skill_dir(dir: &Path) -> Option<SkillInfo> {
         description,
         dir: dir.to_path_buf(),
     })
+}
+
+/// 取出 `SKILL.md` 顶部 `---` 之间的 frontmatter 文本（允许结尾没有第二个 `---`）。
+fn frontmatter(text: &str) -> Option<&str> {
+    let body = text.strip_prefix('\u{feff}').unwrap_or(text);
+    let rest = body.strip_prefix("---")?;
+    Some(match rest.split_once("\n---") {
+        Some((fm, _)) => fm,
+        None => match rest.split_once("---") {
+            Some((fm, _)) => fm,
+            None => rest,
+        },
+    })
+}
+
+/// 读取 frontmatter 里的一个顶层字段。
+///
+/// 支持 YAML 常见的多行写法（`description: >-` / `|` 后跟缩进块）。内置 skill
+/// 的说明经常换行书写，只取第一行会让面板显示成「描述不完整」。
+fn frontmatter_field(fm: &str, key: &str) -> Option<String> {
+    let mut lines = fm.lines().peekable();
+    while let Some(line) = lines.next() {
+        // 缩进行属于上面的块标量，不是顶层字段。
+        if line.starts_with(' ') || line.starts_with('\t') {
+            continue;
+        }
+        let Some((k, raw)) = line.split_once(':') else {
+            continue;
+        };
+        if k.trim() != key {
+            continue;
+        }
+        let raw = raw.trim();
+        // 块标量：`>`/`>-`/`|`/`|-` 等，取后续缩进块；`>` 折叠成空格，`|` 保留换行。
+        if raw.starts_with('>') || raw.starts_with('|') {
+            let folded = raw.starts_with('>');
+            let mut parts: Vec<String> = Vec::new();
+            while let Some(next) = lines.peek() {
+                if next.starts_with(' ') || next.starts_with('\t') {
+                    if let Some(v) = lines.next() {
+                        parts.push(v.trim().to_string());
+                    }
+                } else {
+                    break;
+                }
+            }
+            let joined = if folded {
+                parts.join(" ")
+            } else {
+                parts.join("\n")
+            };
+            return Some(joined.trim().to_string());
+        }
+        return Some(raw.trim_matches('"').trim_matches('\'').trim().to_string());
+    }
+    None
 }
 
 /// 扫描 `roots` 寻找插件目录（含 `plugin.toml`）。
@@ -163,9 +217,16 @@ fn walk_plugin(dir: &Path, seen: &mut BTreeMap<PathBuf, PluginInfo>) {
     };
     for entry in read.flatten() {
         let p = entry.path();
-        if p.is_dir() {
-            walk_plugin(&p, seen);
+        if !p.is_dir() {
+            continue;
         }
+        if p.file_name()
+            .map(|n| n.to_string_lossy().starts_with('.'))
+            .unwrap_or(false)
+        {
+            continue;
+        }
+        walk_plugin(&p, seen);
     }
 }
 
@@ -238,6 +299,29 @@ mod tests {
         std::fs::write(c.join("SKILL.md"), "无 frontmatter 正文").unwrap();
         let skills = discover_skills(&[root.clone()]);
         assert!(skills.iter().any(|s| s.name == "fallback-name"));
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn parses_multiline_description_and_skips_hidden_dirs() {
+        let root = tdir("skill-fm");
+        let a = root.join("humanizer");
+        std::fs::create_dir_all(&a).unwrap();
+        std::fs::write(
+            a.join("SKILL.md"),
+            "---\nname: humanizer-chinese\ndescription: >-\n  中文去 AI 味：把生硬的机器腔\n  改写成自然口语，信息不变。\n---\n正文",
+        )
+        .unwrap();
+        let skills = discover_skills(&[root.clone()]);
+        assert_eq!(skills.len(), 1);
+        assert_eq!(skills[0].description, "中文去 AI 味：把生硬的机器腔 改写成自然口语，信息不变。");
+
+        // codex 自带 skill（.system/）默认启用即可，不进入面板清单。
+        let sys = root.join(".system/web-search");
+        std::fs::create_dir_all(&sys).unwrap();
+        std::fs::write(sys.join("SKILL.md"), "---\nname: web-search\n---\n").unwrap();
+        let skills = discover_skills(&[root.clone()]);
+        assert_eq!(skills.len(), 1, "{skills:?}");
         let _ = std::fs::remove_dir_all(&root);
     }
 
